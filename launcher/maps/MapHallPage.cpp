@@ -125,6 +125,47 @@ QString formatLength(int minutes)
     return text::formatPlaytime(minutes);
 }
 
+/**
+ * 难度 / 长度在站上是英文枚举（`medium` / `very hard` / `very long`），
+ * 直接塞进下拉框不友好；显示用中文，`userData` 仍保留原值给筛选用。
+ */
+QString difficultyLabel(const QString& value)
+{
+    if (value == QLatin1String("very easy"))
+        return QObject::tr("非常简单");
+    if (value == QLatin1String("easy"))
+        return QObject::tr("简单");
+    if (value == QLatin1String("medium"))
+        return QObject::tr("中等");
+    if (value == QLatin1String("hard"))
+        return QObject::tr("困难");
+    if (value == QLatin1String("very hard"))
+        return QObject::tr("极难");
+    return value;
+}
+
+QString lengthLabel(const QString& value)
+{
+    if (value == QLatin1String("short"))
+        return QObject::tr("短");
+    if (value == QLatin1String("medium"))
+        return QObject::tr("中");
+    if (value == QLatin1String("long"))
+        return QObject::tr("长");
+    if (value == QLatin1String("very long"))
+        return QObject::tr("超长");
+    return value;
+}
+
+/// 长度按「短 → 中 → 长 → 超长」排，别按字母序（字母序是 long/short/very long，读着别扭）
+int lengthRank(const QString& value)
+{
+    static const QStringList order = { QStringLiteral("short"), QStringLiteral("medium"), QStringLiteral("long"),
+                                       QStringLiteral("very long") };
+    const int index = order.indexOf(value);
+    return index < 0 ? order.size() : index;
+}
+
 
 /// 列表里的行：照 AIO `.hall-row` 的四栏（封面 / 标题+chip+一句话 / 数据 / 动作）
 class HallRow : public QWidget {
@@ -347,7 +388,6 @@ void MapHallPage::buildUi()
     layout->setSpacing(6);
 
     // ── 搜索与筛选 ──
-    auto* filters = new QHBoxLayout();
     m_search = new QLineEdit(this);
     m_search->setPlaceholderText(tr("搜索地图名 / 系列 / 作者（留空 = 最新发布）"));
     m_search->setClearButtonEnabled(true);
@@ -364,17 +404,48 @@ void MapHallPage::buildUi()
     m_difficulty = new QComboBox(this);
     m_difficulty->addItem(tr("难度：不限"), QString());
 
+    m_length = new QComboBox(this);
+    m_length->addItem(tr("长度：不限"), QString());
+    m_year = new QComboBox(this);
+    m_year->addItem(tr("年份：不限"), QString());
+
     m_syncButton = new QPushButton(tr("下载地图库"), this);
     m_syncButton->setToolTip(tr("一次把整库拉到本地（几百张图 + 评论），之后搜索、详情、评论都在本地算；\n"
                                 "有新图时再点一次即可。"));
 
-    filters->addWidget(m_search, 1);
-    filters->addWidget(go);
-    filters->addWidget(m_syncButton);
-    filters->addWidget(m_sort);
-    filters->addWidget(m_series);
-    filters->addWidget(m_difficulty);
-    layout->addLayout(filters);
+    m_resetFilters = new QToolButton(this);
+    m_resetFilters->setText(tr("重置"));
+    m_resetFilters->setAutoRaise(true);
+    m_resetFilters->setToolTip(tr("清空搜索词与所有筛选条件，回到「最新发布」"));
+
+    // 下拉一律按"最小内容长度"收缩：面板变窄时先压下拉，不压搜索框
+    for (auto* combo : { m_sort, m_series, m_difficulty, m_length, m_year }) {
+        combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+        combo->setMinimumContentsLength(4);
+    }
+
+    /**
+     * 两行筛选（2026-11-02 调整）：
+     *   第一行只放搜索与两个动作 —— 搜索框需要横向拉伸；
+     *   第二行放排序 + 四个筛选下拉 + 重置，系列占掉剩余宽度。
+     * 挤在一行时，加到第四个下拉就会把搜索框压到只剩几十像素。
+     */
+    auto* filterTop = new QHBoxLayout();
+    filterTop->setSpacing(6);
+    filterTop->addWidget(m_search, 1);
+    filterTop->addWidget(go);
+    filterTop->addWidget(m_syncButton);
+    layout->addLayout(filterTop);
+
+    auto* filterRow = new QHBoxLayout();
+    filterRow->setSpacing(6);
+    filterRow->addWidget(m_sort);
+    filterRow->addWidget(m_series, 1);
+    filterRow->addWidget(m_difficulty);
+    filterRow->addWidget(m_length);
+    filterRow->addWidget(m_year);
+    filterRow->addWidget(m_resetFilters);
+    layout->addLayout(filterRow);
 
     // ── 列表 + 详情 ──
     auto* splitter = new QSplitter(Qt::Horizontal, this);
@@ -551,6 +622,8 @@ void MapHallPage::buildUi()
     auto* reviewsScroll = new QScrollArea(reviewsTab);
     reviewsScroll->setWidgetResizable(true);
     reviewsScroll->setFrameShape(QFrame::NoFrame);
+    // 评论卡片按宽度换行，永远不该出现横向滚动条（2026-11-02 用户反馈）
+    reviewsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_reviewBox = new QWidget(reviewsScroll);
     m_reviewLayout = new QVBoxLayout(m_reviewBox);
     m_reviewLayout->setContentsMargins(0, 0, 4, 0);
@@ -614,6 +687,19 @@ void MapHallPage::buildUi()
     connect(m_sort, &QComboBox::currentIndexChanged, this, [this](int) { startSearch(); });
     connect(m_series, &QComboBox::currentIndexChanged, this, [this](int) { startSearch(); });
     connect(m_difficulty, &QComboBox::currentIndexChanged, this, [this](int) { startSearch(); });
+    connect(m_length, &QComboBox::currentIndexChanged, this, [this](int) { startSearch(); });
+    connect(m_year, &QComboBox::currentIndexChanged, this, [this](int) { startSearch(); });
+    connect(m_resetFilters, &QToolButton::clicked, this, [this] {
+        // 只挡信号会漏掉"搜索词被清空"的联动，直接逐个改完再统一搜一次
+        const QSignalBlocker b1(m_sort), b2(m_series), b3(m_difficulty), b4(m_length), b5(m_year);
+        m_search->clear();
+        m_sort->setCurrentIndex(0);
+        m_series->setCurrentIndex(0);
+        m_difficulty->setCurrentIndex(0);
+        m_length->setCurrentIndex(0);
+        m_year->setCurrentIndex(0);
+        startSearch();
+    });
     connect(m_loadMore, &QPushButton::clicked, this, &MapHallPage::loadMore);
     connect(m_reviewMore, &QPushButton::clicked, this, [this] {
         if (!m_reviewMapUuid.isEmpty())
@@ -646,6 +732,10 @@ HallQuery MapHallPage::currentQuery() const
     const QString difficulty = m_difficulty->currentData().toString();
     if (!difficulty.isEmpty())
         query.difficulties = { difficulty };
+    const QString length = m_length->currentData().toString();
+    if (!length.isEmpty())
+        query.lengths = { length };
+    query.year = m_year->currentData().toString();
     query.limit = 20;
     return query;
 }
@@ -856,20 +946,28 @@ void MapHallPage::onDetail(const HallDetail& detail)
 
 void MapHallPage::onFacets(const HallFacets& facets)
 {
-    const auto refill = [](QComboBox* combo, const QString& placeholder, const QStringList& values) {
+    const auto refill = [](QComboBox* combo, const QString& placeholder, const QStringList& values,
+                           QString (*label)(const QString&) = nullptr) {
         const QString current = combo->currentData().toString();
         combo->clear();
         combo->addItem(placeholder, QString());
         for (const auto& value : values)
-            combo->addItem(value, value);
+            combo->addItem(label != nullptr ? label(value) : value, value);
         const int index = combo->findData(current);
         if (index >= 0)
             combo->setCurrentIndex(index);
     };
 
-    QSignalBlocker s1(m_series), s2(m_difficulty);
+    QStringList lengths = facets.lengths;
+    std::sort(lengths.begin(), lengths.end(), [](const QString& a, const QString& b) {
+        return lengthRank(a) < lengthRank(b);
+    });
+
+    QSignalBlocker s1(m_series), s2(m_difficulty), s3(m_length), s4(m_year);
     refill(m_series, tr("系列：不限"), facets.series);
-    refill(m_difficulty, tr("难度：不限"), facets.difficulties);
+    refill(m_difficulty, tr("难度：不限"), facets.difficulties, &difficultyLabel);
+    refill(m_length, tr("长度：不限"), lengths, &lengthLabel);
+    refill(m_year, tr("年份：不限"), facets.years);
 }
 
 void MapHallPage::onFailed(HallError kind, const QString& humanReason, const QString& techDetail)

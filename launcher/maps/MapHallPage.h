@@ -105,6 +105,11 @@ class MapHallPage : public QWidget, public BasePage {
     QComboBox* m_sort = nullptr;
     QComboBox* m_series = nullptr;
     QComboBox* m_difficulty = nullptr;
+    /// 长度（short/medium/long/very long）与年份：站上就有的两个维度，本地筛选早已支持，只是以前没接 UI
+    QComboBox* m_length = nullptr;
+    QComboBox* m_year = nullptr;
+    /// 一键清空所有筛选条件（搜索框 + 排序 + 四个下拉）
+    QToolButton* m_resetFilters = nullptr;
     QListWidget* m_list = nullptr;
     /// 左栏在「列表 / 失败面板」之间切换
     QStackedWidget* m_leftStack = nullptr;

@@ -31,23 +31,6 @@
 #include "MapTheme.h"
 
 namespace maps {
-namespace {
-
-/**
- * 头像底色：按用户名算稳定色相（同一个人每次颜色一样）。
- * 深色主题抬亮度、浅色主题压亮度，否则「深底上的深色圆点」等于看不见。
- */
-QColor avatarColor(const QString& name)
-{
-    uint hash = 2166136261u;
-    for (const QChar ch : name)
-        hash = (hash ^ ch.unicode()) * 16777619u;
-    const int hue = static_cast<int>(hash % 360u);
-    const bool dark = ui::isDarkTheme();
-    return QColor::fromHsv(hue, dark ? 90 : 120, dark ? 235 : 170);
-}
-
-}  // namespace
 
 QWidget* makeReviewCard(QWidget* parent, const HallReview& review, QLabel** nameLabel)
 {
@@ -65,23 +48,12 @@ QWidget* makeReviewCard(QWidget* parent, const HallReview& review, QLabel** name
     layout->setContentsMargins(10, 8, 10, 10);
     layout->setSpacing(6);
 
+    // 首行只放名字 + 星级：日期/时长另起一行，窄面板下才不会被挤出横向滚动条
     auto* head = new QHBoxLayout();
     head->setContentsMargins(0, 0, 0, 0);
     head->setSpacing(6);
 
     const QString displayName = review.userName.isEmpty() ? QObject::tr("匿名玩家") : review.userName;
-    auto* avatar = new QLabel(displayName.left(1).toUpper(), card);
-    avatar->setFixedSize(22, 22);
-    avatar->setAlignment(Qt::AlignCenter);
-    const QColor tint = avatarColor(displayName);
-    avatar->setStyleSheet(QStringLiteral("background: rgba(%1, %2, %3, 60); color: %4;"
-                                         "border-radius: 11px; font-weight: 600;")
-                              .arg(tint.red())
-                              .arg(tint.green())
-                              .arg(tint.blue())
-                              .arg(tint.name()));
-    head->addWidget(avatar);
-
     auto* name = new QLabel(displayName, card);
     QFont nameFont = name->font();
     nameFont.setBold(true);
@@ -99,6 +71,7 @@ QWidget* makeReviewCard(QWidget* parent, const HallReview& review, QLabel** name
         head->addWidget(stars);
     }
     head->addStretch(1);
+    layout->addLayout(head);
 
     QStringList trailing;
     if (review.playtimeMinutes > 0)
@@ -108,9 +81,12 @@ QWidget* makeReviewCard(QWidget* parent, const HallReview& review, QLabel** name
     if (!trailing.isEmpty()) {
         auto* meta = new QLabel(trailing.join(QStringLiteral(" · ")), card);
         meta->setEnabled(false);
-        head->addWidget(meta);
+        QFont metaFont = meta->font();
+        if (metaFont.pointSizeF() > 0)
+            metaFont.setPointSizeF(metaFont.pointSizeF() * 0.92);
+        meta->setFont(metaFont);
+        layout->addWidget(meta);
     }
-    layout->addLayout(head);
 
     QString bodyText = review.text.trimmed();
     if (bodyText.isEmpty()) {

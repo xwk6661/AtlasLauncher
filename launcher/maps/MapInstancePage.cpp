@@ -305,6 +305,7 @@ QWidget* MapInstancePage::buildReviewsPage()
     auto* scroll = new QScrollArea(m_reviewsPage);
     scroll->setWidgetResizable(true);
     scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto* body = new QWidget(scroll);
     m_reviewsLayout = new QVBoxLayout(body);
     m_reviewsLayout->setContentsMargins(0, 0, 4, 0);
