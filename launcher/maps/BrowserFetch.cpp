@@ -18,10 +18,15 @@
 #include "BrowserFetch.h"
 
 #include <QDir>
+#include <QFile>
 #include <QFileInfo>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QUrl>
 
 #include <atomic>
 #include <QTimer>
@@ -149,6 +154,67 @@ void BrowserFetch::attemptOnce(int remaining)
                                                         .arg(++counter);
     QDir().mkpath(profileDir);
 
+    /**
+     * 页面里用 XHR 取，而不是让浏览器直接打开 API 地址。
+     *
+     * 原因（2026-11-02 实测）：直接 `--dump-dom <API URL>` 是"一锤子买卖"——
+     * 这条链路约 1/3 概率 `ERR_CONNECTION_RESET`，一旦撞上就得整体重开浏览器进程，
+     * 用户看到的就是「更新数据」失败；更糟的是重试过程中进程被杀，会被报成
+     * 「浏览器进程崩溃（退出码 62097）」这种看不懂的话。
+     *
+     * 改成页面内 XHR 之后：一次进程内可以退避重试、能读到真实 HTTP 状态码、
+     * 4xx 不必重试（鉴权/参数问题重试也没用），失败原因也能说人话。
+     *
+     * 注意**不能**加 `?_r=N` 之类的防缓存参数：PostgREST 对未知查询参数直接
+     * 返回 `PGRST100 / unexpected param`（400），重试反而全灭。
+     */
+    // URL 以 JSON 字符串字面量塞进页面（顺带处理引号/反斜杠）；"</" 转义防止截断脚本
+    auto urlLiteral = QString::fromUtf8(QJsonDocument(QJsonArray{ m_url.toString() }).toJson(QJsonDocument::Compact));
+    urlLiteral = urlLiteral.mid(1, urlLiteral.size() - 2);
+    urlLiteral.replace(QLatin1String("</"), QLatin1String("<\\/"));
+
+    QString page = QStringLiteral(R"(<!doctype html>
+<html><head><meta charset="utf-8"><title>PrismLauncher fetch</title></head>
+<body><pre id="bf">pending</pre>
+<script>
+const URL = %1;
+const MAX = 3;
+let tries = 0;
+function finish(o) { document.getElementById('bf').textContent = JSON.stringify(o); }
+function go() {
+  tries++;
+  const x = new XMLHttpRequest();
+  x.open('GET', URL);
+  x.timeout = 20000;
+  x.onload = function () {
+    const body = x.responseText || '';
+    const enc = btoa(unescape(encodeURIComponent(body)));
+    if (x.status >= 200 && x.status < 300) return finish({ ok: true, status: x.status, tries: tries, body: enc });
+    // 4xx 是"路通了但请求不对"（鉴权/参数），重试没有意义
+    if (x.status >= 400 && x.status < 500) return finish({ ok: false, status: x.status, tries: tries, body: enc });
+    retry();
+  };
+  x.onerror = x.ontimeout = retry;
+  function retry() {
+    if (tries < MAX) { setTimeout(go, 300 * tries); return; }
+    finish({ ok: false, status: 0, tries: tries, body: '' });
+  }
+  x.send();
+}
+go();
+</script></body></html>)")
+                       .arg(urlLiteral);
+
+    const QString pagePath = QDir(profileDir).filePath(QStringLiteral("fetch.html"));
+    QFile pageFile(pagePath);
+    if (!pageFile.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        QDir(profileDir).removeRecursively();
+        emit finished(false, {}, tr("无法写入浏览器通道的临时页面"));
+        return;
+    }
+    pageFile.write(page.toUtf8());
+    pageFile.close();
+
     m_proc = new QProcess(this);
     m_proc->setProgram(browser);
     m_proc->setArguments({
@@ -159,6 +225,8 @@ void BrowserFetch::attemptOnce(int remaining)
         QStringLiteral("--disable-quic"),
         // 明确不走任何代理：这条通道的意义就是"绕开需要代理的那条路"
         QStringLiteral("--no-proxy-server"),
+        // 图床/接口不一定都带 Access-Control-Allow-Origin；一次性空白 profile，关掉无副作用
+        QStringLiteral("--disable-web-security"),
         QStringLiteral("--no-first-run"),
         QStringLiteral("--no-default-browser-check"),
         QStringLiteral("--disable-extensions"),
@@ -167,10 +235,10 @@ void BrowserFetch::attemptOnce(int remaining)
         QStringLiteral("--disable-sync"),
         QStringLiteral("--mute-audio"),
         QStringLiteral("--user-data-dir=%1").arg(profileDir),
-        // 给它一点时间去跑完 DNS/ECH 握手，但不能无限等
-        QStringLiteral("--virtual-time-budget=6000"),
+        // 留给 XHR 三次尝试（含退避）和 2.5 MB 级响应体
+        QStringLiteral("--virtual-time-budget=25000"),
         QStringLiteral("--dump-dom"),
-        m_url.toString(),
+        QUrl::fromLocalFile(pagePath).toString(),
     });
 
     auto* timer = new QTimer(this);
@@ -181,7 +249,7 @@ void BrowserFetch::attemptOnce(int remaining)
             m_proc->kill();  // 触发 finished，交给下面统一收尾
         }
     });
-    timer->start(30000);
+    timer->start(60000);
 
     connect(m_proc, &QProcess::finished, this, [this, remaining, timer, profileDir](int code, QProcess::ExitStatus status) {
         timer->stop();
@@ -194,14 +262,42 @@ void BrowserFetch::attemptOnce(int remaining)
         cleanup();
         QDir(profileDir).removeRecursively();
 
-        // 只要 DOM 里有 <pre> 就认：退出码不代表数据没拿到（页面加载完浏览器仍可能非 0 退出）
-        const QByteArray body = extractPre(out);
-        if (!body.isEmpty()) {
-            emit finished(true, body, {});
+        const auto payload = extractPre(out);
+        const auto document = QJsonDocument::fromJson(payload);
+        if (document.isObject()) {
+            const auto object = document.object();
+            const int httpStatus = object.value(QStringLiteral("status")).toInt();
+            const auto body = QByteArray::fromBase64(object.value(QStringLiteral("body")).toString().toLatin1());
+
+            if (object.value(QStringLiteral("ok")).toBool()) {
+                emit finished(true, body, {});
+                return;
+            }
+
+            if (httpStatus >= 400 && httpStatus < 500) {
+                // 鉴权/参数问题：把服务端的话原样带出去，别让用户去猜
+                QString detail = QString::fromUtf8(body);
+                if (const auto parsed = QJsonDocument::fromJson(body); parsed.isObject())
+                    detail = parsed.object().value(QStringLiteral("message")).toString(detail);
+                emit finished(false, {},
+                              tr("HTTP %1：%2").arg(httpStatus).arg(detail.isEmpty() ? tr("请求被拒绝") : detail));
+                return;
+            }
+
+            // 5xx / 连不上：还是整段重开一次（页面内已经试过 %1 次）
+            const QString reason = httpStatus == 0
+                                       ? tr("连接被重置或超时（页面内已重试 %1 次）")
+                                             .arg(object.value(QStringLiteral("tries")).toInt())
+                                       : tr("服务端返回 HTTP %1").arg(httpStatus);
+            if (remaining > 1) {
+                QTimer::singleShot(400, this, [this, remaining] { attemptOnce(remaining - 1); });
+                return;
+            }
+            emit finished(false, {}, reason);
             return;
         }
 
-        // 收尾：还有次数就再试（实测这条链路会偶发 CONNECTION_RESET）
+        // 连页面都没跑起来：退回进程层面的诊断
         QString reason;
         if (err.contains(QLatin1String("ERR_CONNECTION_RESET")))
             reason = tr("连接被重置（常见的间歇性阻断）");
@@ -210,7 +306,7 @@ void BrowserFetch::attemptOnce(int remaining)
         else if (err.contains(QLatin1String("ERR_INTERNET_DISCONNECTED")))
             reason = tr("系统提示没有网络连接");
         else if (status == QProcess::CrashExit)
-            reason = tr("浏览器进程崩溃（退出码 %1）").arg(code);
+            reason = tr("浏览器进程被系统终止（退出码 %1）").arg(code);
         else
             reason = tr("浏览器没有返回内容（退出码 %1）").arg(code);
 

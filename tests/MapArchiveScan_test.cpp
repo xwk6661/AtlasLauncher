@@ -28,6 +28,7 @@
 #include <FileSystem.h>
 
 #include <maps/AgentBootstrap.h>
+#include <maps/BrowserFetch.h>
 #include <maps/HallAPI.h>
 #include <maps/DataVersionTable.h>
 #include <maps/MapArchiveScanner.h>
@@ -421,6 +422,35 @@ class MapArchiveScanTest : public QObject {
         QCOMPARE(entries.size(), urls.size());
         for (const auto& url : urls)
             QVERIFY(!loader->cached(url).isNull());
+    }
+
+    /**
+     * 浏览器通道取 JSON 的端到端用例（要联网 + 本机有 Edge/Chrome，默认跳过）。
+     *
+     * 覆盖 `BrowserFetch` 现在的做法：本地页面里 XHR + 退避重试，再 base64 回传。
+     * 跑法：
+     *   set PRISM_TEST_FETCH_URL=https://<ref>.supabase.co/rest/v1/maps?select=slug&limit=2&apikey=…
+     */
+    void test_browserChannelJson()
+    {
+        const QString url = qEnvironmentVariable("PRISM_TEST_FETCH_URL");
+        if (url.isEmpty())
+            QSKIP("未设置 PRISM_TEST_FETCH_URL：跳过浏览器通道用例");
+        if (!BrowserFetch::available())
+            QSKIP("本机没有 Edge / Chrome");
+
+        BrowserFetch fetch;
+        QSignalSpy done(&fetch, &BrowserFetch::finished);
+        fetch.get(QUrl(url), 2);
+
+        QTRY_VERIFY_WITH_TIMEOUT(done.count() > 0, 120000);
+        const bool ok = done.first().at(0).toBool();
+        const auto body = done.first().at(1).toByteArray();
+        QVERIFY2(ok, qPrintable(done.first().at(2).toString()));
+        QVERIFY2(body.size() > 2, "响应体是空的");
+
+        const auto document = QJsonDocument::fromJson(body);
+        QVERIFY2(document.isArray() || document.isObject(), "拿回来的不是 JSON");
     }
 
     /// M0 验收：AI0 的 23 个夹具逐个比对版本 / 置信度 / 世界数 / 材质包数

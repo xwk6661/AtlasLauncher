@@ -52,7 +52,8 @@ namespace maps {
  *   · 每次请求要起一个无头浏览器进程，约 1.5–3 秒；
  *   · 只能发**简单 GET**：自定义头（`apikey` / `Prefer: count=exact`）不能带，
  *     apikey 改走查询参数（Kong 认），所以拿不到 `Content-Range` → 评论总数未知；
- *   · 链路本身仍会偶发 `ERR_CONNECTION_RESET`（实测约 3/4 成功），所以内部重试。
+ *   · 链路本身仍会偶发 `ERR_CONNECTION_RESET`（实测约 1/3 概率），所以**重试放在页面里**
+ *     （XHR + 退避），比"每失败一次就重开一个浏览器进程"稳得多，也快得多。
  */
 class BrowserFetch : public QObject {
     Q_OBJECT
