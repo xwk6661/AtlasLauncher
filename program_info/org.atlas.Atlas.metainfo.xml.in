@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop">
+  <id>@Launcher_AppID@</id>
+  <name>@Launcher_DisplayName@</name>
+  <summary>Map-first Minecraft launcher: pick a map, land in its world</summary>
+  <developer id="org.atlas">
+    <name>Atlas Contributors</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-only</project_license>
+  <description>
+    <p>Atlas is a map-first fork of Prism Launcher: every map is a self-contained instance, the
+    Minecraft version is inferred from the save itself, and launching drops you straight into the
+    world instead of the title screen.</p>
+    <p>Features:</p>
+    <ul>
+      <li>Import a map archive (zip / rar / 7z) and get a physical, isolated instance</li>
+      <li>Skip the title screen: 1.20+ uses --quickPlaySingleplayer, older versions use a Java agent</li>
+      <li>Close the game automatically once the world is saved and you leave it</li>
+      <li>Browse the CTM Maps hall offline, with covers, details and reviews</li>
+      <li>Share assets / libraries / Java runtimes across launchers by relocating them once</li>
+    </ul>
+  </description>
+  <releases>
+    <release version="@Launcher_VERSION_NAME@" date="@Launcher_BUILD_TIMESTAMP@"></release>
+  </releases>
+  <content_rating type="oars-1.1">
+    <content_attribute id="violence-fantasy">moderate</content_attribute>
+    <content_attribute id="social-chat">intense</content_attribute>
+  </content_rating>
+</component>

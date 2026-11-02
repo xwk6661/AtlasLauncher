@@ -20,7 +20,7 @@
  *
  */
 
-#include "PrismUpdater.h"
+#include "AtlasUpdater.h"
 #include "BuildConfig.h"
 #include "ui/dialogs/ProgressDialog.h"
 
@@ -42,7 +42,7 @@
 
 #include "DesktopServices.h"
 
-#include "updater/prismupdater/UpdaterDialogs.h"
+#include "updater/atlasupdater/UpdaterDialogs.h"
 
 #include "FileSystem.h"
 #include "Json.h"
@@ -64,7 +64,7 @@ void appDebugOutput(QtMsgType type, const QMessageLogContext& context, const QSt
     QString out = qFormatLogMessage(type, context, msg);
     out += QChar::LineFeed;
 
-    auto* app = static_cast<PrismUpdaterApp*>(QCoreApplication::instance());
+    auto* app = static_cast<AtlasUpdaterApp*>(QCoreApplication::instance());
     app->logFile->write(out.toUtf8());
     app->logFile->flush();
     if (app->logToConsole) {
@@ -74,7 +74,7 @@ void appDebugOutput(QtMsgType type, const QMessageLogContext& context, const QSt
 }
 }  // namespace
 
-PrismUpdaterApp::PrismUpdaterApp(int& argc, char** argv) : QApplication(argc, argv)
+AtlasUpdaterApp::AtlasUpdaterApp(int& argc, char** argv) : QApplication(argc, argv)
 {
     setOrganizationName(BuildConfig.LAUNCHER_NAME);
     setOrganizationDomain(BuildConfig.LAUNCHER_DOMAIN);
@@ -169,7 +169,7 @@ PrismUpdaterApp::PrismUpdaterApp(int& argc, char** argv) : QApplication(argc, ar
 #endif
     }
 
-    m_updateLogPath = FS::PathCombine(m_dataPath, "logs", "prism_launcher_update.log");
+    m_updateLogPath = FS::PathCombine(m_dataPath, "logs", "atlas_launcher_update.log");
 
     {  // setup logging
         FS::ensureFolderPathExists(FS::PathCombine(m_dataPath, "logs"));
@@ -348,7 +348,7 @@ PrismUpdaterApp::PrismUpdaterApp(int& argc, char** argv) : QApplication(argc, ar
 
     m_allowPreRelease = parser.isSet("pre-release");
 
-    auto markerFilePath = QDir(m_rootPath).absoluteFilePath(".prism_launcher_updater_unpack.marker");
+    auto markerFilePath = QDir(m_rootPath).absoluteFilePath(".atlas_launcher_updater_unpack.marker");
     auto markerFile = QFileInfo(markerFilePath);
     if (markerFile.exists()) {
         auto res = FS::read(markerFilePath);
@@ -364,32 +364,32 @@ PrismUpdaterApp::PrismUpdaterApp(int& argc, char** argv) : QApplication(argc, ar
         QMetaObject::invokeMethod(this, [this, targetDir]() { moveAndFinishUpdate(targetDir); }, Qt::QueuedConnection);
 
     } else {
-        QMetaObject::invokeMethod(this, &PrismUpdaterApp::loadReleaseList, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(this, &AtlasUpdaterApp::loadReleaseList, Qt::QueuedConnection);
     }
 }
 
-PrismUpdaterApp::~PrismUpdaterApp()
+AtlasUpdaterApp::~AtlasUpdaterApp()
 {
     qDebug() << "updater shutting down";
     // Shut down logger by setting the logger function to nothing
     qInstallMessageHandler(nullptr);
 }
 
-void PrismUpdaterApp::fail(const QString& reason)
+void AtlasUpdaterApp::fail(const QString& reason)
 {
     qCritical() << qPrintable(reason);
     m_status = Failed;
     exit(1);
 }
 
-void PrismUpdaterApp::abort(const QString& reason)
+void AtlasUpdaterApp::abort(const QString& reason)
 {
     qCritical() << qPrintable(reason);
     m_status = Aborted;
     exit(2);
 }
 
-void PrismUpdaterApp::showFatalErrorMessage(const QString& title, const QString& content)
+void AtlasUpdaterApp::showFatalErrorMessage(const QString& title, const QString& content)
 {
     m_status = Failed;
     auto* msgBox = new QMessageBox();
@@ -405,7 +405,7 @@ void PrismUpdaterApp::showFatalErrorMessage(const QString& title, const QString&
     exit(1);
 }
 
-void PrismUpdaterApp::run()
+void AtlasUpdaterApp::run()
 {
     qDebug() << "found" << m_releases.length() << "releases on github";
     qDebug() << "loading exe at" << m_prismExecutable;
@@ -499,7 +499,7 @@ void PrismUpdaterApp::run()
     exit(0);
 }
 
-void PrismUpdaterApp::moveAndFinishUpdate(const QDir& target)
+void AtlasUpdaterApp::moveAndFinishUpdate(const QDir& target)
 {
     logUpdate("Finishing update process");
 
@@ -586,14 +586,14 @@ void PrismUpdaterApp::moveAndFinishUpdate(const QDir& target)
 
     if (error) {
         logUpdate(tr("There were errors installing the update."));
-        auto failMarker = FS::PathCombine(m_dataPath, ".prism_launcher_update.fail");
+        auto failMarker = FS::PathCombine(m_dataPath, ".atlas_launcher_update.fail");
         FS::copy(m_updateLogPath, failMarker).overwrite(true)();
     } else {
         logUpdate(tr("Update succeed."));
-        auto successMarker = FS::PathCombine(m_dataPath, ".prism_launcher_update.success");
+        auto successMarker = FS::PathCombine(m_dataPath, ".atlas_launcher_update.success");
         FS::copy(m_updateLogPath, successMarker).overwrite(true)();
     }
-    auto updateLockPath = FS::PathCombine(m_dataPath, ".prism_launcher_update.lock");
+    auto updateLockPath = FS::PathCombine(m_dataPath, ".atlas_launcher_update.lock");
     FS::deletePath(updateLockPath);
 
     QProcess proc;
@@ -615,14 +615,14 @@ void PrismUpdaterApp::moveAndFinishUpdate(const QDir& target)
     exit(error ? 1 : 0);
 }
 
-void PrismUpdaterApp::printReleases()
+void AtlasUpdaterApp::printReleases()
 {
     for (const auto& release : m_releases) {
         std::cout << release.name.toStdString() << " Version: " << release.tag_name.toStdString() << '\n';
     }
 }
 
-QList<GitHubRelease> PrismUpdaterApp::nonDraftReleases()
+QList<GitHubRelease> AtlasUpdaterApp::nonDraftReleases()
 {
     QList<GitHubRelease> nonDraft;
     for (const auto& rls : m_releases) {
@@ -633,7 +633,7 @@ QList<GitHubRelease> PrismUpdaterApp::nonDraftReleases()
     return nonDraft;
 }
 
-QList<GitHubRelease> PrismUpdaterApp::newerReleases()
+QList<GitHubRelease> AtlasUpdaterApp::newerReleases()
 {
     QList<GitHubRelease> newer;
     for (const auto& rls : nonDraftReleases()) {
@@ -644,7 +644,7 @@ QList<GitHubRelease> PrismUpdaterApp::newerReleases()
     return newer;
 }
 
-GitHubRelease PrismUpdaterApp::selectRelease()
+GitHubRelease AtlasUpdaterApp::selectRelease()
 {
     QList<GitHubRelease> releases;
 
@@ -669,7 +669,7 @@ GitHubRelease PrismUpdaterApp::selectRelease()
     return release;
 }
 
-QList<GitHubReleaseAsset> PrismUpdaterApp::validReleaseArtifacts(const GitHubRelease& release) const
+QList<GitHubReleaseAsset> AtlasUpdaterApp::validReleaseArtifacts(const GitHubRelease& release) const
 {
     QList<GitHubReleaseAsset> valid;
 
@@ -733,7 +733,7 @@ QList<GitHubReleaseAsset> PrismUpdaterApp::validReleaseArtifacts(const GitHubRel
     return valid;
 }
 
-GitHubReleaseAsset PrismUpdaterApp::selectAsset(const QList<GitHubReleaseAsset>& assets)
+GitHubReleaseAsset AtlasUpdaterApp::selectAsset(const QList<GitHubReleaseAsset>& assets)
 {
     SelectReleaseAssetDialog dlg(assets);
     auto result = dlg.exec();
@@ -746,7 +746,7 @@ GitHubReleaseAsset PrismUpdaterApp::selectAsset(const QList<GitHubReleaseAsset>&
     return asset;
 }
 
-void PrismUpdaterApp::performUpdate(const GitHubRelease& release)
+void AtlasUpdaterApp::performUpdate(const GitHubRelease& release)
 {
     m_installRelease = release;
     qDebug() << "Updating to" << release.tag_name;
@@ -783,7 +783,7 @@ void PrismUpdaterApp::performUpdate(const GitHubRelease& release)
     performInstall(file);
 }
 
-QFileInfo PrismUpdaterApp::downloadAsset(const GitHubReleaseAsset& asset)
+QFileInfo AtlasUpdaterApp::downloadAsset(const GitHubReleaseAsset& asset)
 {
     auto tempDir = QDir::tempPath();
     auto fileUrl = QUrl(asset.browser_download_url);
@@ -803,7 +803,7 @@ QFileInfo PrismUpdaterApp::downloadAsset(const GitHubReleaseAsset& asset)
     return outFile;
 }
 
-bool PrismUpdaterApp::callAppImageUpdate()
+bool AtlasUpdaterApp::callAppImageUpdate()
 {
     auto appimagePath = QProcessEnvironment::systemEnvironment().value(QStringLiteral("APPIMAGE"));
     QProcess proc = QProcess();
@@ -817,12 +817,12 @@ bool PrismUpdaterApp::callAppImageUpdate()
     return result;
 }
 
-void PrismUpdaterApp::clearUpdateLog()
+void AtlasUpdaterApp::clearUpdateLog()
 {
     FS::deletePath(m_updateLogPath);
 }
 
-void PrismUpdaterApp::logUpdate(const QString& msg)
+void AtlasUpdaterApp::logUpdate(const QString& msg)
 {
     qDebug() << qUtf8Printable(msg);
     auto res = FS::append(m_updateLogPath, QStringLiteral("%1\n").arg(msg).toUtf8());
@@ -892,10 +892,10 @@ bool writeLockFile(const QString& path,
 
 }  // namespace
 
-void PrismUpdaterApp::performInstall(const QFileInfo& file)
+void AtlasUpdaterApp::performInstall(const QFileInfo& file)
 {
     qDebug() << "starting install";
-    auto updateLockPath = FS::PathCombine(m_dataPath, ".prism_launcher_update.lock");
+    auto updateLockPath = FS::PathCombine(m_dataPath, ".atlas_launcher_update.lock");
     QFileInfo updateLock(updateLockPath);
     if (updateLock.exists()) {
         auto [timestamp, from, to, target, dataPath] = readLockFile(updateLockPath);
@@ -938,7 +938,7 @@ void PrismUpdaterApp::performInstall(const QFileInfo& file)
     }
     clearUpdateLog();
 
-    auto changelogPath = FS::PathCombine(m_dataPath, ".prism_launcher_update.changelog");
+    auto changelogPath = FS::PathCombine(m_dataPath, ".atlas_launcher_update.changelog");
     if (auto res = FS::write(changelogPath, m_installRelease.body.toUtf8()); !res) {
         logUpdate(tr("Failed to write changelog: %1").arg(res.error()));
     }
@@ -963,13 +963,13 @@ void PrismUpdaterApp::performInstall(const QFileInfo& file)
     }
 }
 
-void PrismUpdaterApp::unpackAndInstall(const QFileInfo& archive)
+void AtlasUpdaterApp::unpackAndInstall(const QFileInfo& archive)
 {
     logUpdate(tr("Backing up install"));
     backupAppDir();
 
     if (auto loc = unpackArchive(archive)) {
-        auto markerFilePath = loc.value().absoluteFilePath(".prism_launcher_updater_unpack.marker");
+        auto markerFilePath = loc.value().absoluteFilePath(".atlas_launcher_updater_unpack.marker");
         if (auto res = FS::write(markerFilePath, m_rootPath.toUtf8()); !res) {
             qFatal("Failed to write unpack marker: %s", res.error().toUtf8().constData());
         }
@@ -1003,7 +1003,7 @@ void PrismUpdaterApp::unpackAndInstall(const QFileInfo& archive)
     exit(1);  // unpack failure
 }
 
-void PrismUpdaterApp::backupAppDir()
+void AtlasUpdaterApp::backupAppDir()
 {
     auto manifestPath = FS::PathCombine(m_rootPath, "manifest.txt");
     QFileInfo manifest(manifestPath);
@@ -1054,7 +1054,7 @@ void PrismUpdaterApp::backupAppDir()
         FS::PathCombine(appDir.absolutePath(),
                         QStringLiteral("backup_") + QString(m_prismVersion).replace(s_replaceRegex, QString("_")) + "-" + m_prismGitCommit);
     FS::ensureFolderPathExists(backupDir);
-    auto backupMarkerPath = FS::PathCombine(m_dataPath, ".prism_launcher_update_backup_path.txt");
+    auto backupMarkerPath = FS::PathCombine(m_dataPath, ".atlas_launcher_update_backup_path.txt");
     if (auto res = FS::write(backupMarkerPath, backupDir.toUtf8()); !res) {
         qFatal("Failed to write backup marker: %s", res.error().toUtf8().constData());
     }
@@ -1108,9 +1108,9 @@ void PrismUpdaterApp::backupAppDir()
     QCoreApplication::processEvents();
 }
 
-std::optional<QDir> PrismUpdaterApp::unpackArchive(const QFileInfo& archive)
+std::optional<QDir> AtlasUpdaterApp::unpackArchive(const QFileInfo& archive)
 {
-    auto tempExtractPath = FS::PathCombine(m_dataPath, "prism_launcher_update_release");
+    auto tempExtractPath = FS::PathCombine(m_dataPath, "atlas_launcher_update_release");
     FS::ensureFolderPathExists(tempExtractPath);
     auto tmpExtractDir = QDir(tempExtractPath);
 
@@ -1127,7 +1127,7 @@ std::optional<QDir> PrismUpdaterApp::unpackArchive(const QFileInfo& archive)
     return tmpExtractDir;
 }
 
-bool PrismUpdaterApp::loadPrismVersionFromExe(const QString& exePath)
+bool AtlasUpdaterApp::loadPrismVersionFromExe(const QString& exePath)
 {
     QProcess proc = QProcess();
     proc.setProcessChannelMode(QProcess::MergedChannels);
@@ -1182,7 +1182,7 @@ bool PrismUpdaterApp::loadPrismVersionFromExe(const QString& exePath)
     return true;
 }
 
-void PrismUpdaterApp::loadReleaseList()
+void AtlasUpdaterApp::loadReleaseList()
 {
     auto githubRepo = m_prismRepoUrl;
     if (githubRepo.host() != "github.com") {
@@ -1201,7 +1201,7 @@ void PrismUpdaterApp::loadReleaseList()
     downloadReleasePage(apiUrl, 1);
 }
 
-void PrismUpdaterApp::downloadReleasePage(const QString& apiUrl, int page)
+void AtlasUpdaterApp::downloadReleasePage(const QString& apiUrl, int page)
 {
     int perPage = 30;
     auto pageUrl = QString("%1?per_page=%2&page=%3").arg(apiUrl).arg(QString::number(perPage)).arg(QString::number(page));
@@ -1229,7 +1229,7 @@ void PrismUpdaterApp::downloadReleasePage(const QString& apiUrl, int page)
             run();
         }
     });
-    connect(download.get(), &Net::Request::failed, this, &PrismUpdaterApp::downloadError);
+    connect(download.get(), &Net::Request::failed, this, &AtlasUpdaterApp::downloadError);
 
     m_currentTask.reset(download);
     connect(download.get(), &Net::Request::finished, this,
@@ -1240,7 +1240,7 @@ void PrismUpdaterApp::downloadReleasePage(const QString& apiUrl, int page)
     QMetaObject::invokeMethod(download.get(), &Task::start, Qt::QueuedConnection);
 }
 
-Result<int> PrismUpdaterApp::parseReleasePage(const QByteArray* response)
+Result<int> AtlasUpdaterApp::parseReleasePage(const QByteArray* response)
 {
     if (response->isEmpty()) {  // empty page
         return 0;
@@ -1282,7 +1282,7 @@ Result<int> PrismUpdaterApp::parseReleasePage(const QByteArray* response)
     return numReleases;
 }
 
-GitHubRelease PrismUpdaterApp::getLatestRelease()
+GitHubRelease AtlasUpdaterApp::getLatestRelease()
 {
     GitHubRelease latest;
     for (const auto& release : m_releases) {
@@ -1299,13 +1299,13 @@ GitHubRelease PrismUpdaterApp::getLatestRelease()
     return latest;
 }
 
-bool PrismUpdaterApp::needUpdate(const GitHubRelease& release) const
+bool AtlasUpdaterApp::needUpdate(const GitHubRelease& release) const
 {
     auto currentVer = Version(QString("%1.%2.%3").arg(m_prismVersionMajor).arg(m_prismVersionMinor).arg(m_prismVersionPatch));
     return currentVer < release.version;
 }
 
-void PrismUpdaterApp::downloadError(const QString& reason)
+void AtlasUpdaterApp::downloadError(const QString& reason)
 {
     fail(QString("Network request Failed: %1 with reason %2").arg(m_currentUrl).arg(reason));
 }

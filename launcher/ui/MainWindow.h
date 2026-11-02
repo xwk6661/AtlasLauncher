@@ -239,7 +239,7 @@ class MainWindow : public QMainWindow {
     void runModalTask(Task* task);
     void instanceFromInstanceTask(InstanceTask* task);
 
-    // ── 地图启动器入口（docs/map-launcher）──────────────────────────
+    // ── 地图启动器入口（docs/atlas）──────────────────────────
     void openMapGallery();
     void chooseMapArchive();
     void importMapArchive(const QString& archivePath);

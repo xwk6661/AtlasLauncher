@@ -250,7 +250,7 @@ MapHallPage::MapHallPage(NewInstanceDialog* dialog, QWidget* parent) : QWidget(p
     buildUi();
 
     m_api = new HallAPI(this);
-    // 设置项里可以换成等价反代（见 docs/map-launcher 02 §3.6）
+    // 设置项里可以换成等价反代（见 docs/atlas 02 §3.6）
     m_api->setEndpoint(APPLICATION->settings()->get("MapHallEndpoint").toString());
 
     connect(m_api, &HallAPI::searchDone, this, &MapHallPage::onSearchDone);
@@ -1029,7 +1029,7 @@ void MapHallPage::onFailed(HallError kind, const QString& humanReason, const QSt
         text += QStringLiteral("\n（技术细节：%1）").arg(techDetail);
     if (kind == HallError::Dns || kind == HallError::Tls || kind == HallError::Timeout ||
         kind == HallError::Blocked) {
-        // 这个接口在部分网络下会被直接重置（docs/map-launcher R2）。
+        // 这个接口在部分网络下会被直接重置（docs/atlas R2）。
         // 大厅只是"发现地图"的入口，必须给一条不依赖它的路。
         text += tr("\n\n可以：① 在「设置 → 网络」里配一个可用代理后点「搜索」重试；"
                    "② 点「打开下载页」到站点上挑，下载完用「选择已下载的文件…」导入 —— 这条路完全离线可用。");

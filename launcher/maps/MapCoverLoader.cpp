@@ -388,7 +388,7 @@ QString MapCoverLoader::generatePage(const QStringList& urls) const
     json.replace(QLatin1String("</"), QLatin1String("<\\/"));
 
     return QStringLiteral(R"(<!doctype html>
-<html><head><meta charset="utf-8"><title>PrismLauncher covers</title></head>
+<html><head><meta charset="utf-8"><title>Atlas covers</title></head>
 <body>
 <pre id="covers">pending</pre>
 <script>
@@ -450,7 +450,7 @@ void MapCoverLoader::startBrowser()
     }
 
     static std::atomic<int> counter{ 0 };
-    m_browserProfile = QDir::tempPath() + QStringLiteral("/prism-covers-%1-%2")
+    m_browserProfile = QDir::tempPath() + QStringLiteral("/atlas-covers-%1-%2")
                                                   .arg(QCoreApplication::applicationPid())
                                                   .arg(++counter);
     QDir().mkpath(m_browserProfile);

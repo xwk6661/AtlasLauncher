@@ -1,8 +1,8 @@
-# 地图启动器 · 文档索引
+# Atlas · 文档索引
 
-把 [`Minecraft-AIO`](E:/llmUsage/Minecraft-AIO)（mcml v0.33.0，Electron + TypeScript 写的地图启动器）
-的「以地图为中心」搬到 [`PrismLauncher`](E:/llmUsage/PrismLauncher)（12.0.0-dev，C++/Qt 6.8）上：
-**点地图卡片直接进图，版本由程序推断**。
+**Atlas** 是一个以地图为中心的 Minecraft 启动器（12.0.0-dev，C++/Qt 6.8，基于 Prism Launcher）：
+把 [`Minecraft-AIO`](E:/llmUsage/Minecraft-AIO)（mcml v0.33.0，Electron + TypeScript）的
+「以地图为中心」搬到了原生 Qt 上 —— **点地图卡片直接进图，版本由程序推断**。
 
 > **状态（2026-11-02 21:00）**：构建通过 · 测试 `13 passed / 0 failed / 2 skipped` ·
 > M0 完成，M1–M3 代码落地、**等真机验收** · 分支 `feature/map-launcher`（最新 `6dd674c89`）
@@ -83,16 +83,17 @@
 
 ```powershell
 # 构建（Debug）
-& E:\llmUsage\PrismLauncher\build\run-configure.ps1 -Action configure
-& E:\llmUsage\PrismLauncher\build\run-configure.ps1 -Action build-debug
+$repo = "E:\llmUsage\Atlas"
+& "$repo\build\run-configure.ps1" -Action configure
+& "$repo\build\run-configure.ps1" -Action build-debug
 
 # 运行（已配好 Qt / vcpkg 的 DLL 路径）
-build\run-prism-debug.cmd
+build\run-atlas-debug.cmd
 
 # 测试
-$env:PATH = "E:\Program File\Qt\6.8.3\msvc2022_64\bin;E:\llmUsage\PrismLauncher\build\win-local\vcpkg_installed\x64-windows\bin;" + $env:PATH
+$env:PATH = "E:\Program File\Qt\6.8.3\msvc2022_64\bin;$repo\build\win-local\vcpkg_installed\x64-windows\bin;" + $env:PATH
 $env:PRISM_MAP_FIXTURES = "E:\llmUsage\Minecraft-AIO\launcher\fixtures"
-cd build\win-local\Debug; .\LauncherTests.exe MapArchiveScan_test
+cd "$repo\build\win-local\Debug"; .\LauncherTests.exe MapArchiveScan_test
 ```
 
 细节、四个环境坑、沙箱下的临时配方 → [`03-环境与构建.md`](03-环境与构建.md)。

@@ -27,7 +27,7 @@
 QString stripVariableEntries(QString name, QString target, QString remove);
 QProcessEnvironment CleanEnviroment();
 QStringList getMinecraftJavaBundle();
-QStringList getPrismJavaBundle();
+QStringList getAtlasJavaBundle();
 
 class JavaUtils : public QObject {
     Q_OBJECT

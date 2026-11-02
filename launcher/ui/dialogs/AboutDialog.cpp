@@ -114,8 +114,13 @@ AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent), ui(new Ui::AboutDia
     else
         ui->channelLabel->setVisible(false);
 
-    QString urlText("<html><head/><body><p><a href=\"%1\">%1</a></p></body></html>");
-    ui->urlLabel->setText(urlText.arg(BuildConfig.LAUNCHER_GIT));
+    // 分支没有固定仓库地址时不要显示一个空链接
+    if (BuildConfig.LAUNCHER_GIT.isEmpty()) {
+        ui->urlLabel->setVisible(false);
+    } else {
+        QString urlText("<html><head/><body><p><a href=\"%1\">%1</a></p></body></html>");
+        ui->urlLabel->setText(urlText.arg(BuildConfig.LAUNCHER_GIT));
+    }
 
     ui->copyLabel->setText(BuildConfig.LAUNCHER_COPYRIGHT);
 

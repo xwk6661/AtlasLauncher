@@ -20,7 +20,7 @@
  *
  */
 
-#include "PrismExternalUpdater.h"
+#include "AtlasExternalUpdater.h"
 
 #include <QCoreApplication>
 #include <QDir>
@@ -38,7 +38,7 @@
 
 #include "ui/dialogs/UpdateAvailableDialog.h"
 
-class PrismExternalUpdater::Private {
+class AtlasExternalUpdater::Private {
    public:
     QDir appDir;
     QDir dataDir;
@@ -52,8 +52,8 @@ class PrismExternalUpdater::Private {
     QWidget* parent{};
 };
 
-PrismExternalUpdater::PrismExternalUpdater(QWidget* parent, const QString& appDir, const QString& dataDir)
-    : priv(new PrismExternalUpdater::Private())
+AtlasExternalUpdater::AtlasExternalUpdater(QWidget* parent, const QString& appDir, const QString& dataDir)
+    : priv(new AtlasExternalUpdater::Private())
 {
     priv->appDir = QDir(appDir);
     priv->dataDir = QDir(dataDir);
@@ -78,7 +78,7 @@ PrismExternalUpdater::PrismExternalUpdater(QWidget* parent, const QString& appDi
     }
 }
 
-PrismExternalUpdater::~PrismExternalUpdater()
+AtlasExternalUpdater::~AtlasExternalUpdater()
 {
     if (priv->updateTimer.isActive()) {
         priv->updateTimer.stop();
@@ -88,12 +88,12 @@ PrismExternalUpdater::~PrismExternalUpdater()
     delete priv;
 }
 
-void PrismExternalUpdater::checkForUpdates()
+void AtlasExternalUpdater::checkForUpdates()
 {
     checkForUpdates(true);
 }
 
-void PrismExternalUpdater::checkForUpdates(bool triggeredByUser) const
+void AtlasExternalUpdater::checkForUpdates(bool triggeredByUser) const
 {
     QProgressDialog progress(tr("Checking for updates..."), "", 0, 0, priv->parent);
     progress.setMinimumDuration(0); // Appear immediately without waiting
@@ -227,22 +227,22 @@ void PrismExternalUpdater::checkForUpdates(bool triggeredByUser) const
     resetAutoCheckTimer();
 }
 
-bool PrismExternalUpdater::getAutomaticallyChecksForUpdates()
+bool AtlasExternalUpdater::getAutomaticallyChecksForUpdates()
 {
     return priv->autoCheck;
 }
 
-double PrismExternalUpdater::getUpdateCheckInterval()
+double AtlasExternalUpdater::getUpdateCheckInterval()
 {
     return priv->updateInterval;
 }
 
-bool PrismExternalUpdater::getBetaAllowed()
+bool AtlasExternalUpdater::getBetaAllowed()
 {
     return priv->allowBeta;
 }
 
-void PrismExternalUpdater::setAutomaticallyChecksForUpdates(bool check)
+void AtlasExternalUpdater::setAutomaticallyChecksForUpdates(bool check)
 {
     priv->autoCheck = check;
     priv->settings->setValue("auto_check", check);
@@ -250,7 +250,7 @@ void PrismExternalUpdater::setAutomaticallyChecksForUpdates(bool check)
     resetAutoCheckTimer();
 }
 
-void PrismExternalUpdater::setUpdateCheckInterval(double seconds)
+void AtlasExternalUpdater::setUpdateCheckInterval(double seconds)
 {
     priv->updateInterval = seconds;
     priv->settings->setValue("update_interval", seconds);
@@ -258,14 +258,14 @@ void PrismExternalUpdater::setUpdateCheckInterval(double seconds)
     resetAutoCheckTimer();
 }
 
-void PrismExternalUpdater::setBetaAllowed(bool allowed)
+void AtlasExternalUpdater::setBetaAllowed(bool allowed)
 {
     priv->allowBeta = allowed;
     priv->settings->setValue("auto_beta", allowed);
     priv->settings->sync();
 }
 
-void PrismExternalUpdater::resetAutoCheckTimer() const
+void AtlasExternalUpdater::resetAutoCheckTimer() const
 {
     if (priv->autoCheck && priv->updateInterval > 0) {
         auto now = QDateTime::currentDateTime();
@@ -289,23 +289,23 @@ void PrismExternalUpdater::resetAutoCheckTimer() const
     }
 }
 
-void PrismExternalUpdater::connectTimer()
+void AtlasExternalUpdater::connectTimer()
 {
-    connect(&priv->updateTimer, &QTimer::timeout, this, &PrismExternalUpdater::autoCheckTimerFired);
+    connect(&priv->updateTimer, &QTimer::timeout, this, &AtlasExternalUpdater::autoCheckTimerFired);
 }
 
-void PrismExternalUpdater::disconnectTimer()
+void AtlasExternalUpdater::disconnectTimer()
 {
-    disconnect(&priv->updateTimer, &QTimer::timeout, this, &PrismExternalUpdater::autoCheckTimerFired);
+    disconnect(&priv->updateTimer, &QTimer::timeout, this, &AtlasExternalUpdater::autoCheckTimerFired);
 }
 
-void PrismExternalUpdater::autoCheckTimerFired() const
+void AtlasExternalUpdater::autoCheckTimerFired() const
 {
     qDebug() << "Auto update Timer fired";
     checkForUpdates(false);
 }
 
-void PrismExternalUpdater::offerUpdate(const QString& versionName,
+void AtlasExternalUpdater::offerUpdate(const QString& versionName,
                                        const QString& versionTag,
                                        const QString& releaseNotes,
                                        const bool triggeredByUser) const
@@ -343,7 +343,7 @@ void PrismExternalUpdater::offerUpdate(const QString& versionName,
     priv->settings->sync();
 }
 
-void PrismExternalUpdater::performUpdate(const QString& versionTag) const
+void AtlasExternalUpdater::performUpdate(const QString& versionTag) const
 {
     QProcess proc;
     auto exeName = QStringLiteral("%1_updater").arg(BuildConfig.LAUNCHER_APP_BINARY_NAME);

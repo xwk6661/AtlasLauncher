@@ -1,7 +1,10 @@
-# Prism Launcher Program Info
+# Atlas Program Info
 
-This is Prism Launcher's program info which contains information about:
+Branding and packaging metadata for Atlas (a map-first fork of Prism Launcher):
 
-- Application name and logo (and branding in general)
-- Various URLs and API endpoints
-- Desktop file
+- application name, app id (`org.atlas.Atlas`) and logo files
+- desktop file / AppStream metadata / Windows resources / man page
+- URLs and API endpoints inherited from upstream (meta, translations, login callback)
+
+Icons are still the upstream artwork — replace `org.atlas.Atlas*.svg` (and regenerate
+`atlas.ico` / `atlas.icns` with `genicons.sh`) when a dedicated logo exists.

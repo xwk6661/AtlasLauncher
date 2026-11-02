@@ -68,7 +68,7 @@ struct MapStats {
 };
 
 /**
- * `map.json` —— 地图特有元数据的唯一读写点（设计见 docs/map-launcher/02 §2.2）。
+ * `map.json` —— 地图特有元数据的唯一读写点（设计见 docs/atlas/02 §2.2）。
  *
  * 为什么单独一个文件而不是塞进 instance.cfg：
  *   · INI 表达不了数组与证据链；

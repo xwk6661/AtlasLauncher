@@ -40,17 +40,17 @@
 #include "QObjectPtr.h"
 #include "net/Request.h"
 
-#define PRISM_EXTERNAL_EXE
+#define ATLAS_EXTERNAL_EXE
 #include "FileSystem.h"
 
 #include "GitHubRelease.h"
 
-class PrismUpdaterApp : public QApplication {
+class AtlasUpdaterApp : public QApplication {
     Q_OBJECT
    public:
     enum Status : std::uint8_t { Starting, Failed, Succeeded, Initialized, Aborted };
-    PrismUpdaterApp(int& argc, char** argv);
-    ~PrismUpdaterApp() override;
+    AtlasUpdaterApp(int& argc, char** argv);
+    ~AtlasUpdaterApp() override;
     void loadReleaseList();
     void run();
     Status status() const { return m_status; }

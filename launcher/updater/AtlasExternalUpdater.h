@@ -28,12 +28,12 @@
  * An implementation for the updater on Windows and linux that uses out external updater.
  */
 
-class PrismExternalUpdater : public ExternalUpdater {
+class AtlasExternalUpdater : public ExternalUpdater {
     Q_OBJECT
 
    public:
-    PrismExternalUpdater(QWidget* parent, const QString& appDir, const QString& dataDir);
-    ~PrismExternalUpdater() override;
+    AtlasExternalUpdater(QWidget* parent, const QString& appDir, const QString& dataDir);
+    ~AtlasExternalUpdater() override;
 
     /*!
      * Check for updates manually, showing the user a progress bar and an alert if no updates are found.

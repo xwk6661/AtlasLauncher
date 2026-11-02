@@ -429,7 +429,7 @@ void WorldListPage::worldChanged()
     bool enable = index.isValid();
 
     // 地图实例的存档是导入时按 map.json 解出来的，删掉/改名会直接破坏这张图
-    // （docs/map-launcher 风险登记册 R8）。这里只读：要重装请走实例的「地图」页。
+    // （docs/atlas 风险登记册 R8）。这里只读：要重装请走实例的「地图」页。
     const bool isMapInstance =
         m_inst != nullptr && QFile::exists(FS::PathCombine(m_inst->instanceRoot(), maps::MapMeta::fileName()));
     if (isMapInstance)

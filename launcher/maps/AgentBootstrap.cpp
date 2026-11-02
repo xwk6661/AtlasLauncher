@@ -214,8 +214,8 @@ AgentBootstrap::ArgsResult AgentBootstrap::buildAgentArgs(const AgentSymbolTable
     parts << QStringLiteral("saveDesc=%1").arg(save.descriptor);
     parts << QStringLiteral("enterDelay=%1").arg(std::clamp(options.enterDelay, 0, 60));
     parts << QStringLiteral("safeExit=1");
-    // 与 AIO 的差别（docs/map-launcher 决策表）：让 JVM 在确认落盘后自己退出。
-    // Prism 侧只有「进程退出」概念，没有「落盘完成」，宿主 kill 的时机只能靠猜。
+    // 与 AIO 的差别（docs/atlas 决策表）：让 JVM 在确认落盘后自己退出。
+    // 启动器侧只有「进程退出」概念，没有「落盘完成」，宿主 kill 的时机只能靠猜。
     parts << QStringLiteral("haltOnSafe=%1").arg(options.closeOnQuit ? 1 : 0);
     // 关掉「自动进图」时仍然注入（落盘判定要用），只是不替玩家进存档
     if (!options.autoEnter)
@@ -263,7 +263,7 @@ Result<> AgentBootstrap::injectIntoJvmArgs(MinecraftInstance* instance, const QS
     const QString jar = QDir::toNativeSeparators(jarTargetPath());
 
     // JvmArgs 会被 Commandline::splitArgs 按空格切成 argv，所以整条参数（含日志路径里的空格）
-    // 必须当成一个 argv 元素交给 JVM —— 用 Prism 自己的引号工具，反斜杠才会被正确还原。
+    // 必须当成一个 argv 元素交给 JVM —— 用启动器自带的引号工具，反斜杠才会被正确还原。
     const QString agentArg = QStringLiteral("-javaagent:%1=%2").arg(jar, agentArgs);
     const QString quoted = Commandline::quoteForSplitCommand(agentArg);
 

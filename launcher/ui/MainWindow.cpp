@@ -222,7 +222,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
         // ── 地图卡片：插在实例头像与启动按钮之间。
         // 选中的是地图实例（或至少有一个人存档的实例）时才显示，其余情况整块隐藏，
-        // 原生操作栏完全不受影响（docs/map-launcher 的「融入而非另起炉灶」形态）。
+        // 原生操作栏完全不受影响（docs/atlas 的「融入而非另起炉灶」形态）。
         m_mapBar = new maps::MapInstanceBar(this);
         // 启动 20 秒后（等界面、实例列表都稳下来）再看要不要更新大厅数据
         QTimer::singleShot(20000, this, &MainWindow::maybeUpdateHallLibrary);
@@ -1126,10 +1126,10 @@ void MainWindow::processURLs(QList<QUrl> urls)
                     receivedData.insert(it->first, it->second);
                 emit APPLICATION->oauthReplyRecieved(receivedData);
                 continue;
-            } else if ((url.scheme() == "prismlauncher" || url.scheme() == BuildConfig.LAUNCHER_APP_BINARY_NAME) && isExternalURLImport) {
+            } else if ((url.scheme() == "atlas" || url.scheme() == BuildConfig.LAUNCHER_APP_BINARY_NAME) && isExternalURLImport) {
                 // PrismLauncher URL protocol modpack import
                 // works for any prism fork
-                // preferred import format: prismlauncher://import?url=ENCODED
+                // preferred import format: atlas://import?url=ENCODED
                 const auto host = url.host().toLower();
                 const auto path = url.path();
 
@@ -1143,7 +1143,7 @@ void MainWindow::processURLs(QList<QUrl> urls)
                     }
                 }
 
-                // alternative import format: prismlauncher://import/ENCODED
+                // alternative import format: atlas://import/ENCODED
                 if (encodedTarget.isEmpty()) {
                     QString p = path;
 
@@ -1998,7 +1998,7 @@ void MainWindow::handleInstanceRename(const QString& before, const QString& afte
     }
 }
 
-// ── 地图启动器（docs/map-launcher）────────────────────────────────────
+// ── 地图启动器（docs/atlas）────────────────────────────────────
 
 void MainWindow::chooseMapArchive()
 {

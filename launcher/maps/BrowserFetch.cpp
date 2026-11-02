@@ -149,7 +149,7 @@ void BrowserFetch::attemptOnce(int remaining)
      * 「浏览器没有返回内容（退出码 21）」。改成一次一个目录就再没出现过。
      */
     static std::atomic<int> counter{ 0 };
-    const QString profileDir = QDir::tempPath() + QStringLiteral("/prism-hall-browser-%1-%2")
+    const QString profileDir = QDir::tempPath() + QStringLiteral("/atlas-hall-browser-%1-%2")
                                                         .arg(QCoreApplication::applicationPid())
                                                         .arg(++counter);
     QDir().mkpath(profileDir);
@@ -174,7 +174,7 @@ void BrowserFetch::attemptOnce(int remaining)
     urlLiteral.replace(QLatin1String("</"), QLatin1String("<\\/"));
 
     QString page = QStringLiteral(R"(<!doctype html>
-<html><head><meta charset="utf-8"><title>PrismLauncher fetch</title></head>
+<html><head><meta charset="utf-8"><title>Atlas fetch</title></head>
 <body><pre id="bf">pending</pre>
 <script>
 const URL = %1;
