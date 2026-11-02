@@ -316,6 +316,9 @@ void MapHallPage::openedImpl()
     m_api->reloadLibrary();
     updateLibraryHint();
 
+    // 「地图设置 → 大厅通道」改过之后，封面也跟着换通道（否则要重启才生效）
+    MapCoverLoader::instance()->setTransportMode(APPLICATION->settings()->get("MapHallTransport").toString());
+
     /**
      * 本地库**不完整**也要自动补：旧版同步的详情按 maps 表默认顺序取前 1000，
      * 和列表的 slug 集合对不上，缺详情的图点开就只能干等网络（用户实测"一直加载不出来"）。
