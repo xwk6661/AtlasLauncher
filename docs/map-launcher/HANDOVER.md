@@ -18,19 +18,22 @@
   2. 通读 Prism 源码，盘点可复用能力与缺口，得出**「可行，且比 AIO 从零做省一半工作量」**的结论；
   3. 写出 4 份文档（本目录）；
   4. 搭好本地构建环境，并**把构建彻底跑通**（坑与配方见 §3.2）；
-  5. **M0 完成**：`launcher/maps/` 下 19 个模块（6800+ 行）+ dataversion / Agent 资源，
+  5. **M0 完成**：`launcher/maps/` 下 **28 个模块 / 59 个文件（约 1.37 万行）** + dataversion / Agent 资源，
      用 AIO 的 23 个夹具做回归，版本 / 置信度 / 世界数 / 材质包数**逐项一致**；
   6. **M1/M2/M3 全部落地**：导入全流程、Agent 直连（jar + 6 版本符号表已入资源）、
      大厅（搜索/筛选/分页/封面/评论）、实例操作栏地图信息区、重装地图、地图设置。
   7. **第二轮自查（2026-11-01 14:30）**：8 处问题已修，见 §5.2。最关键的是启动准备点
      从「主窗口按钮」收敛到 `Application::launch` —— 否则双击实例 / 实例窗口启动时
      老版本地图不会注入 Agent，会静默停在主菜单。
+  8. **2026-11-02 第三轮**：大厅封面终于能出图（`MapCoverLoader`，直连失败切无头浏览器批量取图 +
+     磁盘缓存，见 §5.3）；「更新数据」不再随机失败/误报崩溃（页面内 XHR 重试，见 §5.4）；
+     同步失败保留旧库并明说「本地数据未受影响」；评论改成**带边框的卡片**、评论少时不再被拉成一片空白（§5.5）。
 - **UI 形态（重要）**：曾做过「地图 / 实例」双模式（中央 QStackedWidget），**已按用户要求移除**。
   现在的形态是：主界面 = 原生实例列表；选中地图实例时，**右侧原生实例操作栏**里出现地图信息区
   （`MapInstanceBar`）；「添加实例」按钮带下拉菜单（自定义 / Modrinth / CurseForge / 本地导入 / CTM 大厅）。
   详见 §5 的「入口」。
-- **已产出**：`build/win-local/Debug/prismlauncher.exe`（30 MB）与 `LauncherTests.exe`，均链接成功；
-  测试 **13 passed, 0 failed**（含 23 夹具回归）。
+- **已产出**：`build/win-local/Debug/prismlauncher.exe`（32 MB）与 `LauncherTests.exe`，均链接成功；
+  测试 **13 passed, 0 failed, 2 skipped**（跳过的是需要真实网址的联网用例：封面通道、JSON 通道）。
 - **下一步**：**真机验收**（1.20+ 进图、≤1.19.4 Agent 进图 + 退出落盘）是唯一没被自动化覆盖的环节；
   其次是 RAR5 实测、更多版本符号表。详见 §5.1 / §6。
 
@@ -69,33 +72,40 @@ E:/llmUsage/Minecraft-AIO           ← 参考项目（只读，未改动）
 | `docs/map-launcher/01-可行性评估.md` | AIO 设计解析 / Prism 能力盘点 / 差距分析 / 三条路线取舍 |
 | `docs/map-launcher/02-架构与路线图.md` | 模块设计 / 数据模型 / 时序 / UI 结构 / 文件级改动清单 / M0–M3 / R1–R10 风险表 |
 | `docs/map-launcher/HANDOVER.md` | 本文件 |
-| `launcher/maps/` | **全部新代码**（19 个模块 / 38 个文件，6800+ 行，见 §5） |
+| `launcher/maps/` | **全部新代码**（28 个 .cpp / 31 个 .h，约 1.37 万行，见 §5） |
 | `launcher/resources/maps/` | `dataversion.json` + `maps.qrc` |
 | `launcher/resources/agents/` | `quickboot.jar` + 6 个版本符号表 + `agents.qrc` |
-| `tests/MapArchiveScan_test.cpp` | 13 项测试（含 23 夹具回归 + 退出判定 + notes.json 往返 + 旧「缺整合包」标记钳位） |
+| `tests/MapArchiveScan_test.cpp` | 13 项常规测试（含 23 夹具回归 + 退出判定 + notes.json 往返 + 旧「缺整合包」标记钳位）+ 2 项联网用例（默认 skip） |
 | `CMakeUserPresets.json` | 本地构建预设（gitignore，不污染仓库） |
 | `build/*.ps1` | 一键构建脚本（gitignore） |
 
-### 2.3 `git status`（当前）
+### 2.3 git 现状（2026-11-02 15:30）
 
-```
- M launcher/Application.cpp                 ← 6 个地图设置项
- M launcher/CMakeLists.txt                  ← MAPS_SOURCES + 两个 qrc
- M launcher/InstancePageProvider.h          ← 注册实例窗口「地图」页签
- M launcher/archive/ArchiveReader.{h,cpp}   ← File::size()（嗅探要统计体积）
- M launcher/archive/ArchiveWriter.cpp       ← 修 2 处上游编译错误（QString::arg(std::string)）
- M launcher/minecraft/MinecraftInstance.cpp ← processMinecraftArgs 启动时读 JoinWorldOnLaunch（此前没人读）
- M launcher/tasks/{SequentialTask,ConcurrentTask}.cpp ← 修 Debug 断言崩溃（见 §7 坑 12）
- M launcher/ui/MainWindow.{h,cpp}           ← 地图信息区接线 + 菜单 + 拖放分流 + 启动统一准备
- M launcher/ui/dialogs/NewInstanceDialog.*  ← 支持打开时定位到指定来源页
- M launcher/ui/pages/instance/WorldListPage.cpp ← 地图实例的世界列表只读（R8）
- M tests/CMakeLists.txt                     ← 注册测试
-?? docs/ / launcher/maps/ / launcher/resources/{maps,agents}/ / tests/MapArchiveScan_test.cpp
-```
+全部改动已提交到分支 **`feature/map-launcher`**，工作区干净：
 
-既有文件合计 **+379 / -18 行**（15 个文件）。新代码全部放新目录；既有文件只做小改动，
-`tasks/` 两处是**修上游 Debug 构建必崩的竞态**（Release 无感知），rebase 时值得保留。
-这是刻意的设计约束：减少与上游 rebase 的冲突面。
+| commit | 内容 |
+| --- | --- |
+| `e587413c0` | 地图启动器主体（99 文件，+16 765 / −43）：`docs/`、`launcher/maps/`、两个资源目录、测试、对既有文件的加法 |
+| `8d131f0ab` | 打开大厅时重读「大厅通道」设置 |
+| `8741b2357` | 浏览器通道改成页面内 XHR + 退避重试（见 §5.4） |
+
+对既有文件的改动仍然只做加法，逐项含义：
+
+| 文件 | 改什么 |
+| --- | --- |
+| `launcher/Application.cpp` | 6 个地图设置项 + `launch()` 里的统一准备点 |
+| `launcher/CMakeLists.txt` | `MAPS_SOURCES` + 两个 qrc |
+| `launcher/InstancePageProvider.h` | 注册实例窗口「信息 / 地图」页签，默认停在「设置」 |
+| `launcher/archive/ArchiveReader.{h,cpp}`、`ArchiveWriter.cpp` | `File::size()`；修 2 处上游编译错误 |
+| `launcher/minecraft/MinecraftInstance.cpp` | `processMinecraftArgs` 启动时读 `JoinWorldOnLaunch`（此前没人读） |
+| `launcher/tasks/{SequentialTask,ConcurrentTask}.cpp` | 修 Debug 断言崩溃（见 §7 坑 12） |
+| `launcher/ui/MainWindow.{h,cpp}` | 地图信息区接线 + 菜单 + 拖放分流 + 启动统一准备 + 后台更新大厅 |
+| `launcher/ui/dialogs/NewInstanceDialog.*` | 支持打开时定位到指定来源页；精简来源页 |
+| `launcher/ui/pages/instance/WorldListPage.cpp` | 地图实例的世界列表只读（R8） |
+| `tests/CMakeLists.txt` | 注册测试 |
+
+新代码全部放新目录；既有文件只做小改动，`tasks/` 两处是**修上游 Debug 构建必崩的竞态**
+（Release 无感知），rebase 时值得保留。这是刻意的设计约束：减少与上游 rebase 的冲突面。
 
 ---
 ## 3. 环境现状
@@ -266,6 +276,9 @@ cd E:\llmUsage\PrismLauncher\build\win-local\Debug
 | 7 | `map.json` 的 `archive.sha1` 没填 | 导入时不额外读一遍整个包（大包多花 10 秒不值）。字段留着，目前恒为空 |
 | 8 | Agent 参数落在 `JvmArgs` 上 | 注入的是实例的 `JvmArgs`，所以实例「设置 → Java 参数」里能看到一条很长的 `-javaagent:…`。功能正确、可被后启动覆盖，但不好看。彻底解决要把 Agent 参数改成启动时计算（`MinecraftInstance::extraArguments()` 追加一个专用设置项） |
 | 9 | UI 文案的中文写在 `tr()` 源串里 | 中文用户无感，但切到英文/其他语言仍显示中文。国际化要先把源串改英文 + 加 `.ts` 翻译，工作量大，暂不做 |
+| 10 | `ctmrepository.com` 的 50 张封面取不到 | Cloudflare 不认无头浏览器（没有正确 Referer / 走人机校验），这 50 张继续显示占位封面；874 张 supabase 的正常 |
+| 11 | 首次打开大厅要等约 12 秒才出图 | 一个无头进程一次取 8 张、20 行要 3 批；之后翻页/重开都是磁盘命中。想更快只能做"可见行预取 + 常驻浏览器（CDP）"，工程量大 |
+| 12 | 封面缓存没有上限也没有清理入口 | 现在按 URL 哈希落盘、永不淘汰（单张 ~20 KB，1000 张约 20 MB）。要加就在「地图设置」里加一个「清空封面缓存」 |
 
 ## 5.2 第二轮自查修掉的问题（2026-11-01 14:30）
 
@@ -399,6 +412,29 @@ cd E:\llmUsage\PrismLauncher\build\win-local\Debug
 
 > 构建环境的坑（vcpkg 被清空、`reg.exe` 被拦）见 §3.2 的 2026-11-02 补记。
 
+### 5.5 评论卡片：少评论时排版散架 + 卡片化（2026-11-02 晚）
+
+**现象**：某张图只有 1 条评论时，用户名在顶部、正文掉到面板底部，中间一大片空白；
+评论多的时候也只有留白分隔，一眼看不出哪条是谁的（用户截图）。
+
+**根因**：`clearReviews()` 用 `takeAt(0)` 清空布局，把末尾那条 `addStretch(1)` 一起删了，
+**但没有补回去** —— 之后插入的卡片就独占整个滚动区，卡片内部的 `QVBoxLayout` 再把多出来的
+高度分给标签，于是"头像在顶、正文到底"。卡片本身也只是一块裸 `QWidget`，没有任何边界。
+
+**修复**：
+
+1. `clearReviews()` 清完立即 `addStretch(1)`，恢复"stretch 永远在最后一条"的约定；
+2. 卡片从 `QWidget` 换成 **`QFrame`**：`rgba(127,127,127,16)` 底 + 1px 边框 + 6px 圆角，
+   亮/暗主题都用同一套半透明灰（不写死色号）；
+3. 卡片纵向 size policy 设成 **`Maximum`**，评论少时不允许被拉高；
+4. 头部加 **首字母圆形头像**（按用户名哈希取色，深色主题抬亮度、浅色主题压亮度）；
+5. 正文折叠阈值 320 → 480 字符，超长仍悬停看全文；
+6. 顺带补上「同步失败但本地库仍在」的保护：`onFailed` 里若正在同步且 `hasLibrary()`，
+   只更新状态栏（写清"本地库仍是 MM-dd HH:mm 的数据（N 张），搜索/详情/评论/封面照常可用"），
+   **不把列表换成失败面板**。没有本地库（首次使用）时才照旧显示失败面板。
+7. 卡片抽成 **`maps/MapReviewCard.{h,cpp}`**，大厅详情与实例「信息 → 评论」共用一份；
+   时长格式化挪到 `MapTextUtils::formatPlaytime`（原来大厅里有个私有副本）。
+
 ## 6. 开发路线与进度
 
 | 里程碑 | 内容 | 状态 |
@@ -406,7 +442,7 @@ cd E:\llmUsage\PrismLauncher\build\win-local\Debug
 | **M0** | 归档嗅探 + 三级版本判定 + `dataversion.json` | ✅ **完成**：23 个夹具逐项一致（版本 / 置信度 / 世界数 / 材质包数） |
 | **M1** | 导入建实例 + 主界面融入 + 1.20+ 直连 | 🟡 **代码完成**：导入全流程、多世界选择、拖放智能分流、`JoinWorldOnLaunch` 全启动入口生效、操作栏地图信息区；差真机验收 |
 | **M2** | Agent 直连（≤1.19.4）+ 安全退出判定 | 🟡 **代码 + 资产齐了，单测已验**：`quickboot.jar`（已 shade ASM）+ 6 个版本符号表进资源，`test_agentAssets` 断言 6 个版本都能拼出合法参数；差真机验收 |
-| **M3** | 大厅 + 打磨 | 🟡 搜索/排序/系列与难度时长筛选/详情 11 项/评论分页与用户名/**封面缩略图缓存**/**列表分页**/失败空态可用 |
+| **M3** | 大厅 + 打磨 | 🟡 搜索/排序/系列与难度时长筛选/详情 11 项/评论分页与用户名/**封面真图 + 磁盘缓存**/**列表分页**/失败空态/评论卡片 可用；三档瓦片尺寸与快捷键未做 |
 
 ### 下一步（按优先级）
 
@@ -546,6 +582,7 @@ cd /e/llmUsage/PrismLauncher && git status --short && git submodule status
 | **启动准备挂在 `Application::launch`，不挂在主窗口**（2026-11-01 修正） | 启动入口有五个，漏一个就会让老版本静默停在主菜单。主窗口只负责提示与传「选中的世界」 |
 | **下载一律交系统浏览器** | AIO §40 的教训：Cloudflare 只认可见浏览器，七种"藏窗口"方案全失败 |
 | **Agent 用 `haltOnSafe=1`（JVM 自己退）** | Prism 侧没有"落盘完成"概念，宿主 kill 时机靠猜 |
+| **封了 SNI 的站一律借本机浏览器，不在 C++ 里实现 ECH/QUIC**（2026-11-02） | Qt 在 Windows 走 Schannel，没有 ECH；自己实现等于重写 TLS 栈。借 Edge/Chrome 一条通道同时解决"取数据"和"取封面" |
 | **不复活"一个高版本核心通吃"** | 1.13/1.16~1.20/1.20.5 三次语义断裂，DFU 不翻译命令方块 |
 
 ---
@@ -563,6 +600,8 @@ cd /e/llmUsage/PrismLauncher && git status --short && git submodule status
    `test_agentAssets` 用真实资产断言 6 个版本都能拼出合法参数。
 7. **AIO 的 8 张真实地图**在 `E:/llmUsage/Minecraft-AIO/launcher/env/profiles/*.json`；
    M0 回归现在用的是 `launcher/fixtures/` 的 23 个夹具（更全，且带期望值）。
+8. **`ctmrepository.com` 的 50 张封面**仍然取不到（Cloudflare 不认这个无头浏览器）——
+   已确认不是代码问题；其余 874 张 supabase 封面已能正常出图并落盘缓存。
 
 ---
 

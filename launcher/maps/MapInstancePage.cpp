@@ -54,6 +54,7 @@
 #include "MapImportTask.h"
 #include "MapRepository.h"
 #include "MapTheme.h"
+#include "MapReviewCard.h"
 #include "StarRatingWidget.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "minecraft/MinecraftInstance.h"
@@ -368,36 +369,8 @@ void MapInstancePage::ensureHallApi()
                 m_reviewsShown += rows.size();
 
                 for (const auto& review : rows) {
-                    auto* card = new QWidget(m_reviewsPage);
-                    auto* layout = new QVBoxLayout(card);
-                    layout->setContentsMargins(0, 0, 0, 0);
-                    layout->setSpacing(2);
-
-                    QStringList head;
-                    head.append(review.userName.isEmpty() ? tr("匿名玩家") : review.userName.toHtmlEscaped());
-                    if (review.rating > 0) {
-                        const int full = std::clamp(review.rating, 0, 5);
-                        head.append(QString(full, QChar(0x2605)) + QString(5 - full, QChar(0x2606)));
-                    }
-                    if (review.playtimeMinutes > 0)
-                        head.append(review.playtimeMinutes >= 60
-                                        ? tr("%1 小时").arg(review.playtimeMinutes / 60.0, 0, 'f', 1)
-                                        : tr("%1 分钟").arg(review.playtimeMinutes));
-                    if (!review.playedDate.isEmpty())
-                        head.append(review.playedDate.left(10));
-
-                    auto* headLabel = new QLabel(head.join(QStringLiteral(" · ")), card);
-                    QFont headFont = headLabel->font();
-                    headFont.setBold(true);
-                    headLabel->setFont(headFont);
-                    layout->addWidget(headLabel);
-
-                    auto* body = new QLabel(review.text.trimmed().isEmpty() ? tr("（只评分，没写内容）")
-                                                                            : review.text, card);
-                    body->setWordWrap(true);
-                    body->setTextInteractionFlags(Qt::TextSelectableByMouse);
-                    layout->addWidget(body);
-
+                    // 与大厅详情共用同一张卡片，样式不会各走各的
+                    auto* card = makeReviewCard(m_reviewsPage, review);
                     m_reviewsLayout->insertWidget(m_reviewsLayout->count() - 1, card);
                 }
 

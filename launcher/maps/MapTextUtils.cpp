@@ -17,6 +17,7 @@
  */
 #include "MapTextUtils.h"
 
+#include <QObject>
 #include <QRegularExpression>
 #include <QSet>
 #include <QStringDecoder>
@@ -89,6 +90,21 @@ bool looksLikeText(const QByteArray& bytes)
             ++printable;
     }
     return static_cast<double>(printable) / n > 0.9;
+}
+
+QString formatPlaytime(int minutes)
+{
+    if (minutes <= 0)
+        return {};
+    if (minutes < 60)
+        return QObject::tr("%1 分钟").arg(minutes);
+    const double hours = minutes / 60.0;
+    if (hours >= 100.0)
+        return QObject::tr("%1 小时").arg(qRound(hours));
+    QString text = QString::number(hours, 'f', 1);
+    if (text.endsWith(QLatin1String(".0")))
+        text.chop(2);
+    return QObject::tr("%1 小时").arg(text);
 }
 
 }  // namespace maps::text

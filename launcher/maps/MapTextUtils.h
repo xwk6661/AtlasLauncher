@@ -47,4 +47,10 @@ QStringList extractVersionMentions(const QString& text);
 /// 粗略判断一段字节像不像文本（用于无扩展名的说明文件）
 bool looksLikeText(const QByteArray& bytes);
 
+/**
+ * 游玩时长的人话（站上是「365.2 分钟」这种数字）：≥1 小时换成小时，<60 分钟仍用分钟
+ * ——「1.3 小时」反而不如「78 分钟」直观。≤0 返回空串。
+ */
+QString formatPlaytime(int minutes);
+
 }  // namespace maps::text

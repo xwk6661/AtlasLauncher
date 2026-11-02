@@ -23,6 +23,7 @@
 #include <QDialog>
 #include <QFileDialog>
 #include <QFont>
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -58,6 +59,8 @@
 #include "minecraft/MinecraftInstance.h"
 #include "MapSettingsDialog.h"
 #include "MapTheme.h"
+#include "MapReviewCard.h"
+#include "MapTextUtils.h"
 #include "settings/SettingsObject.h"
 #include "ui/dialogs/CustomMessageBox.h"
 #include "ui/dialogs/NewInstanceDialog.h"
@@ -112,24 +115,14 @@ QPixmap makePlaceholderCover(const QString& title, int width, int height)
 
 
 /**
- * 时长：≥1 小时就换成小时。
+ * 时长：≥1 小时就换成小时（实现挪到 MapTextUtils，评论卡片也要用同一套）。
  *
  * 站上很多图是「365.2 分钟」这种数字 —— 玩家得自己除 60。60 分钟以下仍用分钟，
  * 因为「1.3 小时」反而不如「78 分钟」直观。
  */
 QString formatLength(int minutes)
 {
-    if (minutes <= 0)
-        return {};
-    if (minutes < 60)
-        return QObject::tr("%1 分钟").arg(minutes);
-    const double hours = minutes / 60.0;
-    if (hours >= 100.0)
-        return QObject::tr("%1 小时").arg(qRound(hours));
-    QString text = QString::number(hours, 'f', 1);
-    if (text.endsWith(QLatin1String(".0")))
-        text.chop(2);
-    return QObject::tr("%1 小时").arg(text);
+    return text::formatPlaytime(minutes);
 }
 
 
@@ -884,6 +877,10 @@ void MapHallPage::onFailed(HallError kind, const QString& humanReason, const QSt
     // 「没有匹配的地图」不是故障：列表留空 + 一句提示就够了，
     // 弹失败面板反而让人以为网络坏了（AIO 里这两种状态也是分开的）
     if (kind == HallError::Empty) {
+        if (m_syncing) {
+            m_syncing = false;
+            m_syncButton->setEnabled(true);
+        }
         m_items.clear();
         m_list->clear();
         m_loadMore->setVisible(false);
@@ -891,6 +888,34 @@ void MapHallPage::onFailed(HallError kind, const QString& humanReason, const QSt
             m_leftStack->setCurrentWidget(m_list);
         m_status->setText(humanReason);
         return;
+    }
+
+    /**
+     * **「更新数据」失败不能把已有的大厅弄没**（2026-11-02 用户反馈）。
+     *
+     * 本地库是全量快照：搜索、详情、评论、封面都从磁盘读，一个请求都不发。
+     * 更新只是"看看站上有没有新图"，失败了最坏也就是数据旧一点，绝不该
+     * 用一张失败面板把列表顶掉 —— 那会让人以为整个大厅挂了。
+     */
+    if (m_syncing && m_api->hasLibrary()) {
+        m_syncing = false;
+        m_syncButton->setEnabled(true);
+        if (m_leftStack != nullptr)
+            m_leftStack->setCurrentWidget(m_list);
+        updateLibraryHint();
+
+        const QDateTime at = m_api->libraryFetchedAt().toLocalTime();
+        m_status->setText(tr("更新没成功：%1\n本地库仍是 %2 的数据（%3 张地图），搜索、详情、评论、封面都照常可用；"
+                             "过一会儿再点一次「更新数据」就行。")
+                              .arg(humanReason,
+                                   at.isValid() ? at.toString(QStringLiteral("MM-dd HH:mm")) : tr("上次同步"),
+                                   QString::number(m_api->libraryItemCount())));
+        return;
+    }
+
+    if (m_syncing) {
+        m_syncing = false;
+        m_syncButton->setEnabled(true);
     }
 
     QString text = humanReason;
@@ -1213,6 +1238,11 @@ void MapHallPage::clearReviews()
                 widget->deleteLater();
             delete layoutItem;
         }
+        /**
+         * 清空时连末尾的 stretch 一起删掉了 —— 不补回去的话，评论只有一两条时
+         * 卡片会被拉满整个滚动区（头像在顶、正文掉到底部），2026-11-02 用户截图即此。
+         */
+        m_reviewLayout->addStretch(1);
     }
     if (m_tabs != nullptr)
         m_tabs->setTabText(m_reviewsTabIndex, tr("评论"));
@@ -1248,71 +1278,11 @@ void MapHallPage::requestReviews(int offset)
 
 QWidget* MapHallPage::buildReviewCard(const HallReview& review)
 {
-    auto* card = new QWidget(m_reviewBox);
-    auto* layout = new QVBoxLayout(card);
-    layout->setContentsMargins(0, 0, 0, 0);
-    layout->setSpacing(1);
-
-    // 首行：名字（粗体）+ 星级 + 时长 + 日期（次要色，右对齐）
-    auto* head = new QHBoxLayout();
-    head->setContentsMargins(0, 0, 0, 0);
-    head->setSpacing(6);
-
-    auto* name = new QLabel(card);
-    QFont nameFont = name->font();
-    nameFont.setBold(true);
-    name->setFont(nameFont);
+    QLabel* nameLabel = nullptr;
+    auto* card = makeReviewCard(m_reviewBox, review, &nameLabel);
     // 名字是异步补的：先用 uuid 认人，拿到 users 再改文字
-    if (!review.userName.isEmpty())
-        name->setText(review.userName);
-    else
-        // users 表的 username 大量为 null（站方数据如此），统一显示「匿名玩家」，不拿 uuid 占位
-        name->setText(tr("匿名玩家"));
-    head->addWidget(name);
-    if (!review.userUuid.isEmpty())
-        m_reviewNameLabels.insert(review.userUuid, name);
-
-    if (review.rating > 0) {
-        auto* stars = new QLabel(card);
-        // 评论的 rating 是**1~5 的整数**（不是列表里那种 0~5 的平均分），别再除 2
-        const int full = std::clamp(review.rating, 0, 5);
-        stars->setText(QString(full, QChar(0x2605)) + QString(5 - full, QChar(0x2606)));
-        stars->setStyleSheet(QStringLiteral("color: %1;").arg(ui::starColor().name()));
-        head->addWidget(stars);
-    }
-
-    QStringList trailing;
-    if (review.playtimeMinutes > 0)
-        trailing.append(formatLength(review.playtimeMinutes));
-    if (!review.playedDate.isEmpty())
-        trailing.append(review.playedDate.left(10));
-    if (!trailing.isEmpty()) {
-        auto* meta = new QLabel(trailing.join(QStringLiteral(" · ")), card);
-        meta->setEnabled(false);
-        head->addWidget(meta);
-    }
-    head->addStretch(1);
-    layout->addLayout(head);
-
-    QString text = review.text.trimmed();
-    if (text.isEmpty()) {
-        // 只打了分没写字：给一行占位，别留空白卡片
-        text = tr("（只评分，没写内容）");
-    }
-    // 超长评论折叠：侧栏宽度有限，全展开会把下面的按钮顶走
-    const int limit = 320;
-    const bool clipped = text.size() > limit;
-    auto* body = new QLabel(clipped ? text.left(limit) + QStringLiteral("…") : text, card);
-    body->setWordWrap(true);
-    body->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    if (clipped) {
-        body->setToolTip(text);
-        body->setCursor(Qt::WhatsThisCursor);
-    }
-    if (!body->text().isEmpty())
-        body->setEnabled(true);
-    layout->addWidget(body);
-
+    if (!review.userUuid.isEmpty() && nameLabel != nullptr)
+        m_reviewNameLabels.insert(review.userUuid, nameLabel);
     return card;
 }
 

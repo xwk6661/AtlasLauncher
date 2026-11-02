@@ -771,6 +771,8 @@ set(MAPS_SOURCES
     maps/HallCache.cpp
     maps/MapCoverLoader.h
     maps/MapCoverLoader.cpp
+    maps/MapReviewCard.h
+    maps/MapReviewCard.cpp
     maps/MapHallLink.h
     maps/MapHallLink.cpp
     maps/HallAPI.h
