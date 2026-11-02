@@ -126,6 +126,7 @@
 
 // 地图启动器：所有启动入口的统一准备点（见 launch()）
 #include "maps/MapLaunchPrep.h"
+#include "maps/MapPage.h"
 
 #include <DesktopServices.h>
 #include <FileSystem.h>
@@ -945,6 +946,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         {
             m_globalSettingsProvider = std::make_unique<GenericPageProvider>(tr("Settings"));
             m_globalSettingsProvider->addPage<LauncherPage>();
+            // 「地图」紧跟在「常规」右边：和实例设置里的页签顺序保持一致
+            m_globalSettingsProvider->addPage<maps::MapPage>();
             m_globalSettingsProvider->addPage<LanguagePage>();
             m_globalSettingsProvider->addPage<AppearancePage>();
             m_globalSettingsProvider->addPage<MinecraftPage>();

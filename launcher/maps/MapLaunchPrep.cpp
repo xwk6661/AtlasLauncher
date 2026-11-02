@@ -59,9 +59,11 @@ MapLaunchPrep::Plan MapLaunchPrep::plan(MinecraftInstance* instance, const MapMe
     }
 
     plan.worldFolder = worldFolder.isEmpty() ? meta.worlds.first().folder : worldFolder;
-    plan.autoEnter = APPLICATION->settings()->get("MapAutoEnter").toBool();
-    plan.closeOnQuit = APPLICATION->settings()->get("MapSafeExit").toBool();
-    plan.enterDelay = std::clamp(APPLICATION->settings()->get("MapEnterDelay").toInt(), 0, 60);
+    // 读实例设置而不是全局：这三项在实例里是 OverrideSetting，
+    // 没勾「覆盖全局的地图启动设置」时自动回落到全局值（设置页的改动即时可见）。
+    plan.autoEnter = instance->settings()->get("MapAutoEnter").toBool();
+    plan.closeOnQuit = instance->settings()->get("MapSafeExit").toBool();
+    plan.enterDelay = std::clamp(instance->settings()->get("MapEnterDelay").toInt(), 0, 60);
 
     const auto traits = instance->traits();
     if (traits.contains(QStringLiteral("feature:is_quick_play_singleplayer"))) {

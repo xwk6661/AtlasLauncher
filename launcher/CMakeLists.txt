@@ -797,8 +797,9 @@ set(MAPS_SOURCES
     maps/StarRatingWidget.cpp
     maps/MapInstancePage.h
     maps/MapInstancePage.cpp
-    maps/MapSettingsDialog.h
-    maps/MapSettingsDialog.cpp
+    maps/MapSettingsWidget.h
+    maps/MapSettingsWidget.cpp
+    maps/MapPage.h
     maps/OptiFineDialog.h
     maps/OptiFineDialog.cpp
 )
@@ -972,6 +973,7 @@ SET(LAUNCHER_SOURCES
     ui/pages/instance/NotesPage.h
     ui/pages/instance/LogPage.cpp
     ui/pages/instance/LogPage.h
+    ui/pages/instance/InstanceSettingsPage.cpp
     ui/pages/instance/InstanceSettingsPage.h
     ui/pages/instance/ScreenshotsPage.cpp
     ui/pages/instance/ScreenshotsPage.h

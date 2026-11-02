@@ -58,7 +58,6 @@
 #include "MapMeta.h"
 #include "MapNotes.h"
 #include "minecraft/MinecraftInstance.h"
-#include "MapSettingsDialog.h"
 #include "MapTheme.h"
 #include "MapInfoCard.h"
 #include "MapReviewCard.h"
@@ -504,8 +503,8 @@ void MapHallPage::buildUi()
     connect(probeButton, &QPushButton::clicked, this, &MapHallPage::runProbe);
     connect(m_relayButton, &QPushButton::clicked, this, &MapHallPage::showRelayHelp);
     connect(netButton, &QPushButton::clicked, this, [this] {
-        MapSettingsDialog dialog(this);
-        dialog.exec();
+        // 大厅通道 / 代理现在在「设置 → 地图」里；打开设置页后由它自己落盘并让出口重新探活
+        APPLICATION->ShowGlobalSettings(this, QStringLiteral("map-settings"));
         HallAPI::invalidateProxyCache();
     });
     connect(siteButton, &QPushButton::clicked, this,

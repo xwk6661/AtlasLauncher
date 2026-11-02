@@ -113,7 +113,6 @@
 #include "maps/MapImportTask.h"
 #include "maps/MapLaunchPrep.h"
 #include "maps/MapMeta.h"
-#include "maps/MapSettingsDialog.h"
 #include "minecraft/launch/MinecraftTarget.h"
 #include "ui/dialogs/ExportInstanceDialog.h"
 #include "ui/dialogs/ExportPackDialog.h"
@@ -419,10 +418,10 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
         auto* mapSettingsAction = new QAction(tr("地图设置…"), this);
         mapSettingsAction->setObjectName(QStringLiteral("actionMapSettings"));
-        connect(mapSettingsAction, &QAction::triggered, this, [this] {
-            maps::MapSettingsDialog dialog(this);
-            dialog.exec();
-        });
+        // 地图设置已经并进设置页（全局「地图」页 / 实例「设置 → 地图」页签），
+        // 这里只负责把用户带到那一页，别再维护第二份 UI。
+        connect(mapSettingsAction, &QAction::triggered, this,
+                [this] { APPLICATION->ShowGlobalSettings(this, QStringLiteral("map-settings")); });
         ui->fileMenu->addAction(mapSettingsAction);
 
         auto* galleryWindowAction = new QAction(tr("地图画廊（新窗口）"), this);

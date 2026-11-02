@@ -238,6 +238,14 @@ void MinecraftInstance::loadSpecificSettings()
         m_settings->registerOverride(global_settings->getSetting("CloseAfterLaunch"), miscellaneousOverride);
         m_settings->registerOverride(global_settings->getSetting("QuitAfterGameStop"), miscellaneousOverride);
 
+        // 地图启动行为（跳过主菜单 / 退出存档后关游戏 / 进图前等待）。
+        // 默认跟随全局，勾了「覆盖全局的地图启动设置」才用实例自己的值 ——
+        // 与上面几组的覆盖语义保持一致，见 maps::MapSettingsWidget。
+        auto mapBehaviorsOverride = m_settings->registerSetting("OverrideMapBehaviors", false);
+        m_settings->registerOverride(global_settings->getSetting("MapAutoEnter"), mapBehaviorsOverride);
+        m_settings->registerOverride(global_settings->getSetting("MapSafeExit"), mapBehaviorsOverride);
+        m_settings->registerOverride(global_settings->getSetting("MapEnterDelay"), mapBehaviorsOverride);
+
         // Legacy-related options
         auto legacySettings = m_settings->registerSetting("OverrideLegacySettings", false);
         m_settings->registerOverride(global_settings->getSetting("OnlineFixes"), legacySettings);

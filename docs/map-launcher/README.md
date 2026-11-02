@@ -55,7 +55,7 @@
 | **导入** | `MapImportTask`（建实例 / 解世界 / 落材质包 / 重装）· `MapRepository`（地图库）· `MapImportDialog` |
 | **启动** | `MapLaunchPrep`（选轨道 / 统一准备点）· `AgentBootstrap`（符号表 → `-javaagent`） |
 | **大厅** | `HallAPI` · `HallTypes` · `HallProxy` · `BrowserFetch` · `HallDialog` · `MapHallPage` |
-| **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（信息页）· `MapGalleryPage/Window` · `MapReviewCard` · `MapCoverLoader` · `MapSettingsDialog` · `OptiFineDialog` · `StarRatingWidget` · `MapTheme` |
+| **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（信息页）· `MapGalleryPage/Window` · `MapReviewCard` · `MapCoverLoader` · `MapSettingsWidget`/`MapPage`（设置页）· `OptiFineDialog` · `StarRatingWidget` · `MapTheme` |
 
 资源：`launcher/resources/maps/dataversion.json`（483 个版本）、`launcher/resources/agents/`
 （`quickboot.jar` + 6 个符号表）。测试：`tests/MapArchiveScan_test.cpp`（13 项 + 2 项联网用例）。
