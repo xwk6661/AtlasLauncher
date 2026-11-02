@@ -65,6 +65,8 @@ set(CORE_SOURCES
 
     FileSystem.h
     FileSystem.cpp
+    ResourcePaths.cpp
+    ResourcePaths.h
 
     Result.h
     Handle.h
@@ -800,6 +802,12 @@ set(MAPS_SOURCES
     maps/MapSettingsWidget.h
     maps/MapSettingsWidget.cpp
     maps/MapPage.h
+    maps/MapQuitWatcher.h
+    maps/MapQuitWatcher.cpp
+    maps/ResourceStore.h
+    maps/ResourceStore.cpp
+    maps/MapResourcePage.h
+    maps/MapResourcePage.cpp
     maps/OptiFineDialog.h
     maps/OptiFineDialog.cpp
 )

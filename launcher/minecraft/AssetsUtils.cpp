@@ -45,6 +45,7 @@
 #include "Json.h"
 
 #include "AssetsUtils.h"
+#include "ResourcePaths.h"
 #include "FileSystem.h"
 #include "net/ApiRequest.h"
 #include "net/ChecksumValidator.h"
@@ -160,7 +161,7 @@ bool loadAssetsIndexJson(const QString& assetsId, const QString& path, AssetsInd
 // FIXME: ugly code duplication
 QDir getAssetsDir(const QString& assetsId, const QString& resourcesFolder)
 {
-    QDir assetsDir = QDir("assets/");
+    QDir assetsDir = QDir(resource::assetsDir());
     QDir indexDir = QDir(FS::PathCombine(assetsDir.path(), "indexes"));
     QDir objectDir = QDir(FS::PathCombine(assetsDir.path(), "objects"));
     QDir virtualDir = QDir(FS::PathCombine(assetsDir.path(), "virtual"));
@@ -192,7 +193,7 @@ QDir getAssetsDir(const QString& assetsId, const QString& resourcesFolder)
 // FIXME: ugly code duplication
 bool reconstructAssets(const QString& assetsId, const QString& resourcesFolder)
 {
-    QDir assetsDir = QDir("assets/");
+    QDir assetsDir = QDir(resource::assetsDir());
     QDir indexDir = QDir(FS::PathCombine(assetsDir.path(), "indexes"));
     QDir objectDir = QDir(FS::PathCombine(assetsDir.path(), "objects"));
     QDir virtualDir = QDir(FS::PathCombine(assetsDir.path(), "virtual"));

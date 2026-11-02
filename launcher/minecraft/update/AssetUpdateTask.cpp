@@ -1,4 +1,6 @@
 #include "AssetUpdateTask.h"
+#include "ResourcePaths.h"
+#include "FileSystem.h"
 
 #include "BuildConfig.h"
 #include "launch/LaunchStep.h"
@@ -61,7 +63,7 @@ void AssetUpdateTask::assetIndexFinished()
     auto profile = components->getProfile();
     auto assets = profile->getMinecraftAssets();
 
-    QString asset_fname = "assets/indexes/" + assets->id + ".json";
+    QString asset_fname = FS::PathCombine(resource::assetsDir(), "indexes", assets->id + ".json");
     // FIXME: this looks like a job for a generic validator based on json schema?
     if (!AssetsUtils::loadAssetsIndexJson(assets->id, asset_fname, index)) {
         auto metacache = APPLICATION->metacache();

@@ -36,6 +36,7 @@
  */
 
 #include "MinecraftInstance.h"
+#include "ResourcePaths.h"
 #include "Application.h"
 #include "BuildConfig.h"
 #include "Json.h"
@@ -479,7 +480,7 @@ QString MinecraftInstance::resourcesDir() const
 
 QDir MinecraftInstance::librariesPath() const
 {
-    return QDir::current().absoluteFilePath("libraries");
+    return QDir(resource::librariesDir());
 }
 
 QDir MinecraftInstance::jarmodsPath() const
@@ -1086,7 +1087,7 @@ QMap<QString, QString> MinecraftInstance::makeProfileVarMapping(std::shared_ptr<
 
     QString absRootDir = QDir(gameRoot()).absolutePath();
     result["game_directory"] = absRootDir;
-    QString absAssetsDir = QDir("assets/").absolutePath();
+    QString absAssetsDir = resource::assetsDir();
     auto assets = profile->getMinecraftAssets();
     result["game_assets"] = AssetsUtils::getAssetsDir(assets->id, resourcesDir()).absolutePath();
 

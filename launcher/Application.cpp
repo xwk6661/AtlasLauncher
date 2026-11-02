@@ -127,9 +127,12 @@
 // 地图启动器：所有启动入口的统一准备点（见 launch()）
 #include "maps/MapLaunchPrep.h"
 #include "maps/MapPage.h"
+#include "maps/MapQuitWatcher.h"
+#include "maps/MapResourcePage.h"
 
 #include <DesktopServices.h>
 #include <FileSystem.h>
+#include "ResourcePaths.h"
 #include <LocalPeer.h>
 
 #include <stdlib.h>
@@ -792,6 +795,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         // 启动后静默更新地图库（点开大厅时只读本地，不再现拉）
         m_settings->registerSetting("MapHallAutoUpdate", true);
         m_settings->registerSetting("MapHallUpdateDays", 3);
+        // 资源库：assets / libraries / java 三个目录改到指定位置（见 maps::ResourceStore）
+        m_settings->registerSetting("SharedResourceDir", "");
         m_settings->registerSetting("MapAutoEnter", true);          // 启动时直接进图
         m_settings->registerSetting("MapSafeExit", true);           // 退出后判定落盘并回写统计
         m_settings->registerSetting("MapEnterDelay", 1);            // Agent 进图前等待秒数
@@ -951,6 +956,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             m_globalSettingsProvider->addPage<LanguagePage>();
             m_globalSettingsProvider->addPage<AppearancePage>();
             m_globalSettingsProvider->addPage<MinecraftPage>();
+            m_globalSettingsProvider->addPage<maps::MapResourcePage>();
             m_globalSettingsProvider->addPage<JavaPage>();
             m_globalSettingsProvider->addPage<AccountListPage>();
             m_globalSettingsProvider->addPage<APIPage>();
@@ -1058,8 +1064,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     // init the http meta cache
     {
         m_metacache.reset(new HttpMetaCache("metacache"));
-        m_metacache->addBase("asset_indexes", QDir("assets/indexes").absolutePath());
-        m_metacache->addBase("libraries", QDir("libraries").absolutePath());
+        m_metacache->addBase("asset_indexes", FS::PathCombine(resource::assetsDir(), "indexes"));
+        m_metacache->addBase("libraries", resource::librariesDir());
         m_metacache->addBase("fmllibs", QDir("mods/minecraftforge/libs").absolutePath());
         m_metacache->addBase("general", QDir("cache").absolutePath());
         m_metacache->addBase("ATLauncherPacks", QDir("cache/ATLauncherPacks").absolutePath());
@@ -1619,6 +1625,11 @@ bool Application::launch(MinecraftInstance* instance,
         if (mapPlan.applicable && mapPlan.track == maps::MapLaunchPrep::Track::Plain)
             qDebug() << "Map launch:" << instance->id() << "will not auto-enter world —" << mapPlan.reason;
 
+        // 1.20+ 那条轨道没有 Agent，「退出存档后关游戏」得由启动器自己盯日志完成
+        if (mapPlan.applicable && mapPlan.track == maps::MapLaunchPrep::Track::QuickPlay && mapPlan.autoEnter &&
+            mapPlan.closeOnQuit)
+            maps::MapQuitWatcher::attach(instance);
+
         auto& controller = extras.controller;
         controller = std::make_unique<LaunchController>();
         controller->setInstance(instance);
@@ -2124,7 +2135,8 @@ QUrl Application::normalizeImportUrl(const QString& url)
 
 QString Application::javaPath()
 {
-    return m_settings->get("JavaDir").toString();
+    // 设了「共享资源目录」就用 <共享>/java，否则沿用 JavaDir 设置（默认相对路径 "java"）
+    return resource::javaDir();
 }
 
 void Application::addQSavePath(const QString& path)

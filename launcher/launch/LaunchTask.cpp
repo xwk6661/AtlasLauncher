@@ -252,6 +252,7 @@ bool LaunchTask::parseXmlLogs(const QString& line, MessageLevel level)
                            .arg(entry.logger)
                            .arg(entry.message);
             msg = censorPrivateInfo(msg);
+            emit gameLogLine(msg);
             model->append(entry.level, msg);
         } else if (std::holds_alternative<LogParser::PlainText>(item)) {
             auto msg = std::get<LogParser::PlainText>(item).message;
@@ -263,6 +264,7 @@ bool LaunchTask::parseXmlLogs(const QString& line, MessageLevel level)
 
             msg = censorPrivateInfo(msg);
 
+            emit gameLogLine(msg);
             model->append(newLevel, msg);
         }
     }
@@ -286,6 +288,7 @@ void LaunchTask::onLogLine(QString line, MessageLevel level)
     // censor private user info
     line = censorPrivateInfo(line);
 
+    emit gameLogLine(line);
     getLogModel()->append(level, line);
 }
 

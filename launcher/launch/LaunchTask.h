@@ -104,6 +104,14 @@ class LaunchTask : public Task {
 
     void requestLogging();
 
+    /**
+     * 游戏进程的每一行日志（已脱敏）。
+     *
+     * 给按日志判定状态的模块用：1.20+ 的地图轨道没有 Agent，只能靠
+     * 「离开存档 / 全部落盘」两行判断该不该关游戏（见 maps::MapQuitWatcher）。
+     */
+    void gameLogLine(const QString& line);
+
    public slots:
     void onLogLines(const QStringList& lines, MessageLevel defaultLevel = MessageLevel::Launcher);
     void onLogLine(QString line, MessageLevel defaultLevel = MessageLevel::Launcher);
