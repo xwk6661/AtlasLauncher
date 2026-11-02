@@ -35,14 +35,10 @@ namespace maps {
 QWidget* makeReviewCard(QWidget* parent, const HallReview& review, QLabel** nameLabel)
 {
     auto* card = new QFrame(parent);
-    card->setObjectName(QStringLiteral("reviewCard"));
+    card->setObjectName(QStringLiteral("mapCard"));
     // 纵向 Maximum：评论只有一两条时卡片不许被拉高（否则头像和正文之间会出现一大片空白）
     card->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
-    card->setStyleSheet(QStringLiteral("QFrame#reviewCard {"
-                                       "  background: rgba(127, 127, 127, 16);"
-                                       "  border: 1px solid rgba(127, 127, 127, 58);"
-                                       "  border-radius: 6px;"
-                                       "}"));
+    card->setStyleSheet(ui::cardStyle());
 
     auto* layout = new QVBoxLayout(card);
     layout->setContentsMargins(10, 8, 10, 10);

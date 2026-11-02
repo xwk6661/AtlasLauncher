@@ -23,8 +23,10 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QFrame>
 #include <QFont>
 #include <QFormLayout>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -65,6 +67,39 @@ namespace {
 /// 简介页封面：16:9，和站上的 1920×1080 同比例
 constexpr int ABOUT_COVER_W = 200;
 constexpr int ABOUT_COVER_H = 113;
+
+/// 信息卡片：外观与评论卡片一致（MapTheme::ui::cardStyle），标题可选
+QFrame* makeCard(QWidget* parent, const QString& title, QVBoxLayout** bodyOut = nullptr)
+{
+    auto* card = new QFrame(parent);
+    card->setObjectName(QStringLiteral("mapCard"));
+    card->setStyleSheet(ui::cardStyle());
+
+    auto* outer = new QVBoxLayout(card);
+    outer->setContentsMargins(12, 10, 12, 12);
+    outer->setSpacing(8);
+    if (!title.isEmpty()) {
+        auto* head = new QLabel(title, card);
+        QFont headFont = head->font();
+        headFont.setBold(true);
+        head->setFont(headFont);
+        outer->addWidget(head);
+    }
+    auto* body = new QVBoxLayout();
+    body->setSpacing(6);
+    outer->addLayout(body);
+    if (bodyOut != nullptr)
+        *bodyOut = body;
+    return card;
+}
+
+/// 表单左侧的字段名：次要色，和值拉开层次
+QLabel* makeKey(const QString& text, QWidget* parent)
+{
+    auto* label = new QLabel(text, parent);
+    label->setStyleSheet(QStringLiteral("color: %1;").arg(ui::mutedTextColor().name()));
+    return label;
+}
 }  // namespace
 
 
@@ -89,57 +124,76 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
      * 正确的拉伸约束，行与行被撑开一大截（用户截图里「中文名」和输入框
      * 隔了半屏）。直接建进容器就没有搬运这一步，也就没有能丢的约束。
      */
+    /**
+     * 「我的」页：三张卡片（我的记录 / 来源与统计 / 版本判定依据）+ 底部动作。
+     * 卡片外观与评论一致（MapTheme::ui::cardStyle），字段名用次要色、值靠右占满剩余宽度。
+     *
+     * 注意内容**直接建进这一页**：以前先建到顶层再用 takeAt 搬进页签，QFormLayout
+     * 会丢掉拉伸约束，行距被撑开半屏（见 §5.2 第 48 条）。
+     */
     auto* minePage = new QWidget(this);
     auto* mineLayout = new QVBoxLayout(minePage);
     mineLayout->setContentsMargins(4, 8, 4, 4);
-    mineLayout->setSpacing(8);
+    mineLayout->setSpacing(10);
 
-    // ── 我的记录（notes.json）：中文名 / 我的评分 / 笔记 ──
+    // ── 卡片 1：我的记录（notes.json）：中文名 / 我的评分 / 笔记 ──
     // 与 map.json 分开存：那是"这张图是什么"，这是"我怎么看这张图"（照 AIO 的 UserNote）。
     // 所以重装地图不会冲掉这里的东西。
-    auto* notesBox = new QGroupBox(tr("我的记录"), this);
-    auto* notesForm = new QFormLayout(notesBox);
+    QVBoxLayout* notesBody = nullptr;
+    mineLayout->addWidget(makeCard(minePage, tr("我的记录"), &notesBody));
 
+    auto* notesGrid = new QGridLayout();
+    notesGrid->setHorizontalSpacing(12);
+    notesGrid->setVerticalSpacing(8);
+    notesGrid->setColumnStretch(1, 1);
+
+    notesGrid->addWidget(makeKey(tr("中文名"), minePage), 0, 0);
     auto* aliasRow = new QHBoxLayout();
-    m_aliasEdit = new QLineEdit(notesBox);
+    aliasRow->setSpacing(6);
+    m_aliasEdit = new QLineEdit(minePage);
     m_aliasEdit->setMaxLength(MapNotes::MAX_ALIAS);
     m_aliasEdit->setPlaceholderText(tr("留空 = 用导入时识别出的标题"));
-    m_aliasSave = new QPushButton(tr("保存"), notesBox);
+    m_aliasSave = new QPushButton(tr("保存"), minePage);
     m_aliasSave->setEnabled(false);
-    m_aliasState = new QLabel(notesBox);
+    m_aliasState = new QLabel(minePage);
     aliasRow->addWidget(m_aliasEdit, 1);
     aliasRow->addWidget(m_aliasSave);
     aliasRow->addWidget(m_aliasState);
-    notesForm->addRow(tr("中文名"), aliasRow);
+    notesGrid->addLayout(aliasRow, 0, 1);
 
+    notesGrid->addWidget(makeKey(tr("我的评分"), minePage), 1, 0, Qt::AlignVCenter);
     auto* ratingRow = new QHBoxLayout();
-    m_stars = new StarRatingWidget(notesBox);
-    m_ratingValue = new QLabel(notesBox);
-    auto* clearRating = new QPushButton(tr("清除"), notesBox);
+    ratingRow->setSpacing(6);
+    m_stars = new StarRatingWidget(minePage);
+    m_ratingValue = new QLabel(minePage);
+    auto* clearRating = new QPushButton(tr("清除"), minePage);
     ratingRow->addWidget(m_stars);
     ratingRow->addWidget(m_ratingValue);
     ratingRow->addWidget(clearRating);
     ratingRow->addStretch(1);
-    notesForm->addRow(tr("我的评分"), ratingRow);
+    notesGrid->addLayout(ratingRow, 1, 1);
 
-    auto* noteRow = new QVBoxLayout();
-    m_noteEdit = new QPlainTextEdit(notesBox);
+    notesGrid->addWidget(makeKey(tr("笔记"), minePage), 2, 0, Qt::AlignTop);
+    auto* noteColumn = new QVBoxLayout();
+    noteColumn->setSpacing(4);
+    m_noteEdit = new QPlainTextEdit(minePage);
     m_noteEdit->setPlaceholderText(tr("记点什么：卡在哪、该装哪些模组、下次从哪继续…"));
-    m_noteEdit->setMaximumHeight(110);
+    m_noteEdit->setMinimumHeight(88);
+    m_noteEdit->setMaximumHeight(130);
     auto* noteFooter = new QHBoxLayout();
-    m_noteCount = new QLabel(notesBox);
-    m_noteState = new QLabel(notesBox);
-    m_noteSave = new QPushButton(tr("保存笔记"), notesBox);
+    m_noteCount = new QLabel(minePage);
+    m_noteState = new QLabel(minePage);
+    m_noteSave = new QPushButton(tr("保存笔记"), minePage);
     m_noteSave->setEnabled(false);
     noteFooter->addWidget(m_noteCount);
     noteFooter->addStretch(1);
     noteFooter->addWidget(m_noteState);
     noteFooter->addWidget(m_noteSave);
-    noteRow->addWidget(m_noteEdit);
-    noteRow->addLayout(noteFooter);
-    notesForm->addRow(tr("笔记"), noteRow);
+    noteColumn->addWidget(m_noteEdit);
+    noteColumn->addLayout(noteFooter);
+    notesGrid->addLayout(noteColumn, 2, 1);
 
-    mineLayout->addWidget(notesBox);
+    notesBody->addLayout(notesGrid);
 
     connect(m_aliasSave, &QPushButton::clicked, this, [this] {
         m_notes.alias = m_aliasEdit->text().trimmed();
@@ -173,29 +227,44 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
         saveNotes();
     });
 
-    auto* form = new QFormLayout();
-    m_archive = new QLabel(this);
+    // ── 卡片 2：来源与统计 ──
+    QVBoxLayout* sourceBody = nullptr;
+    mineLayout->addWidget(makeCard(minePage, tr("来源与统计"), &sourceBody));
+
+    auto* sourceGrid = new QGridLayout();
+    sourceGrid->setHorizontalSpacing(12);
+    sourceGrid->setVerticalSpacing(8);
+    sourceGrid->setColumnStretch(1, 1);
+
+    sourceGrid->addWidget(makeKey(tr("来源压缩包"), minePage), 0, 0, Qt::AlignTop);
+    m_archive = new QLabel(minePage);
     m_archive->setWordWrap(true);
     m_archive->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    form->addRow(tr("来源压缩包"), m_archive);
+    sourceGrid->addWidget(m_archive, 0, 1);
 
-    m_stats = new QLabel(this);
-    form->addRow(tr("游玩统计"), m_stats);
-    mineLayout->addLayout(form);
+    sourceGrid->addWidget(makeKey(tr("游玩统计"), minePage), 1, 0, Qt::AlignTop);
+    m_stats = new QLabel(minePage);
+    m_stats->setWordWrap(true);
+    m_stats->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    sourceGrid->addWidget(m_stats, 1, 1);
 
+    sourceBody->addLayout(sourceGrid);
 
     m_notice = new QLabel(this);
     m_notice->setWordWrap(true);
     m_notice->setVisible(false);
     mineLayout->addWidget(m_notice);
 
-    mineLayout->addWidget(new QLabel(tr("版本判定依据"), this));
-    m_evidence = new QLabel(this);
+    // ── 卡片 3：版本判定依据 ──
+    QVBoxLayout* evidenceBody = nullptr;
+    mineLayout->addWidget(makeCard(minePage, tr("版本判定依据"), &evidenceBody));
+    m_evidence = new QLabel(minePage);
     m_evidence->setWordWrap(true);
     m_evidence->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    mineLayout->addWidget(m_evidence);
+    evidenceBody->addWidget(m_evidence);
 
     auto* buttons = new QHBoxLayout();
+    buttons->setSpacing(6);
     auto* openInstance = new QPushButton(tr("打开实例目录"), this);
     auto* openArchive = new QPushButton(tr("打开压缩包所在目录"), this);
     auto* reinstall = new QPushButton(tr("重装地图…"), this);
@@ -281,19 +350,25 @@ QWidget* MapInstancePage::buildAboutPage()
     auto* hero = new QHBoxLayout();
     hero->setContentsMargins(0, 0, 0, 0);
     hero->setSpacing(14);
+    // 整组（封面 + 信息）在页面里水平居中，封面相对信息列垂直居中（用户反馈：以前贴着左边、上下不齐）
+    hero->addStretch(1);
 
     m_aboutCover = new QLabel(m_aboutPage);
     m_aboutCover->setFixedSize(ABOUT_COVER_W, ABOUT_COVER_H);
     m_aboutCover->setAlignment(Qt::AlignCenter);
     m_aboutCover->setStyleSheet(QStringLiteral("border: 1px solid rgba(127, 127, 127, 55);"));
     m_aboutCover->setPixmap(MapCoverLoader::placeholderCover(QStringLiteral("?"), ABOUT_COVER_W, ABOUT_COVER_H));
-    hero->addWidget(m_aboutCover, 0, Qt::AlignTop);
+    hero->addWidget(m_aboutCover, 0, Qt::AlignVCenter);
 
     m_aboutInfo = new QLabel(m_aboutPage);
     m_aboutInfo->setWordWrap(true);
     m_aboutInfo->setAlignment(Qt::AlignTop | Qt::AlignLeft);
     m_aboutInfo->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    hero->addWidget(m_aboutInfo, 1);
+    // 给信息列一个稳定的宽度区间：太窄字段会折行，太宽整组就不像"一块"了
+    m_aboutInfo->setMinimumWidth(340);
+    m_aboutInfo->setMaximumWidth(560);
+    hero->addWidget(m_aboutInfo, 0);
+    hero->addStretch(1);
     m_aboutLayout->addLayout(hero);
 
     // 封面是异步取的：缓存命中会立刻回，没命中走浏览器通道，回来再换图
@@ -303,10 +378,14 @@ QWidget* MapInstancePage::buildAboutPage()
                     applyAboutCover(image);
             });
 
+    // 简介正文：单独一张卡片，和评论卡片同一套外观
+    QVBoxLayout* descBody = nullptr;
+    m_aboutLayout->addWidget(makeCard(m_aboutPage, QString(), &descBody));
     m_aboutState = new QLabel(m_aboutPage);
     m_aboutState->setWordWrap(true);
     m_aboutState->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    m_aboutLayout->addWidget(m_aboutState);
+    m_aboutState->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    descBody->addWidget(m_aboutState);
 
     auto* linkRow = new QHBoxLayout();
     m_aboutLinkButton = new QPushButton(tr("关联到 CTM 地图…"), m_aboutPage);

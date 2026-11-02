@@ -93,6 +93,13 @@ inline QString sectionHeaderStyle()
                           "margin-top: 4px; font-size: 11px;");
 }
 
+/// 卡片外观（评论、实例「我的」页共用）：半透明底 + 1px 边框 + 6px 圆角，亮/暗主题通用
+inline QString cardStyle()
+{
+    return QStringLiteral("QFrame#mapCard { background: rgba(127, 127, 127, 16);"
+                          " border: 1px solid rgba(127, 127, 127, 58); border-radius: 6px; }");
+}
+
 /// 提示条（风险 / 缺依赖）用的颜色名，可直接塞进 QSS
 inline QString noticeColorName()
 {
