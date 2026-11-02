@@ -118,6 +118,11 @@ void ConcurrentTask::executeNextSubTask()
     }
     if (m_queue.isEmpty()) {
         if (m_doing.isEmpty()) {
+            // 全部队列跑完后才聚合结果；但子任务失败可能已经把我们 emitFailed 掉了
+            // （SequentialTask::subTaskFailed 在第一个子任务失败时就收尾），
+            // 此时任务已不在 Running 状态，再 emit 是 Debug 构建下的致命断言
+            if (!isRunning())
+                return;
             if (m_failed.isEmpty()) {
                 emitSucceeded();
             } else if (m_failed.count() == 1) {

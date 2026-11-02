@@ -58,6 +58,11 @@ class MinecraftLauncher;
 class BaseProfilerFactory;
 class InstanceView;
 class KonamiCode;
+
+namespace maps {
+class MapGalleryWindow;
+class MapInstanceBar;
+}
 class InstanceTask;
 
 namespace Ui {
@@ -73,6 +78,7 @@ class MainWindow : public QMainWindow {
     bool eventFilter(QObject* obj, QEvent* ev) override;
     void closeEvent(QCloseEvent* event) override;
     void changeEvent(QEvent* event) override;
+    void showEvent(QShowEvent* event) override;
 
     void checkInstancePathForProblems();
 
@@ -233,12 +239,33 @@ class MainWindow : public QMainWindow {
     void runModalTask(Task* task);
     void instanceFromInstanceTask(InstanceTask* task);
 
+    // ── 地图启动器入口（docs/map-launcher）──────────────────────────
+    void openMapGallery();
+    void chooseMapArchive();
+    void importMapArchive(const QString& archivePath);
+    void launchMapInstance(const QString& instanceId, const QString& worldFolder = {});
+    /// 地图实例启动前的准备 + 把「为什么不自动进图」说给玩家听。
+    /// 真正的落地逻辑在 MapLaunchPrep::prepareForLaunch（Application::launch 也会调一次，
+    /// 保证从实例窗口 / 快捷方式启动时同样生效），这里只负责取世界与提示。
+    /// 启动后静默更新大厅数据（点开大厅只读本地）
+    void maybeUpdateHallLibrary();
+    void prepareMapLaunch(MinecraftInstance* instance, const QString& worldFolder = {});
+    /// 打开「添加实例」对话框并定位到指定来源页（页 id 见 BasePage::id()）
+    void addInstanceViaPage(const QString& pageId);
+
     void handleInstanceRename(const QString& before, const QString& after);
 
    private:
     Ui::MainWindow* ui;
     // these are managed by Qt's memory management model!
     InstanceView* view = nullptr;
+    /// 实例操作栏里的地图信息区（选中的是地图实例时才显示）
+    maps::MapInstanceBar* m_mapBar = nullptr;
+    QAction* m_mapBarAction = nullptr;
+    /// 地图画廊独立窗口（次要入口；主界面在原生实例列表里直接看地图信息）
+    maps::MapGalleryWindow* m_mapGallery = nullptr;
+    /// 实例操作栏自检是否已跑过（旧窗口状态可能把它藏起来）
+    bool m_instanceToolBarChecked = false;
     InstanceProxyModel* proxymodel = nullptr;
     QToolButton* newsLabel = nullptr;
     QLabel* m_statusLeft = nullptr;

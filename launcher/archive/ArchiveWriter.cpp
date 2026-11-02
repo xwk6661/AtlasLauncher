@@ -122,14 +122,14 @@ Result<> ArchiveWriter::addFile(const QString& fileName, const QString& fileDest
         HANDLE file_handle = CreateFileW(widePath.data(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
         if (file_handle == INVALID_HANDLE_VALUE) {
             const auto err = std::error_code(static_cast<int>(GetLastError()), std::system_category());
-            return std::unexpected{ QString("Could not create file handle: %1").arg(err.message()) };
+            return std::unexpected{ QString("Could not create file handle: %1").arg(QString::fromStdString(err.message())) };
         }
 
         BY_HANDLE_FILE_INFORMATION file_info;
         if (!GetFileInformationByHandle(file_handle, &file_info)) {
             const auto err = std::error_code(static_cast<int>(GetLastError()), std::system_category());
             CloseHandle(file_handle);
-            return std::unexpected{ QString("Could not get file information: %1").arg(err.message()) };
+            return std::unexpected{ QString("Could not get file information: %1").arg(QString::fromStdString(err.message())) };
         }
 
         archive_entry_copy_bhfi(entry, &file_info);

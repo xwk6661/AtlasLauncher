@@ -53,7 +53,7 @@ class WorldListPage : public QMainWindow, public BasePage {
     explicit WorldListPage(MinecraftInstance* inst, WorldList* worlds, QWidget* parent = nullptr);
     ~WorldListPage() override;
 
-    QString displayName() const override { return tr("Worlds"); }
+    QString displayName() const override { return tr("世界"); }
     QIcon icon() const override { return QIcon::fromTheme("worlds"); }
     QString id() const override { return "worlds"; }
     QString helpPage() const override { return "Worlds"; }

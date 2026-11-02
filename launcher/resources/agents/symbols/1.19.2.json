@@ -1,0 +1,152 @@
+{
+  "mcVersion": "1.19.2",
+  "strategy": "mappings",
+  "hasMappings": true,
+  "generatedAt": "2026-10-31T09:37:12.950Z",
+  "classes": {
+    "menuClass": {
+      "obf": "elr",
+      "named": "net.minecraft.client.gui.screens.TitleScreen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "menuClass"
+    },
+    "guiScreen": {
+      "obf": "elm",
+      "named": "net.minecraft.client.gui.screens.Screen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "guiScreen"
+    },
+    "minecraft": {
+      "obf": "efu",
+      "named": "net.minecraft.client.Minecraft",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "minecraft"
+    },
+    "worldClient": {
+      "obf": "euv",
+      "named": "net.minecraft.client.multiplayer.ClientLevel",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "worldClient"
+    },
+    "integratedServer": {
+      "obf": "fnm",
+      "named": "net.minecraft.client.server.IntegratedServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "integratedServer"
+    },
+    "minecraftServer": {
+      "obf": "net/minecraft/server/MinecraftServer",
+      "named": "net.minecraft.server.MinecraftServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "minecraftServer"
+    }
+  },
+  "methods": {
+    "menuInit": {
+      "owner": "elr",
+      "name": "b",
+      "descriptor": "()V",
+      "named": "net.minecraft.client.gui.screens.TitleScreen.init",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "menuInit"
+    },
+    "getInstance": {
+      "owner": "efu",
+      "name": "I",
+      "descriptor": "()Lefu;",
+      "named": "net.minecraft.client.Minecraft.getInstance",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": true,
+      "slot": "getInstance"
+    },
+    "enterWorld": {
+      "owner": "efu",
+      "name": "a",
+      "descriptor": "(Ljava/lang/String;Ldrq$c;Lahy;Labu;)V",
+      "named": "net.minecraft.client.Minecraft.doWorldLoad",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "note": "参数含 LevelStorageAccess / WorldStem，Agent 侧需要先构造再调用",
+      "slot": "enterWorld"
+    },
+    "setLevel": {
+      "owner": "efu",
+      "name": "a",
+      "descriptor": "(Leuv;)V",
+      "named": "net.minecraft.client.Minecraft.setLevel",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "setLevel"
+    },
+    "setScreen": {
+      "owner": "efu",
+      "name": "a",
+      "descriptor": "(Lelm;)V",
+      "named": "net.minecraft.client.Minecraft.setScreen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "setScreen"
+    },
+    "saveAllWorlds": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "a",
+      "descriptor": "(ZZZ)Z",
+      "named": "net.minecraft.server.MinecraftServer.saveAllChunks",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "saveAllWorlds"
+    },
+    "stopServer": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "s",
+      "descriptor": "()V",
+      "named": "net.minecraft.server.MinecraftServer.stopServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "stopServer"
+    }
+  },
+  "unresolved": [],
+  "warnings": [],
+  "inputs": {
+    "clientJar": "E:\\llmUsage\\Minecraft-AIO\\launcher\\.cache\\symbols\\1.19.2-client.jar",
+    "jarBytes": 21644740,
+    "mappings": "E:\\llmUsage\\Minecraft-AIO\\launcher\\.cache\\symbols\\1.19.2-mappings.txt",
+    "versionJson": "E:\\llmUsage\\Minecraft-AIO\\launcher\\.cache\\symbols\\1.19.2.json"
+  },
+  "timings": {
+    "jarMs": 1314,
+    "fingerprintMs": 5,
+    "mappingsMs": 268,
+    "totalMs": 1608
+  },
+  "cacheVersion": 2,
+  "cacheHit": false
+}

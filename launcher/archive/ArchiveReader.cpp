@@ -87,6 +87,11 @@ QDateTime ArchiveReader::File::dateTime()
     return dt.addMSecs(mtime_nsec / 1e6);
 }
 
+qint64 ArchiveReader::File::size()
+{
+    return static_cast<qint64>(archive_entry_size(m_entry));
+}
+
 int ArchiveReader::File::readNextHeader()
 {
     return archive_read_next_header(m_archive.get(), &m_entry);

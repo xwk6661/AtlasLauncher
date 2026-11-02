@@ -53,7 +53,7 @@ class ModFolderPage : public ExternalResourcesPage {
 
     void setFilter(const QString& filter) { m_fileSelectionFilter = filter; }
 
-    virtual QString displayName() const override { return tr("Mods"); }
+    virtual QString displayName() const override { return tr("模组"); }
     virtual QIcon icon() const override { return QIcon::fromTheme("loadermods"); }
     virtual QString id() const override { return "mods"; }
     virtual QString helpPage() const override { return "Loader-mods"; }

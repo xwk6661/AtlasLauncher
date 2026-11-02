@@ -57,7 +57,7 @@ class GameOptionsPage : public QWidget, public BasePage {
     void openedImpl() override;
     void closedImpl() override;
 
-    virtual QString displayName() const override { return tr("Game Options"); }
+    virtual QString displayName() const override { return tr("游戏选项"); }
     virtual QIcon icon() const override { return QIcon::fromTheme("settings"); }
     virtual QString id() const override { return "gameoptions"; }
     virtual QString helpPage() const override { return "Game-Options-management"; }

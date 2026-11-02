@@ -773,17 +773,23 @@ QStringList MinecraftInstance::processMinecraftArgs(AuthSessionPtr session, Mine
         args << "--tweakClass" << tweaker;
     }
 
-    if (targetToJoin) {
-        if (!targetToJoin->address.isEmpty()) {
-            if (profile->hasTrait("feature:is_quick_play_multiplayer")) {
-                args << "--quickPlayMultiplayer" << targetToJoin->address + ':' + QString::number(targetToJoin->port);
-            } else {
-                args << "--server" << targetToJoin->address;
-                args << "--port" << QString::number(targetToJoin->port);
-            }
-        } else if (!targetToJoin->world.isEmpty() && profile->hasTrait("feature:is_quick_play_singleplayer")) {
-            args << "--quickPlaySingleplayer" << targetToJoin->world;
+    if (targetToJoin && !targetToJoin->address.isEmpty()) {
+        if (profile->hasTrait("feature:is_quick_play_multiplayer")) {
+            args << "--quickPlayMultiplayer" << targetToJoin->address + ':' + QString::number(targetToJoin->port);
+        } else {
+            args << "--server" << targetToJoin->address;
+            args << "--port" << QString::number(targetToJoin->port);
         }
+    } else {
+        // 单人快速进入：显式 target 优先；没有 target 时读实例的 JoinWorldOnLaunch 设置
+        // （地图导入 / 实例「地图」页写的就是它；此前这个设置只有设置界面回填在用，启动时没人读）
+        QString world;
+        if (targetToJoin)
+            world = targetToJoin->world;
+        if (world.isEmpty())
+            world = m_settings->get("JoinWorldOnLaunch").toString();
+        if (!world.isEmpty() && profile->hasTrait("feature:is_quick_play_singleplayer"))
+            args << "--quickPlaySingleplayer" << world;
     }
 
     QMap<QString, QString> tokenMapping = makeProfileVarMapping(profile);

@@ -1,0 +1,146 @@
+{
+  "mcVersion": "1.21.1",
+  "strategy": "mappings",
+  "hasMappings": true,
+  "generatedAt": "2026-10-31T09:37:16.187Z",
+  "classes": {
+    "menuClass": {
+      "obf": "fof",
+      "named": "net.minecraft.client.gui.screens.TitleScreen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "menuClass"
+    },
+    "guiScreen": {
+      "obf": "fod",
+      "named": "net.minecraft.client.gui.screens.Screen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "guiScreen"
+    },
+    "minecraft": {
+      "obf": "fgo",
+      "named": "net.minecraft.client.Minecraft",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "minecraft"
+    },
+    "worldClient": {
+      "obf": "fzf",
+      "named": "net.minecraft.client.multiplayer.ClientLevel",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "worldClient"
+    },
+    "integratedServer": {
+      "obf": "guo",
+      "named": "net.minecraft.client.server.IntegratedServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "integratedServer"
+    },
+    "minecraftServer": {
+      "obf": "net/minecraft/server/MinecraftServer",
+      "named": "net.minecraft.server.MinecraftServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "minecraftServer"
+    }
+  },
+  "methods": {
+    "menuInit": {
+      "owner": "fof",
+      "name": "aT_",
+      "descriptor": "()V",
+      "named": "net.minecraft.client.gui.screens.TitleScreen.init",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "menuInit"
+    },
+    "getInstance": {
+      "owner": "fgo",
+      "name": "Q",
+      "descriptor": "()Lfgo;",
+      "named": "net.minecraft.client.Minecraft.getInstance",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": true,
+      "slot": "getInstance"
+    },
+    "enterWorld": {
+      "owner": "fgo",
+      "name": "a",
+      "descriptor": "(Lerf$c;Latp;Lalp;Z)V",
+      "named": "net.minecraft.client.Minecraft.doWorldLoad",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "note": "参数含 LevelStorageAccess / WorldStem，Agent 侧需要先构造再调用",
+      "slot": "enterWorld"
+    },
+    "setScreen": {
+      "owner": "fgo",
+      "name": "a",
+      "descriptor": "(Lfod;)V",
+      "named": "net.minecraft.client.Minecraft.setScreen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "setScreen"
+    },
+    "saveAllWorlds": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "a",
+      "descriptor": "(ZZZ)Z",
+      "named": "net.minecraft.server.MinecraftServer.saveAllChunks",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "saveAllWorlds"
+    },
+    "stopServer": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "v",
+      "descriptor": "()V",
+      "named": "net.minecraft.server.MinecraftServer.stopServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "stopServer"
+    }
+  },
+  "unresolved": [
+    {
+      "slot": "setLevel",
+      "reason": "映射表：net.minecraft.client.Minecraft 里没有 setLevel / loadWorld 的匹配重载；指纹：参数类型（客户端世界类）没有可靠指纹，需映射表或版本微字典"
+    }
+  ],
+  "warnings": [],
+  "inputs": {
+    "clientJar": "E:\\llmUsage\\Minecraft-AIO\\launcher\\.cache\\symbols\\1.21.1-client.jar",
+    "jarBytes": 26836906,
+    "mappings": "E:\\llmUsage\\Minecraft-AIO\\launcher\\.cache\\symbols\\1.21.1-mappings.txt",
+    "versionJson": "E:\\llmUsage\\Minecraft-AIO\\launcher\\.cache\\symbols\\1.21.1.json"
+  },
+  "timings": {
+    "jarMs": 1626,
+    "fingerprintMs": 7,
+    "mappingsMs": 351,
+    "totalMs": 1991
+  },
+  "cacheVersion": 2,
+  "cacheHit": false
+}

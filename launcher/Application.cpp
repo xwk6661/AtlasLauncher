@@ -124,6 +124,9 @@
 #include "meta/Index.h"
 #include "translations/TranslationsModel.h"
 
+// 地图启动器：所有启动入口的统一准备点（见 launch()）
+#include "maps/MapLaunchPrep.h"
+
 #include <DesktopServices.h>
 #include <FileSystem.h>
 #include <LocalPeer.h>
@@ -776,6 +779,27 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("CustomGLFWPath", "");
         m_settings->registerSetting("UseNativeSDL", false);
         m_settings->registerSetting("CustomSDLPath", "");
+
+        // ── Map launcher（docs/map-launcher）────────────────────────────
+        // 这一段全部是地图启动器自己的设置，集中在这里便于与上游对比 / 定位
+        m_settings->registerSetting("MapLibraryDir", "");           // 空 = 数据目录下的 maps/
+        m_settings->registerSetting("MapHallEndpoint", "");         // 空 = 用 ctmmaps 官方地址
+        m_settings->registerSetting("MapHallProxyMode", "auto");    // auto / manual / off
+        m_settings->registerSetting("MapHallProxyUrl", "");         // manual 模式下生效
+        // 大厅传输方式：auto（直连被判阻断就自动改用本机浏览器）/ network / browser
+        m_settings->registerSetting("MapHallTransport", "auto");
+        // 启动后静默更新地图库（点开大厅时只读本地，不再现拉）
+        m_settings->registerSetting("MapHallAutoUpdate", true);
+        m_settings->registerSetting("MapHallUpdateDays", 3);
+        m_settings->registerSetting("MapAutoEnter", true);          // 启动时直接进图
+        m_settings->registerSetting("MapSafeExit", true);           // 退出后判定落盘并回写统计
+        m_settings->registerSetting("MapEnterDelay", 1);            // Agent 进图前等待秒数
+        // 控制台（实例窗口）页签开关：地图启动器默认收起这四页，
+        // 一个地图一个实例，世界/服务器/备注/其他日志基本用不上
+        m_settings->registerSetting("MapConsoleShowNotes", false);
+        m_settings->registerSetting("MapConsoleShowWorlds", false);
+        m_settings->registerSetting("MapConsoleShowServers", false);
+        m_settings->registerSetting("MapConsoleShowOtherLogs", false);
 
         // Performance related options
         m_settings->registerSetting("EnableFeralGamemode", false);
@@ -1580,6 +1604,18 @@ bool Application::launch(MinecraftInstance* instance,
                 return false;
             }
         }
+
+        // 地图实例的唯一准备点：quickPlay 参数 / Agent 注入 / 退出统计钩子。
+        // 放在这里而不是主窗口，是因为启动入口有五个（启动按钮、双击、实例窗口、
+        // 快捷方式、地图信息区），漏掉任何一个都会让老版本实例静默停在主菜单。
+        // 非地图实例在内部直接返回，不产生任何副作用。
+        //
+        // 必须在 saveAll() **之后**：实例设置页的 Java 面板会把整段 JvmArgs 写回，
+        // 先注入的话会被它覆盖掉。
+        const auto mapPlan = maps::MapLaunchPrep::prepareForLaunch(instance);
+        if (mapPlan.applicable && mapPlan.track == maps::MapLaunchPrep::Track::Plain)
+            qDebug() << "Map launch:" << instance->id() << "will not auto-enter world —" << mapPlan.reason;
+
         auto& controller = extras.controller;
         controller = std::make_unique<LaunchController>();
         controller->setInstance(instance);

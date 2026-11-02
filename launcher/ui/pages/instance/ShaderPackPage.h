@@ -47,7 +47,7 @@ class ShaderPackPage : public ExternalResourcesPage {
     explicit ShaderPackPage(MinecraftInstance* instance, ShaderPackFolderModel* model, QWidget* parent = nullptr);
     ~ShaderPackPage() override = default;
 
-    QString displayName() const override { return tr("Shader Packs"); }
+    QString displayName() const override { return tr("光影"); }
     QIcon icon() const override { return QIcon::fromTheme("shaderpacks"); }
     QString id() const override { return "shaderpacks"; }
     QString helpPage() const override { return "shader-packs"; }

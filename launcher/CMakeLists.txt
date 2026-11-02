@@ -737,8 +737,71 @@ endif()
 
 ################################ COMPILE ################################
 
+# Map launcher modules (see docs/map-launcher/). Kept in their own directory so upstream
+# rebases only ever touch this list, never the modules themselves.
+set(MAPS_SOURCES
+    maps/MapTypes.h
+    maps/MapTextUtils.h
+    maps/MapTextUtils.cpp
+    maps/MapTheme.h
+    maps/DataVersionTable.h
+    maps/DataVersionTable.cpp
+    maps/LevelDatReader.h
+    maps/LevelDatReader.cpp
+    maps/MapVersionDetector.h
+    maps/MapVersionDetector.cpp
+    maps/MapArchiveScanner.h
+    maps/MapArchiveScanner.cpp
+    maps/MapMeta.h
+    maps/MapMeta.cpp
+    maps/MapNotes.h
+    maps/MapNotes.cpp
+    maps/MapImportTask.h
+    maps/MapImportTask.cpp
+    maps/AgentBootstrap.h
+    maps/AgentBootstrap.cpp
+    maps/MapLaunchPrep.h
+    maps/MapLaunchPrep.cpp
+    maps/HallTypes.h
+    maps/HallProxy.h
+    maps/HallProxy.cpp
+    maps/BrowserFetch.h
+    maps/BrowserFetch.cpp
+    maps/HallCache.h
+    maps/HallCache.cpp
+    maps/MapCoverLoader.h
+    maps/MapCoverLoader.cpp
+    maps/MapHallLink.h
+    maps/MapHallLink.cpp
+    maps/HallAPI.h
+    maps/HallAPI.cpp
+    maps/MapRepository.h
+    maps/MapRepository.cpp
+    maps/MapImportDialog.h
+    maps/MapImportDialog.cpp
+    maps/MapGalleryPage.h
+    maps/MapGalleryPage.cpp
+    maps/MapGalleryWindow.h
+    maps/MapGalleryWindow.cpp
+    maps/HallDialog.h
+    maps/HallDialog.cpp
+    maps/MapHallPage.h
+    maps/MapHallPage.cpp
+    maps/MapInstanceBar.h
+    maps/MapInstanceBar.cpp
+    maps/StarRatingWidget.h
+    maps/StarRatingWidget.cpp
+    maps/MapInstancePage.h
+    maps/MapInstancePage.cpp
+    maps/MapSettingsDialog.h
+    maps/MapSettingsDialog.cpp
+    maps/OptiFineDialog.h
+    maps/OptiFineDialog.cpp
+)
+
 set(LOGIC_SOURCES
     ${CORE_SOURCES}
+    ${MAPS_SOURCES}
     ${NET_SOURCES}
     ${LAUNCH_SOURCES}
     ${UPDATE_SOURCES}
@@ -1203,6 +1266,8 @@ qt_add_resources(LAUNCHER_RESOURCES
     resources/flat_white/flat_white.qrc
     resources/documents/documents.qrc
     resources/shaders/shaders.qrc
+    resources/maps/maps.qrc
+    resources/agents/agents.qrc
     "${CMAKE_CURRENT_BINARY_DIR}/../${Launcher_Branding_LogoQRC}"
 )
 

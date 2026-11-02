@@ -66,7 +66,8 @@ InstanceWindow::InstanceWindow(MinecraftInstance* instance, QWidget* parent) : Q
     // Add page container
     {
         auto provider = std::make_shared<InstancePageProvider>(m_instance);
-        m_container = new PageContainer(provider.get(), "console", this);
+        // 默认停在「设置」：日志是排障时才看，改 Java/内存/窗口才是日常（见 InstancePageProvider）
+        m_container = new PageContainer(provider.get(), "settings", this);
         m_container->setParentContainer(this);
         setCentralWidget(m_container);
         setContentsMargins(0, 0, 0, 0);

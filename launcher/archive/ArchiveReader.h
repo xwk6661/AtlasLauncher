@@ -54,6 +54,8 @@ class ArchiveReader {
         QString filename();
         bool isFile();
         QDateTime dateTime();
+        /// 该条目的解压后大小（libarchive 记录的 size，目录条目通常为 0）
+        qint64 size();
         const char* error();
 
         Result<QByteArray> readAll();

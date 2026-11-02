@@ -39,6 +39,7 @@
  */
 
 #include "Application.h"
+#include "BaseInstance.h"
 #include "BuildConfig.h"
 #include "FileSystem.h"
 
@@ -55,6 +56,7 @@
 #include <QActionGroup>
 #include <QApplication>
 #include <QButtonGroup>
+#include <QDateTime>
 #include <QFileDialog>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -67,8 +69,10 @@
 #include <QMessageBox>
 #include <QProgressDialog>
 #include <QShortcut>
+#include <QShowEvent>
 #include <QStatusBar>
 #include <QTextEdit>
+#include <QTimer>
 #include <QToolBar>
 #include <QToolButton>
 #include <QWidget>
@@ -97,6 +101,20 @@
 #include "ui/dialogs/CopyInstanceDialog.h"
 #include "ui/dialogs/CreateShortcutDialog.h"
 #include "ui/dialogs/CustomMessageBox.h"
+
+#include "maps/HallAPI.h"
+#include "maps/HallCache.h"
+#include "maps/HallDialog.h"
+#include "maps/MapArchiveScanner.h"
+#include "maps/MapGalleryPage.h"
+#include "maps/MapGalleryWindow.h"
+#include "maps/MapInstanceBar.h"
+#include "maps/MapImportDialog.h"
+#include "maps/MapImportTask.h"
+#include "maps/MapLaunchPrep.h"
+#include "maps/MapMeta.h"
+#include "maps/MapSettingsDialog.h"
+#include "minecraft/launch/MinecraftTarget.h"
 #include "ui/dialogs/ExportInstanceDialog.h"
 #include "ui/dialogs/ExportPackDialog.h"
 #include "ui/dialogs/IconPickerDialog.h"
@@ -202,6 +220,20 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
 
         m_instanceInfoWidget = ui->instanceToolBar->insertWidgetBefore(ui->actionLaunchInstance, infoWidget);
         Q_ASSERT(m_instanceInfoWidget != nullptr);
+
+        // ── 地图卡片：插在实例头像与启动按钮之间。
+        // 选中的是地图实例（或至少有一个人存档的实例）时才显示，其余情况整块隐藏，
+        // 原生操作栏完全不受影响（docs/map-launcher 的「融入而非另起炉灶」形态）。
+        m_mapBar = new maps::MapInstanceBar(this);
+        // 启动 20 秒后（等界面、实例列表都稳下来）再看要不要更新大厅数据
+        QTimer::singleShot(20000, this, &MainWindow::maybeUpdateHallLibrary);
+        m_mapBar->setVisible(false);
+        m_mapBarAction = ui->instanceToolBar->insertWidgetBefore(ui->actionLaunchInstance, m_mapBar);
+        Q_ASSERT(m_mapBarAction != nullptr);
+        // 显隐一律走 QWidgetAction（见 instanceChanged 里的注释）
+        if (m_mapBarAction != nullptr)
+            m_mapBarAction->setVisible(false);
+        connect(m_mapBar, &maps::MapInstanceBar::launchRequested, this, &MainWindow::launchMapInstance);
 
         m_instanceToolBarTopSeparator = ui->instanceToolBar->insertSeparator(ui->actionLaunchInstance);
     }
@@ -331,6 +363,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         view->setSourceOfGroupCollapseStatus(
             [](const QString& groupName) -> bool { return APPLICATION->instances()->isGroupCollapsed(groupName); });
         connect(view, &InstanceView::groupStateChanged, APPLICATION->instances(), &InstanceList::on_GroupStateChanged);
+
         ui->horizontalLayout->addWidget(view);
     }
     // The cat background
@@ -376,6 +409,48 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     m_statusCenter = new QLabel(tr("Total playtime: 0s"), this);
     statusBar()->addPermanentWidget(m_statusLeft, 1);
     statusBar()->addPermanentWidget(m_statusCenter, 0);
+
+    // ── 地图启动器：导入 / 设置 / 大厅，全部在代码里加，不动 .ui ──
+    {
+        auto* importMapAction = new QAction(tr("导入地图…"), this);
+        importMapAction->setObjectName(QStringLiteral("actionImportMap"));
+        connect(importMapAction, &QAction::triggered, this, &MainWindow::chooseMapArchive);
+        ui->fileMenu->addAction(importMapAction);
+
+        auto* mapSettingsAction = new QAction(tr("地图设置…"), this);
+        mapSettingsAction->setObjectName(QStringLiteral("actionMapSettings"));
+        connect(mapSettingsAction, &QAction::triggered, this, [this] {
+            maps::MapSettingsDialog dialog(this);
+            dialog.exec();
+        });
+        ui->fileMenu->addAction(mapSettingsAction);
+
+        auto* galleryWindowAction = new QAction(tr("地图画廊（新窗口）"), this);
+        galleryWindowAction->setObjectName(QStringLiteral("actionMapGalleryWindow"));
+        connect(galleryWindowAction, &QAction::triggered, this, &MainWindow::openMapGallery);
+        ui->viewMenu->addAction(galleryWindowAction);
+
+        // 大厅：发现地图的唯一入口（只读公开表，下载交给系统浏览器）
+        auto* hallAction = new QAction(tr("地图大厅…"), this);
+        hallAction->setObjectName(QStringLiteral("actionMapHall"));
+        connect(hallAction, &QAction::triggered, this, [this] {
+            maps::HallDialog dialog(this);
+            dialog.exec();
+        });
+        ui->viewMenu->addAction(hallAction);
+    }
+
+    // ── 「添加实例」下拉：常用来源直达 + 地图大厅 ──
+    {
+        auto* addInstanceMenu = new QMenu(this);
+        addInstanceMenu->addAction(tr("自定义…"), this, [this] { addInstanceViaPage(QStringLiteral("vanilla")); });
+        addInstanceMenu->addAction(tr("Modrinth…"), this, [this] { addInstanceViaPage(QStringLiteral("modrinth")); });
+        addInstanceMenu->addAction(tr("CurseForge…"), this, [this] { addInstanceViaPage(QStringLiteral("flame")); });
+        addInstanceMenu->addAction(tr("本地导入…"), this, [this] { addInstanceViaPage(QStringLiteral("import")); });
+        addInstanceMenu->addSeparator();
+        addInstanceMenu->addAction(tr("CTM 地图…"), this, [this] { addInstanceViaPage(QStringLiteral("ctmmaps")); });
+        ui->actionAddInstance->setMenu(addInstanceMenu);
+    }
 
     // Add "manage accounts" button, right align
     QWidget* spacer = new QWidget();
@@ -920,6 +995,29 @@ void MainWindow::on_actionAddInstance_triggered()
 
 void MainWindow::processURLs(QList<QUrl> urls)
 {
+    // 拖进来的压缩包先快速判定是不是地图（有 level.dat 的世界包）：
+    // 是 → 走地图导入；不是 → 走原来的整合包导入流程。
+    // 反向误判的代价更高（会直接建一个错版本的实例），所以宁可多扫一次。
+    static const QStringList archiveSuffixes{ QStringLiteral("zip"), QStringLiteral("rar"), QStringLiteral("7z"),
+                                              QStringLiteral("tar"), QStringLiteral("gz"),
+                                              QStringLiteral("mcworld") };
+    for (const auto& url : urls) {
+        if (!url.isLocalFile())
+            continue;
+        const QString localPath = url.toLocalFile();
+        if (!archiveSuffixes.contains(QFileInfo(localPath).suffix().toLower()))
+            continue;
+
+        QApplication::setOverrideCursor(Qt::WaitCursor);
+        const auto scanned = maps::MapArchiveScanner::scan(localPath);
+        QApplication::restoreOverrideCursor();
+        if (scanned && !scanned->worlds.isEmpty()) {
+            importMapArchive(localPath);
+            return;
+        }
+        break;  // 第一个压缩包不是地图：全部走整合包导入
+    }
+
     // NOTE: This loop only processes one dropped file!
     for (auto& url : urls) {
         if (url.isEmpty() || url.toString().trimmed().isEmpty())
@@ -1598,6 +1696,36 @@ void MainWindow::changeEvent(QEvent* event)
     QMainWindow::changeEvent(event);
 }
 
+void MainWindow::showEvent(QShowEvent* event)
+{
+    QMainWindow::showEvent(event);
+
+    if (m_instanceToolBarChecked)
+        return;
+    m_instanceToolBarChecked = true;
+
+    // QMainWindow::restoreState() 会把工具栏的**可见性和宽度**一起恢复。旧窗口状态里
+    // 只要实例操作栏是隐藏的（或被压成 0 宽），主界面就只剩实例列表，看起来像"侧栏没了"，
+    // 而且靠「视图」菜单重新勾选也会被下次启动的状态覆盖。
+    // 这里在首次显示后延到事件循环下一轮复查（此时布局已经算过，width() 才是真值），
+    // 只修不正常的情况，正常布局一行都不动。
+    QTimer::singleShot(0, this, [this] {
+        auto* bar = ui->instanceToolBar;
+        if (bar == nullptr)
+            return;
+
+        qDebug().nospace() << "[map] 实例操作栏：visible=" << bar->isVisible() << " hidden=" << bar->isHidden()
+                           << " size=" << bar->width() << "x" << bar->height();
+        if (!bar->isHidden() && bar->width() >= 80)
+            return;
+
+        qWarning() << "[map] 实例操作栏被旧窗口状态隐藏/压扁，按默认位置重新停靠";
+        addToolBar(Qt::RightToolBarArea, bar);
+        bar->setMinimumWidth(140);
+        bar->show();
+    });
+}
+
 void MainWindow::instanceActivated(QModelIndex index)
 {
     if (!index.isValid())
@@ -1624,6 +1752,9 @@ void MainWindow::instanceActivated(QModelIndex index)
 void MainWindow::on_actionLaunchInstance_triggered()
 {
     if (m_selectedInstance && !m_selectedInstance->isRunning()) {
+        // 地图实例走这里（原生启动按钮 / 快捷键）：quickPlay 由 JoinWorldOnLaunch 设置驱动，
+        // 老版本的 Agent 注入在这里补上，保证所有启动入口行为一致
+        prepareMapLaunch(m_selectedInstance);
         APPLICATION->launch(m_selectedInstance);
     }
 }
@@ -1666,6 +1797,17 @@ void MainWindow::instanceChanged(const QModelIndex& current, [[maybe_unused]] co
 {
     if (!current.isValid()) {
         APPLICATION->settings()->set("SelectedInstance", QString());
+        if (m_mapBar != nullptr) {
+            m_mapBar->updateInstance(nullptr);
+            m_mapBar->setVisible(false);
+        }
+        // 隐藏/显示必须走 QWidgetAction：直接 widget->setVisible(false) 会被
+        // QToolBar 从布局里摘掉，之后再把 widget 显示出来也回不到栏里（这就是
+        // 「地图信息区一直不出现」的原因）。
+        if (m_mapBarAction != nullptr)
+            m_mapBarAction->setVisible(false);
+        ui->instanceToolBar->setMinimumWidth(140);
+        ui->actionLaunchInstance->setVisible(true);
         selectionBad();
         return;
     }
@@ -1689,12 +1831,37 @@ void MainWindow::instanceChanged(const QModelIndex& current, [[maybe_unused]] co
 
         updateLaunchButton();
 
+        // 地图卡片：选中地图实例（或至少有一个人存档的实例）时显示，
+        // 并由它接管「启动」这个主操作 —— 原生启动按钮让位，免得两个一样的按钮打架。
+        bool mapCardShown = false;
+        if (m_mapBar != nullptr)
+            mapCardShown = m_mapBar->updateInstance(m_selectedInstance);
+        if (m_mapBarAction != nullptr) {
+            m_mapBarAction->setVisible(mapCardShown);
+            if (mapCardShown)
+                m_mapBar->setVisible(true);
+        }
+        // 卡片出现时把侧栏放宽到 AIO 那种比例（252px）：140px 装不下徽章行 + KV 行
+        ui->instanceToolBar->setMinimumWidth(mapCardShown ? 240 : 140);
+        ui->actionLaunchInstance->setVisible(!mapCardShown);
+
         APPLICATION->settings()->set("SelectedInstance", m_selectedInstance->id());
 
         connect(m_selectedInstance, &BaseInstance::runningStatusChanged, this, &MainWindow::refreshCurrentInstance);
         connect(m_selectedInstance, &BaseInstance::profilerChanged, this, &MainWindow::refreshCurrentInstance);
     } else {
         APPLICATION->settings()->set("SelectedInstance", QString());
+        if (m_mapBar != nullptr) {
+            m_mapBar->updateInstance(nullptr);
+            m_mapBar->setVisible(false);
+        }
+        // 隐藏/显示必须走 QWidgetAction：直接 widget->setVisible(false) 会被
+        // QToolBar 从布局里摘掉，之后再把 widget 显示出来也回不到栏里（这就是
+        // 「地图信息区一直不出现」的原因）。
+        if (m_mapBarAction != nullptr)
+            m_mapBarAction->setVisible(false);
+        ui->instanceToolBar->setMinimumWidth(140);
+        ui->actionLaunchInstance->setVisible(true);
         selectionBad();
         return;
     }
@@ -1829,5 +1996,170 @@ void MainWindow::handleInstanceRename(const QString& before, const QString& afte
 
     if (syncGroup) {
         APPLICATION->instances()->setInstanceGroup(newID, origGroup);
+    }
+}
+
+// ── 地图启动器（docs/map-launcher）────────────────────────────────────
+
+void MainWindow::chooseMapArchive()
+{
+    const QString path = QFileDialog::getOpenFileName(
+        this, tr("选择地图压缩包"), QString(),
+        tr("Minecraft 地图 (*.zip *.rar *.7z *.tar *.gz);;所有文件 (*)"));
+    if (!path.isEmpty())
+        importMapArchive(path);
+}
+
+void MainWindow::openMapGallery()
+{
+    if (m_mapGallery == nullptr) {
+        m_mapGallery = new maps::MapGalleryWindow(APPLICATION->instances(), this);
+        m_mapGallery->setAttribute(Qt::WA_DeleteOnClose, false);
+        connect(m_mapGallery, &maps::MapGalleryWindow::importRequested, this, &MainWindow::importMapArchive);
+        connect(m_mapGallery, &maps::MapGalleryWindow::launchRequested, this, &MainWindow::launchMapInstance);
+        connect(m_mapGallery, &maps::MapGalleryWindow::instanceOpenRequested, this, [this](const QString& instanceId) {
+            if (APPLICATION->instances()->getInstanceById(instanceId) != nullptr)
+                instanceActivated(APPLICATION->instances()->getInstanceIndexById(instanceId));
+        });
+    } else {
+        m_mapGallery->page()->refresh();
+    }
+
+    m_mapGallery->show();
+    m_mapGallery->raise();
+    m_mapGallery->activateWindow();
+}
+
+void MainWindow::importMapArchive(const QString& archivePath)
+{
+    // 画廊里的「导入地图…」按钮不带路径：这里补一次文件选择，别拿空路径去扫
+    if (archivePath.isEmpty()) {
+        chooseMapArchive();
+        return;
+    }
+
+    // 扫描是纯 IO，不落盘；大包会有短暂等待，先用等待光标
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const auto scanned = maps::MapArchiveScanner::scan(archivePath);
+    QApplication::restoreOverrideCursor();
+
+    if (!scanned) {
+        CustomMessageBox::selectable(this, tr("导入地图"), scanned.error(), QMessageBox::Critical)->show();
+        return;
+    }
+    if (scanned->worlds.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("导入地图"), tr("这个压缩包里没有找到任何世界。"), QMessageBox::Warning)->show();
+        return;
+    }
+
+    const auto options = maps::MapImportDialog::ask(*scanned, this);
+    if (!options)
+        return;
+
+    auto* task = new maps::MapImportTask(scanned->archivePath, *scanned, *options);
+    instanceFromInstanceTask(task);
+
+    // 导入是同步跑的（runModalTask 是模态），到这里实例已经提交
+    refreshInstances();
+    if (m_mapGallery != nullptr)
+        m_mapGallery->page()->refresh();
+}
+
+void MainWindow::maybeUpdateHallLibrary()
+{
+    /**
+     * 为什么放在启动时静默做，而不是等用户点开「CTM 地图」再做：
+     *
+     * 这条线路上每个请求都要借无头浏览器（3–10 秒），四个请求串起来二三十秒。
+     * 用户在对话框里等着看列表，体验就是"卡住了"。把它挪到启动后台做，
+     * 点开大厅时只读本地缓存 —— 打开即用；有新图时后台已经替用户拉好了。
+     *
+     * 条件：设置里开着自动更新，且缓存比 `MapHallUpdateDays` 天更旧（或没有）。
+     */
+    auto* settings = APPLICATION->settings();
+    if (!settings->get("MapHallAutoUpdate").toBool())
+        return;
+
+    const auto snapshot = maps::HallCache::load();
+    if (snapshot.isValid()) {
+        // 详情覆盖不全（旧版同步留下的）不看年龄，立刻补
+        const bool incomplete = !maps::HallCache::detailsCoverList(snapshot);
+        if (!incomplete && snapshot.fetchedAt.isValid()) {
+            const int days = std::max(1, settings->get("MapHallUpdateDays").toInt());
+            const qint64 ageSeconds = snapshot.fetchedAt.secsTo(QDateTime::currentDateTimeUtc());
+            if (ageSeconds < static_cast<qint64>(days) * 86400)
+                return;
+        }
+    }
+
+    qDebug() << "[hall] 后台更新地图库（静默，不影响界面）…";
+    auto* api = new maps::HallAPI(this);
+    connect(api, &maps::HallAPI::syncDone, this, [api](bool ok, const QString& message) {
+        qDebug().noquote() << "[hall]" << (ok ? "更新完成：" : "更新失败：") << message;
+        api->deleteLater();
+    });
+    api->syncLibrary();
+}
+
+void MainWindow::prepareMapLaunch(MinecraftInstance* instance, const QString& worldFolder)
+{
+    if (instance == nullptr)
+        return;
+    if (!QFile::exists(FS::PathCombine(instance->instanceRoot(), maps::MapMeta::fileName())))
+        return;  // 不是地图实例，什么都不用做
+
+    // 真正的准备工作只在 Application::launch 里做一次（五个启动入口共用同一条路径）。
+    // 这里只做两件「界面侧」的事：
+    //   1) 把「进入地图」选中的世界记下来，交给 prepareForLaunch 消费；
+    //   2) 用纯函数 plan() 预判一次，把「为什么不自动进图」提前告诉玩家。
+    if (!worldFolder.isEmpty())
+        instance->setProperty("mapRequestedWorld", worldFolder);
+
+    const auto planned = maps::MapLaunchPrep::plan(instance, maps::MapMeta::load(instance->instanceRoot()), worldFolder);
+    if (planned.track == maps::MapLaunchPrep::Track::Plain && !planned.reason.isEmpty())
+        statusBar()->showMessage(planned.reason, 8000);
+}
+
+void MainWindow::launchMapInstance(const QString& instanceId, const QString& worldFolder)
+{
+    auto* instance = APPLICATION->instances()->getInstanceById(instanceId);
+    if (instance == nullptr)
+        return;
+    if (instance->isRunning()) {
+        statusBar()->showMessage(tr("这个地图已经在运行了。"), 5000);
+        return;
+    }
+
+    // 选中的世界要一路传到 Agent 参数里：只给 quickPlay 传 target 的话，
+    // 老版本多世界包无论选哪个都会进第一个存档。
+    prepareMapLaunch(instance, worldFolder);
+
+    // 多世界时把选中的世界写进启动参数（processMinecraftArgs 优先读 target）
+    if (!worldFolder.isEmpty() && instance->traits().contains(QStringLiteral("feature:is_quick_play_singleplayer"))) {
+        auto target = std::make_shared<MinecraftTarget>();
+        target->port = 0;
+        target->world = worldFolder;
+        APPLICATION->launch(instance, LaunchMode::Normal, target);
+        return;
+    }
+
+    // 进图参数由 processMinecraftArgs 统一处理（target 优先，否则读 JoinWorldOnLaunch）
+    APPLICATION->launch(instance);
+}
+
+void MainWindow::addInstanceViaPage(const QString& pageId)
+{
+    QString groupName = APPLICATION->settings()->get("LastUsedGroupForNewInstance").toString();
+
+    NewInstanceDialog newInstDlg(groupName, QString(), {}, this, pageId);
+    if (!newInstDlg.exec())
+        return;
+
+    APPLICATION->settings()->set("LastUsedGroupForNewInstance", newInstDlg.instGroup());
+    APPLICATION->settings()->set("LastUsedInstDirForNewInstance", newInstDlg.instDir());
+
+    InstanceTask* creationTask = newInstDlg.extractTask();
+    if (creationTask) {
+        instanceFromInstanceTask(creationTask);
     }
 }

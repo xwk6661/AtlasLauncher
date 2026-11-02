@@ -50,7 +50,7 @@ class ResourcePackPage : public ExternalResourcesPage {
    public:
     explicit ResourcePackPage(MinecraftInstance* instance, ResourcePackFolderModel* model, QWidget* parent = 0);
 
-    QString displayName() const override { return tr("Resource Packs"); }
+    QString displayName() const override { return tr("材质"); }
     QIcon icon() const override { return QIcon::fromTheme("resourcepacks"); }
     QString id() const override { return "resourcepacks"; }
     QString helpPage() const override { return "Resource-packs"; }

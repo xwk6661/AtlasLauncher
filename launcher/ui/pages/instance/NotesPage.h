@@ -50,7 +50,7 @@ class NotesPage : public QWidget, public BasePage {
    public:
     explicit NotesPage(BaseInstance* inst, QWidget* parent = 0);
     virtual ~NotesPage();
-    virtual QString displayName() const override { return tr("Notes"); }
+    virtual QString displayName() const override { return tr("备注"); }
     virtual QIcon icon() const override
     {
         auto icon = QIcon::fromTheme("notes");

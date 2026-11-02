@@ -28,7 +28,7 @@ class DataPackPage : public ExternalResourcesPage {
    public:
     explicit DataPackPage(MinecraftInstance* instance, DataPackFolderModel* model, QWidget* parent = nullptr);
 
-    QString displayName() const override { return QObject::tr("Data Packs"); }
+    QString displayName() const override { return QObject::tr("数据包"); }
     QIcon icon() const override { return QIcon::fromTheme("datapacks"); }
     QString id() const override { return "datapacks"; }
     QString helpPage() const override { return "Data-packs"; }

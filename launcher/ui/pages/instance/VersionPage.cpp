@@ -65,6 +65,8 @@
 
 #include "ui/GuiUtil.h"
 
+#include "maps/OptiFineDialog.h"
+
 #include "DesktopServices.h"
 #include "Result.h"
 #include "icons/IconList.h"
@@ -133,6 +135,23 @@ VersionPage::VersionPage(MinecraftInstance* inst, QWidget* parent) : QMainWindow
     ui->setupUi(this);
 
     ui->toolBar->insertSpacer(ui->actionReload);
+
+    /**
+     * 「安装 OptiFine…」放在右侧动作列的顶部（和「重新加载」「全部下载」同一组）。
+     *
+     * 为什么不做成"添加组件"里的一项：OptiFine 在 Prism 的 meta 里没有对应的
+     * 组件（官方没有可供 launcher 解析的版本 JSON），它要么当 jar 模组、要么走
+     * 官方 GUI 安装器。这里选前者 —— 和 AIO / HMCL 一致。
+     */
+    {
+        auto* optifineAction = new QAction(tr("安装 OptiFine…"), this);
+        connect(optifineAction, &QAction::triggered, this, [this] {
+            maps::OptiFineDialog dialog(m_inst, this);
+            dialog.exec();
+        });
+        ui->toolBar->insertAction(ui->actionReload, optifineAction);
+        ui->toolBar->insertSeparator(ui->actionReload);
+    }
 
     m_profile = m_inst->getPackProfile();
 

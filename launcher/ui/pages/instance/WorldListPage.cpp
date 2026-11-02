@@ -38,6 +38,9 @@
 #include "WorldListPage.h"
 #include "AssertHelpers.h"
 #include "Commandline.h"
+
+#include "FileSystem.h"
+#include "maps/MapMeta.h"
 #include "minecraft/WorldList.h"
 #include "settings/SettingsObject.h"
 #include "tasks/ConcurrentTask.h"
@@ -50,6 +53,7 @@
 #include <QCursor>
 #include <QDialogButtonBox>
 #include <QEvent>
+#include <QFile>
 #include <QInputDialog>
 #include <QKeyEvent>
 #include <QMenu>
@@ -61,8 +65,6 @@
 #include <Qt>
 #include <algorithm>
 #include <memory>
-
-#include "FileSystem.h"
 
 #include "DesktopServices.h"
 #include "Json.h"
@@ -425,8 +427,15 @@ void WorldListPage::worldChanged()
 {
     QModelIndex index = getSelectedWorld();
     bool enable = index.isValid();
+
+    // 地图实例的存档是导入时按 map.json 解出来的，删掉/改名会直接破坏这张图
+    // （docs/map-launcher 风险登记册 R8）。这里只读：要重装请走实例的「地图」页。
+    const bool isMapInstance =
+        m_inst != nullptr && QFile::exists(FS::PathCombine(m_inst->instanceRoot(), maps::MapMeta::fileName()));
+    if (isMapInstance)
+        enable = false;
     m_ui->actionCopy_Seed->setEnabled(enable);
-    m_ui->actionRemove->setEnabled(m_ui->worldTreeView->selectionModel()->hasSelection());
+    m_ui->actionRemove->setEnabled(!isMapInstance && m_ui->worldTreeView->selectionModel()->hasSelection());
     m_ui->actionCopy->setEnabled(enable);
     m_ui->actionRename->setEnabled(enable);
     m_ui->actionData_Packs->setEnabled(enable);

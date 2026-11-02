@@ -44,7 +44,11 @@ void SequentialTask::subTaskFailed(Task::Ptr task, const QString& msg)
 {
     qWarning() << msg;
     ConcurrentTask::subTaskFailed(task, msg);
-    emitFailed(msg);
+    // 多个子任务一起失败时（网络抖动很常见），第一个 emitFailed 之后任务已经不是
+    // Running；第二个再 emitFailed 会撞上 Debug 构建的 Q_ASSERT 直接崩溃
+    // （Release 构建只是记一条警告，所以上游一直没发现）。
+    if (isRunning())
+        emitFailed(msg);
 }
 
 void SequentialTask::updateState()

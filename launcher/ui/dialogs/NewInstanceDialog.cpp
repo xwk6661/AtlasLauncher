@@ -66,18 +66,16 @@
 
 #include "ui/pages/modplatform/CustomPage.h"
 #include "ui/pages/modplatform/ImportPage.h"
-#include "ui/pages/modplatform/atlauncher/AtlPage.h"
 #include "ui/pages/modplatform/flame/FlamePage.h"
-#include "ui/pages/modplatform/ftb/FtbPage.h"
-#include "ui/pages/modplatform/legacy_ftb/Page.h"
 #include "ui/pages/modplatform/modrinth/ModrinthPage.h"
-#include "ui/pages/modplatform/technic/TechnicPage.h"
 #include "ui/widgets/PageContainer.h"
+#include "maps/MapHallPage.h"
 
 NewInstanceDialog::NewInstanceDialog(const QString& initialGroup,
                                      const QString& url,
                                      const QMap<QString, QString>& extraInfo,
-                                     QWidget* parent)
+                                     QWidget* parent,
+                                     const QString& initialPage)
     : QDialog(parent), ui(new Ui::NewInstanceDialog), m_instIconKey("default")
 {
     ui->setupUi(this);
@@ -176,6 +174,10 @@ NewInstanceDialog::NewInstanceDialog(const QString& initialGroup,
     helpButton->setText(tr("Help"));
     connect(helpButton, &QPushButton::clicked, m_container, &PageContainer::help);
 
+    // 打开时直接定位到指定来源页（「添加实例」下拉菜单用）
+    if (!initialPage.isEmpty())
+        m_container->selectPage(initialPage);
+
     if (!url.isEmpty()) {
         QUrl actualUrl(url);
         const auto packId = extraInfo.value("pack_id");
@@ -244,17 +246,17 @@ QList<BasePage*> NewInstanceDialog::getPages()
 
     m_importPage = new ImportPage(this);
 
+    // 只保留四个来源：自定义 / 导入 / CurseForge / Modrinth。
+    // ATLauncher、FTB（含 Legacy 与「从 FTB 导入」）、Technic 已按产品要求从这页移除；
+    // 它们对应的页面源码仍然留在工程里，只是不再实例化（上游同步时冲突面更小）。
     pages.append(new CustomPage(this));
     pages.append(m_importPage);
-    pages.append(new AtlPage(this));
     if (APPLICATION->capabilities() & Application::SupportsFlame) {
         pages.append(new FlamePage(this));
     }
-    pages.append(new FtbPage(this));
-    pages.append(new LegacyFTB::Page(this));
-    pages.append(new FTBImportAPP::ImportFTBPage(this));
     pages.append(new ModrinthPage(this));
-    pages.append(new TechnicPage(this));
+    // CTM 地图大厅：搜索 / 预览 / 选已下载的文件，形态与上面两个 mod 平台页一致
+    pages.append(new maps::MapHallPage(this, this));
 
     return pages;
 }
