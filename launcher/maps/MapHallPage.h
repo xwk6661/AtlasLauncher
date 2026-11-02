@@ -29,6 +29,7 @@
 class NewInstanceDialog;
 class QComboBox;
 class QHBoxLayout;
+class QGridLayout;
 class QLabel;
 class QLineEdit;
 class QListWidget;
@@ -133,7 +134,8 @@ class MapHallPage : public QWidget, public BasePage {
     /// 详情顶部的一行统计 chip（★ 评分 / 平均时长 / 游玩人数），照 AIO hall-detail 的 stat
     QWidget* m_statBox = nullptr;
     QHBoxLayout* m_statRow = nullptr;
-    QLabel* m_facts = nullptr;
+    /// 「简介」页的基本信息：每次选中都重建（字段数随数据变，标签方式不好清）
+    QGridLayout* m_factsGrid = nullptr;
     QLabel* m_description = nullptr;
     QLabel* m_hint = nullptr;
 
@@ -141,7 +143,9 @@ class MapHallPage : public QWidget, public BasePage {
     /// 简介 / 评论 / 我的 三个页签（各自独占一屏）
     class QTabWidget* m_tabs = nullptr;
     int m_reviewsTabIndex = 1;
-    QLabel* m_mineState = nullptr;
+    /// 「我的」页容器：每次刷新按卡片重建
+    QWidget* m_mineBody = nullptr;
+    QVBoxLayout* m_mineLayout = nullptr;
     QWidget* m_reviewBox = nullptr;
     QVBoxLayout* m_reviewLayout = nullptr;
     QPushButton* m_reviewMore = nullptr;

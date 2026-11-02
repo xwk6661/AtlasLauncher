@@ -23,6 +23,7 @@
 #include <QDialog>
 #include <QFileDialog>
 #include <QFont>
+#include <QGridLayout>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -59,6 +60,7 @@
 #include "minecraft/MinecraftInstance.h"
 #include "MapSettingsDialog.h"
 #include "MapTheme.h"
+#include "MapInfoCard.h"
 #include "MapReviewCard.h"
 #include "MapTextUtils.h"
 #include "settings/SettingsObject.h"
@@ -567,25 +569,44 @@ void MapHallPage::buildUi()
     m_tabs = new QTabWidget(detail);
     m_tabs->setDocumentMode(true);
 
+    /**
+     * 「简介」：与实例「信息 → 简介」同款 —— 写基本信息的卡片 + 写正文的卡片，
+     * 整页一个滚动区（以前正文单独套一个滚动框，和属性区互相抢高度）。
+     */
     auto* about = new QWidget(m_tabs);
     auto* aboutLayout = new QVBoxLayout(about);
-    aboutLayout->setContentsMargins(4, 4, 4, 4);
-    aboutLayout->setSpacing(6);
+    aboutLayout->setContentsMargins(4, 6, 4, 4);
+    aboutLayout->setSpacing(0);
 
-    m_facts = new QLabel(about);
-    m_facts->setWordWrap(true);
-    m_facts->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    aboutLayout->addWidget(m_facts);
+    auto* aboutScroll = new QScrollArea(about);
+    aboutScroll->setWidgetResizable(true);
+    aboutScroll->setFrameShape(QFrame::NoFrame);
+    aboutScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
-    auto* descScroll = new QScrollArea(about);
-    descScroll->setWidgetResizable(true);
-    descScroll->setFrameShape(QFrame::NoFrame);
-    m_description = new QLabel(descScroll);
+    auto* aboutBody = new QWidget(aboutScroll);
+    auto* aboutBodyLayout = new QVBoxLayout(aboutBody);
+    aboutBodyLayout->setContentsMargins(0, 0, 4, 0);
+    aboutBodyLayout->setSpacing(10);
+
+    QVBoxLayout* factsBody = nullptr;
+    aboutBodyLayout->addWidget(ui::makeCard(aboutBody, tr("基本信息"), &factsBody));
+    m_factsGrid = new QGridLayout();
+    m_factsGrid->setHorizontalSpacing(10);
+    m_factsGrid->setVerticalSpacing(4);
+    m_factsGrid->setColumnStretch(1, 1);
+    factsBody->addLayout(m_factsGrid);
+
+    QVBoxLayout* descBody = nullptr;
+    aboutBodyLayout->addWidget(ui::makeCard(aboutBody, tr("简介"), &descBody));
+    m_description = new QLabel(aboutBody);
     m_description->setWordWrap(true);
     m_description->setAlignment(Qt::AlignTop | Qt::AlignLeft);
     m_description->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    descScroll->setWidget(m_description);
-    aboutLayout->addWidget(descScroll, 1);
+    descBody->addWidget(m_description);
+
+    aboutBodyLayout->addStretch(1);
+    aboutScroll->setWidget(aboutBody);
+    aboutLayout->addWidget(aboutScroll, 1);
 
     m_tabs->addTab(about, tr("简介"));
 
@@ -615,17 +636,23 @@ void MapHallPage::buildUi()
     m_reviewsTabIndex = m_tabs->count() - 1;
 
     // 「我的」：本机视角 —— 哪张实例关联了这张图、它的评分笔记与游玩记录
+    // 「我的」：与实例「信息 → 我的」同款卡片列表，内容随选中项重建
     auto* mineTab = new QWidget(m_tabs);
     auto* mineLayout = new QVBoxLayout(mineTab);
-    mineLayout->setContentsMargins(4, 8, 4, 4);
-    mineLayout->setSpacing(6);
+    mineLayout->setContentsMargins(4, 6, 4, 4);
+    mineLayout->setSpacing(0);
 
-    m_mineState = new QLabel(mineTab);
-    m_mineState->setWordWrap(true);
-    m_mineState->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    m_mineState->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    mineLayout->addWidget(m_mineState);
-    mineLayout->addStretch(1);
+    auto* mineScroll = new QScrollArea(mineTab);
+    mineScroll->setWidgetResizable(true);
+    mineScroll->setFrameShape(QFrame::NoFrame);
+    mineScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+
+    m_mineBody = new QWidget(mineScroll);
+    m_mineLayout = new QVBoxLayout(m_mineBody);
+    m_mineLayout->setContentsMargins(0, 0, 4, 0);
+    m_mineLayout->setSpacing(10);
+    mineScroll->setWidget(m_mineBody);
+    mineLayout->addWidget(mineScroll, 1);
 
     m_tabs->addTab(mineTab, tr("我的"));
 
@@ -836,7 +863,7 @@ void MapHallPage::showRow(int index)
         sub.append(tr("版本 %1").arg(item.version));
     m_subtitle->setText(sub.join(QStringLiteral(" · ")));
 
-    m_facts->clear();
+    ui::clearLayout(m_factsGrid);
     m_description->setText(tr("正在读取简介与评论…"));
     clearReviews();
     refreshMineTab();
@@ -859,11 +886,19 @@ void MapHallPage::onDetail(const HallDetail& detail)
 
     const auto& item = detail.item;
 
-    // 11 项属性：缺的就不写，别显示「-0」
-    QStringList facts;
-    const auto addFact = [&facts](const QString& label, const QString& value) {
-        if (!value.isEmpty())
-            facts.append(QStringLiteral("%1：%2").arg(label, value));
+    // 11 项属性：两列（字段名 / 值）填进「基本信息」卡片；缺的整行跳过，别显示「-0」
+    ui::clearLayout(m_factsGrid);
+    QWidget* factsParent = m_factsGrid->parentWidget() != nullptr ? m_factsGrid->parentWidget() : this;
+    int factRow = 0;
+    const auto addFact = [this, factsParent, &factRow](const QString& label, const QString& value) {
+        if (value.isEmpty())
+            return;
+        m_factsGrid->addWidget(ui::makeKeyLabel(label, factsParent), factRow, 0, Qt::AlignTop);
+        auto* valueLabel = new QLabel(value, factsParent);
+        valueLabel->setWordWrap(true);
+        valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        m_factsGrid->addWidget(valueLabel, factRow, 1);
+        ++factRow;
     };
     addFact(tr("系列"), item.series);
     addFact(tr("版本"), item.version);
@@ -883,7 +918,6 @@ void MapHallPage::onDetail(const HallDetail& detail)
     addFact(tr("发布"), item.releaseDate);
     if (item.lostMedia)
         addFact(tr("提醒"), tr("原下载已失效"));
-    m_facts->setText(facts.join(QStringLiteral("\n")));
 
     // 统计 chip：★ 评分 / 平均时长 / 游玩人数（AIO hall-detail 顶部那排 stat）
     while (m_statRow->count() > 1) {
@@ -1223,11 +1257,49 @@ QString MapHallPage::currentDownloadUrl() const
 
 void MapHallPage::refreshMineTab()
 {
-    if (m_mineState == nullptr)
+    if (m_mineLayout == nullptr)
         return;
+
+    /**
+     * 每次重建：卡片数量随状态变（未选 / 未关联 / 已关联），
+     * 比摆一堆空标签再逐个藏省事，也不会出现"上一张图的信息还挂着"。
+     */
+    ui::clearLayout(m_mineLayout);
+
+    const auto addCard = [this](const QString& title, QGridLayout** gridOut) {
+        QVBoxLayout* body = nullptr;
+        auto* card = ui::makeCard(m_mineBody, title, &body);
+        m_mineLayout->addWidget(card);
+        auto* grid = new QGridLayout();
+        grid->setHorizontalSpacing(10);
+        grid->setVerticalSpacing(4);
+        grid->setColumnStretch(1, 1);
+        body->addLayout(grid);
+        if (gridOut != nullptr)
+            *gridOut = grid;
+        return card;
+    };
+    const auto addRow = [](QGridLayout* grid, QWidget* parent, int row, const QString& key, const QString& value) {
+        grid->addWidget(ui::makeKeyLabel(key, parent), row, 0, Qt::AlignTop);
+        auto* label = new QLabel(value, parent);
+        label->setWordWrap(true);
+        label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        grid->addWidget(label, row, 1);
+    };
+    const auto addTipCard = [this](const QString& title, const QString& text) {
+        QVBoxLayout* body = nullptr;
+        m_mineLayout->addWidget(ui::makeCard(m_mineBody, title, &body));
+        auto* tip = new QLabel(text, m_mineBody);
+        tip->setWordWrap(true);
+        tip->setEnabled(false);
+        tip->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        body->addWidget(tip);
+    };
+
     const int row = m_list->currentRow();
     if (row < 0 || row >= m_items.size()) {
-        m_mineState->setText(tr("先在左边选一张图。"));
+        addTipCard(tr("本机记录"), tr("先在左边选一张图。"));
+        m_mineLayout->addStretch(1);
         return;
     }
 
@@ -1251,49 +1323,65 @@ void MapHallPage::refreshMineTab()
     }
 
     if (linked == nullptr) {
-        m_mineState->setText(tr("本机还没有关联到这张图的实例。\n\n"
-                                "用下面的「选择已下载的文件…」把它导入成实例之后，\n"
-                                "在实例窗口的「信息 → 简介」页可以把它关联到这里 ——\n"
-                                "那时这一页会显示它的中文名、我的评分、笔记和游玩记录。"));
+        addTipCard(tr("关联实例"), tr("本机还没有关联到这张图的实例。\n\n"
+                                      "用下面的「选择已下载的文件…」把它导入成实例之后，\n"
+                                      "在实例窗口的「信息 → 简介」页可以把它关联到这里 ——\n"
+                                      "那时这一页会显示它的中文名、我的评分、笔记和游玩记录。"));
+        m_mineLayout->addStretch(1);
         return;
     }
 
     const MapNotes notes = MapNotes::load(linked->instanceRoot());
     const MapMeta meta = MapMeta::load(linked->instanceRoot());
 
-    QStringList lines;
-    lines.append(tr("本机实例：<b>%1</b>").arg(linked->name().toHtmlEscaped()));
+    // ── 卡片 1：关联实例 ──
+    QGridLayout* linkGrid = nullptr;
+    QWidget* linkCard = addCard(tr("关联实例"), &linkGrid);
+    int line = 0;
+    addRow(linkGrid, linkCard, line++, tr("实例"),
+           QStringLiteral("<b>%1</b>").arg(linked->name().toHtmlEscaped()));
     if (link.title != item.title)
-        lines.append(tr("关联标题：%1").arg(link.title.toHtmlEscaped()));
+        addRow(linkGrid, linkCard, line++, tr("关联标题"), link.title);
+    addRow(linkGrid, linkCard, line++, tr("目录"), linked->instanceRoot());
 
-    lines.append(QString());
-    lines.append(tr("中文名：%1").arg(notes.alias.isEmpty() ? tr("（未设置）") : notes.alias.toHtmlEscaped()));
+    // ── 卡片 2：我的记录（notes.json） ──
+    QGridLayout* notesGrid = nullptr;
+    QWidget* notesCard = addCard(tr("我的记录"), &notesGrid);
+    line = 0;
+    addRow(notesGrid, notesCard, line++, tr("中文名"),
+           notes.alias.isEmpty() ? tr("（未设置）") : notes.alias.toHtmlEscaped());
     if (notes.rating > 0) {
         const int full = std::clamp(notes.rating, 0, MapNotes::MAX_RATING) / 2;
-        lines.append(tr("我的评分：%1  %2 / 5")
-                         .arg(QString(full, QChar(0x2605)) + QString(5 - full, QChar(0x2606)),
-                              QString::number(notes.rating / 2.0, 'f', 1)));
-    } else
-        lines.append(tr("我的评分：未评分"));
-    lines.append(tr("笔记：%1").arg(notes.note.trimmed().isEmpty() ? tr("（空）") : notes.note.trimmed().toHtmlEscaped()));
+        addRow(notesGrid, notesCard, line++, tr("我的评分"),
+               QStringLiteral("%1  %2 / 5")
+                   .arg(QString(full, QChar(0x2605)) + QString(5 - full, QChar(0x2606)),
+                        QString::number(notes.rating / 2.0, 'f', 1)));
+    } else {
+        addRow(notesGrid, notesCard, line++, tr("我的评分"), tr("未评分"));
+    }
+    addRow(notesGrid, notesCard, line++, tr("笔记"),
+           notes.note.trimmed().isEmpty() ? tr("（空）") : notes.note.trimmed().toHtmlEscaped());
 
-    lines.append(QString());
+    // ── 卡片 3：游玩记录（map.json 的 stats） ──
+    QGridLayout* playGrid = nullptr;
+    QWidget* playCard = addCard(tr("游玩"), &playGrid);
+    line = 0;
     if (meta.stats.playSeconds > 0) {
         const int minutes = static_cast<int>(meta.stats.playSeconds / 60);
-        lines.append(tr("游玩时长：%1").arg(minutes >= 60 ? tr("%1 小时").arg(minutes / 60.0, 0, 'f', 1)
-                                                          : tr("%1 分钟").arg(minutes)));
-    } else
-        lines.append(tr("游玩时长：还没有记录"));
+        addRow(playGrid, playCard, line++, tr("时长"),
+               minutes >= 60 ? tr("%1 小时").arg(minutes / 60.0, 0, 'f', 1) : tr("%1 分钟").arg(minutes));
+    } else {
+        addRow(playGrid, playCard, line++, tr("时长"), tr("还没有记录"));
+    }
     if (meta.stats.lastPlayed.isValid())
-        lines.append(tr("上次游玩：%1").arg(meta.stats.lastPlayed.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm"))));
+        addRow(playGrid, playCard, line++, tr("上次游玩"),
+               meta.stats.lastPlayed.toLocalTime().toString(QStringLiteral("yyyy-MM-dd HH:mm")));
     if (meta.stats.lastExit == QLatin1String("safe"))
-        lines.append(tr("退出状态：正常落盘"));
+        addRow(playGrid, playCard, line++, tr("退出状态"), tr("正常落盘"));
     else if (meta.stats.lastExit == QLatin1String("crash"))
-        lines.append(tr("退出状态：异常退出"));
+        addRow(playGrid, playCard, line++, tr("退出状态"), tr("异常退出"));
 
-    lines.append(QString());
-    lines.append(tr("实例目录：%1").arg(linked->instanceRoot().toHtmlEscaped()));
-    m_mineState->setText(lines.join(QStringLiteral("<br/>")));
+    m_mineLayout->addStretch(1);
 }
 
 void MapHallPage::clearReviews()

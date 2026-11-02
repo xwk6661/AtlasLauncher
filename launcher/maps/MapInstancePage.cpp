@@ -56,6 +56,7 @@
 #include "MapHallLink.h"
 #include "MapImportTask.h"
 #include "MapRepository.h"
+#include "MapInfoCard.h"
 #include "MapTheme.h"
 #include "MapReviewCard.h"
 #include "StarRatingWidget.h"
@@ -68,38 +69,6 @@ namespace {
 constexpr int ABOUT_COVER_W = 200;
 constexpr int ABOUT_COVER_H = 113;
 
-/// 信息卡片：外观与评论卡片一致（MapTheme::ui::cardStyle），标题可选
-QFrame* makeCard(QWidget* parent, const QString& title, QVBoxLayout** bodyOut = nullptr)
-{
-    auto* card = new QFrame(parent);
-    card->setObjectName(QStringLiteral("mapCard"));
-    card->setStyleSheet(ui::cardStyle());
-
-    auto* outer = new QVBoxLayout(card);
-    outer->setContentsMargins(12, 10, 12, 12);
-    outer->setSpacing(8);
-    if (!title.isEmpty()) {
-        auto* head = new QLabel(title, card);
-        QFont headFont = head->font();
-        headFont.setBold(true);
-        head->setFont(headFont);
-        outer->addWidget(head);
-    }
-    auto* body = new QVBoxLayout();
-    body->setSpacing(6);
-    outer->addLayout(body);
-    if (bodyOut != nullptr)
-        *bodyOut = body;
-    return card;
-}
-
-/// 表单左侧的字段名：次要色，和值拉开层次
-QLabel* makeKey(const QString& text, QWidget* parent)
-{
-    auto* label = new QLabel(text, parent);
-    label->setStyleSheet(QStringLiteral("color: %1;").arg(ui::mutedTextColor().name()));
-    return label;
-}
 }  // namespace
 
 
@@ -140,14 +109,14 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
     // 与 map.json 分开存：那是"这张图是什么"，这是"我怎么看这张图"（照 AIO 的 UserNote）。
     // 所以重装地图不会冲掉这里的东西。
     QVBoxLayout* notesBody = nullptr;
-    mineLayout->addWidget(makeCard(minePage, tr("我的记录"), &notesBody));
+    mineLayout->addWidget(ui::makeCard(minePage, tr("我的记录"), &notesBody));
 
     auto* notesGrid = new QGridLayout();
     notesGrid->setHorizontalSpacing(12);
     notesGrid->setVerticalSpacing(8);
     notesGrid->setColumnStretch(1, 1);
 
-    notesGrid->addWidget(makeKey(tr("中文名"), minePage), 0, 0);
+    notesGrid->addWidget(ui::makeKeyLabel(tr("中文名"), minePage), 0, 0);
     auto* aliasRow = new QHBoxLayout();
     aliasRow->setSpacing(6);
     m_aliasEdit = new QLineEdit(minePage);
@@ -161,7 +130,7 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
     aliasRow->addWidget(m_aliasState);
     notesGrid->addLayout(aliasRow, 0, 1);
 
-    notesGrid->addWidget(makeKey(tr("我的评分"), minePage), 1, 0, Qt::AlignVCenter);
+    notesGrid->addWidget(ui::makeKeyLabel(tr("我的评分"), minePage), 1, 0, Qt::AlignVCenter);
     auto* ratingRow = new QHBoxLayout();
     ratingRow->setSpacing(6);
     m_stars = new StarRatingWidget(minePage);
@@ -173,7 +142,7 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
     ratingRow->addStretch(1);
     notesGrid->addLayout(ratingRow, 1, 1);
 
-    notesGrid->addWidget(makeKey(tr("笔记"), minePage), 2, 0, Qt::AlignTop);
+    notesGrid->addWidget(ui::makeKeyLabel(tr("笔记"), minePage), 2, 0, Qt::AlignTop);
     auto* noteColumn = new QVBoxLayout();
     noteColumn->setSpacing(4);
     m_noteEdit = new QPlainTextEdit(minePage);
@@ -229,20 +198,20 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
 
     // ── 卡片 2：来源与统计 ──
     QVBoxLayout* sourceBody = nullptr;
-    mineLayout->addWidget(makeCard(minePage, tr("来源与统计"), &sourceBody));
+    mineLayout->addWidget(ui::makeCard(minePage, tr("来源与统计"), &sourceBody));
 
     auto* sourceGrid = new QGridLayout();
     sourceGrid->setHorizontalSpacing(12);
     sourceGrid->setVerticalSpacing(8);
     sourceGrid->setColumnStretch(1, 1);
 
-    sourceGrid->addWidget(makeKey(tr("来源压缩包"), minePage), 0, 0, Qt::AlignTop);
+    sourceGrid->addWidget(ui::makeKeyLabel(tr("来源压缩包"), minePage), 0, 0, Qt::AlignTop);
     m_archive = new QLabel(minePage);
     m_archive->setWordWrap(true);
     m_archive->setTextInteractionFlags(Qt::TextSelectableByMouse);
     sourceGrid->addWidget(m_archive, 0, 1);
 
-    sourceGrid->addWidget(makeKey(tr("游玩统计"), minePage), 1, 0, Qt::AlignTop);
+    sourceGrid->addWidget(ui::makeKeyLabel(tr("游玩统计"), minePage), 1, 0, Qt::AlignTop);
     m_stats = new QLabel(minePage);
     m_stats->setWordWrap(true);
     m_stats->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -257,7 +226,7 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
 
     // ── 卡片 3：版本判定依据 ──
     QVBoxLayout* evidenceBody = nullptr;
-    mineLayout->addWidget(makeCard(minePage, tr("版本判定依据"), &evidenceBody));
+    mineLayout->addWidget(ui::makeCard(minePage, tr("版本判定依据"), &evidenceBody));
     m_evidence = new QLabel(minePage);
     m_evidence->setWordWrap(true);
     m_evidence->setTextInteractionFlags(Qt::TextSelectableByMouse);
@@ -380,7 +349,7 @@ QWidget* MapInstancePage::buildAboutPage()
 
     // 简介正文：单独一张卡片，和评论卡片同一套外观
     QVBoxLayout* descBody = nullptr;
-    m_aboutLayout->addWidget(makeCard(m_aboutPage, QString(), &descBody));
+    m_aboutLayout->addWidget(ui::makeCard(m_aboutPage, QString(), &descBody));
     m_aboutState = new QLabel(m_aboutPage);
     m_aboutState->setWordWrap(true);
     m_aboutState->setTextInteractionFlags(Qt::TextSelectableByMouse);
