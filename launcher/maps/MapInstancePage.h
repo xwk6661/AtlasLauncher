@@ -73,6 +73,9 @@ class MapInstancePage : public QWidget, public BasePage {
     QWidget* buildAboutPage();
     QWidget* buildReviewsPage();
     void refreshHallTabs();
+    /// 简介页封面：先画占位、再异步换真图（拿不到就一直是占位，不留空白）
+    void requestAboutCover(const QString& url, const QString& title);
+    void applyAboutCover(const QImage& image);
     void pickHallMap();
     void linkTo(const HallItem& item);
     void ensureHallApi();
@@ -109,6 +112,11 @@ class MapInstancePage : public QWidget, public BasePage {
     /// 「简介」页
     QWidget* m_aboutPage = nullptr;
     QVBoxLayout* m_aboutLayout = nullptr;
+    /// 简介页顶部：封面在左、基本信息在右（2026-11-02 按用户要求排版）
+    QLabel* m_aboutCover = nullptr;
+    QLabel* m_aboutInfo = nullptr;
+    /// 当前封面 URL：异步回图时用它判断是不是这张图，避免快速切图串味
+    QString m_aboutCoverUrl;
     QLabel* m_aboutState = nullptr;
     QPushButton* m_aboutLinkButton = nullptr;
     QPushButton* m_aboutUnlinkButton = nullptr;

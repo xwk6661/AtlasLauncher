@@ -20,6 +20,7 @@
 #include <QHash>
 #include <QImage>
 #include <QList>
+#include <QPixmap>
 #include <QObject>
 #include <QPointer>
 #include <QSet>
@@ -61,6 +62,9 @@ class MapCoverLoader : public QObject {
     ~MapCoverLoader() override;
 
     static MapCoverLoader* instance();
+
+    /// 占位封面：按标题画一个稳定色块 + 首字母（取不到真图时不至于留一块空白）
+    static QPixmap placeholderCover(const QString& title, int width, int height);
 
     /// 缓存目录（默认 `<dataRoot>/maps/covers`；测试里指到临时目录）
     void setCacheDir(const QString& dir);

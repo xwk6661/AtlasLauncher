@@ -82,35 +82,7 @@ constexpr int REVIEWS_PER_PAGE = 6;
  */
 QPixmap makePlaceholderCover(const QString& title, int width, int height)
 {
-    QPixmap pixmap(width, height);
-    pixmap.fill(Qt::transparent);
-
-    // 由标题算一个稳定的色相，同一张图每次颜色一样
-    uint hash = 2166136261u;
-    for (const QChar ch : title)
-        hash = (hash ^ ch.unicode()) * 16777619u;
-    const int hue = static_cast<int>(hash % 360u);
-
-    QPainter painter(&pixmap);
-    painter.setRenderHint(QPainter::Antialiasing);
-    QLinearGradient gradient(0, 0, width, height);
-    QColor base = QColor::fromHsv(hue, 90, 110);
-    gradient.setColorAt(0.0, base);
-    gradient.setColorAt(1.0, base.darker(150));
-    painter.setBrush(gradient);
-    painter.setPen(Qt::NoPen);
-    painter.drawRoundedRect(QRect(0, 0, width, height), 3, 3);
-
-    const QString initial = title.trimmed().left(1).toUpper();
-    if (!initial.isEmpty()) {
-        QFont font = painter.font();
-        font.setBold(true);
-        font.setPixelSize(qMax(12, height / 2));
-        painter.setFont(font);
-        painter.setPen(QColor(255, 255, 255, 210));
-        painter.drawText(QRect(0, 0, width, height), Qt::AlignCenter, initial);
-    }
-    return pixmap;
+    return MapCoverLoader::placeholderCover(title, width, height);
 }
 
 
@@ -418,10 +390,13 @@ void MapHallPage::buildUi()
     m_resetFilters->setAutoRaise(true);
     m_resetFilters->setToolTip(tr("清空搜索词与所有筛选条件，回到「最新发布」"));
 
-    // 下拉一律按"最小内容长度"收缩：面板变窄时先压下拉，不压搜索框
+    /**
+     * 宽度按「最长条目」算（2026-11-02 用户反馈：固定 4 个字宽把「难度：不限」裁成了「难度：不…」）。
+     * 系列这一项带 stretch，窗口再窄也只是它被压缩，其余下拉保持可读。
+     */
     for (auto* combo : { m_sort, m_series, m_difficulty, m_length, m_year }) {
-        combo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
-        combo->setMinimumContentsLength(4);
+        combo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+        combo->setMinimumWidth(84);
     }
 
     /**

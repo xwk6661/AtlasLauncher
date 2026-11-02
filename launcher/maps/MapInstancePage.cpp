@@ -50,6 +50,7 @@
 #include "FileSystem.h"
 #include "HallAPI.h"
 #include "HallCache.h"
+#include "MapCoverLoader.h"
 #include "MapHallLink.h"
 #include "MapImportTask.h"
 #include "MapRepository.h"
@@ -60,6 +61,12 @@
 #include "minecraft/MinecraftInstance.h"
 
 namespace maps {
+namespace {
+/// 简介页封面：16:9，和站上的 1920×1080 同比例
+constexpr int ABOUT_COVER_W = 200;
+constexpr int ABOUT_COVER_H = 113;
+}  // namespace
+
 
 MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) : QWidget(parent), m_instance(instance)
 {
@@ -264,7 +271,37 @@ QWidget* MapInstancePage::buildAboutPage()
     m_aboutPage = new QWidget(this);
     m_aboutLayout = new QVBoxLayout(m_aboutPage);
     m_aboutLayout->setContentsMargins(4, 4, 4, 4);
-    m_aboutLayout->setSpacing(6);
+    m_aboutLayout->setSpacing(8);
+
+    /**
+     * 顶部一条「封面在左、基本信息在右」：
+     * 站上简介页的封面是 16:9 大图，放左边当视觉锚点；作者/版本/难度/长度这些
+     * 短字段放右侧，竖排一列比横着铺开更好扫（2026-11-02 用户要求）。
+     */
+    auto* hero = new QHBoxLayout();
+    hero->setContentsMargins(0, 0, 0, 0);
+    hero->setSpacing(14);
+
+    m_aboutCover = new QLabel(m_aboutPage);
+    m_aboutCover->setFixedSize(ABOUT_COVER_W, ABOUT_COVER_H);
+    m_aboutCover->setAlignment(Qt::AlignCenter);
+    m_aboutCover->setStyleSheet(QStringLiteral("border: 1px solid rgba(127, 127, 127, 55);"));
+    m_aboutCover->setPixmap(MapCoverLoader::placeholderCover(QStringLiteral("?"), ABOUT_COVER_W, ABOUT_COVER_H));
+    hero->addWidget(m_aboutCover, 0, Qt::AlignTop);
+
+    m_aboutInfo = new QLabel(m_aboutPage);
+    m_aboutInfo->setWordWrap(true);
+    m_aboutInfo->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    m_aboutInfo->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    hero->addWidget(m_aboutInfo, 1);
+    m_aboutLayout->addLayout(hero);
+
+    // 封面是异步取的：缓存命中会立刻回，没命中走浏览器通道，回来再换图
+    connect(MapCoverLoader::instance(), &MapCoverLoader::coverReady, this,
+            [this](const QString& url, const QImage& image) {
+                if (!m_aboutCoverUrl.isEmpty() && url == m_aboutCoverUrl)
+                    applyAboutCover(image);
+            });
 
     m_aboutState = new QLabel(m_aboutPage);
     m_aboutState->setWordWrap(true);
@@ -289,6 +326,35 @@ QWidget* MapInstancePage::buildAboutPage()
     m_aboutLayout->addLayout(linkRow);
     m_aboutLayout->addStretch(1);
     return m_aboutPage;
+}
+
+void MapInstancePage::requestAboutCover(const QString& url, const QString& title)
+{
+    if (m_aboutCover == nullptr)
+        return;
+
+    m_aboutCoverUrl = url;
+    m_aboutCover->setPixmap(MapCoverLoader::placeholderCover(title, ABOUT_COVER_W, ABOUT_COVER_H));
+    if (url.isEmpty())
+        return;
+
+    auto* covers = MapCoverLoader::instance();
+    if (const auto image = covers->cached(url); !image.isNull()) {
+        applyAboutCover(image);
+        return;
+    }
+    covers->request(url);
+}
+
+void MapInstancePage::applyAboutCover(const QImage& image)
+{
+    if (m_aboutCover == nullptr || image.isNull())
+        return;
+
+    const QPixmap scaled = QPixmap::fromImage(image).scaled(ABOUT_COVER_W, ABOUT_COVER_H,
+                                                           Qt::KeepAspectRatioByExpanding, Qt::SmoothTransformation);
+    m_aboutCover->setPixmap(scaled.copy((scaled.width() - ABOUT_COVER_W) / 2, (scaled.height() - ABOUT_COVER_H) / 2,
+                                        ABOUT_COVER_W, ABOUT_COVER_H));
 }
 
 QWidget* MapInstancePage::buildReviewsPage()
@@ -356,11 +422,11 @@ void MapInstancePage::ensureHallApi()
             add(tr("游玩人数"), QString::number(item.plays));
         add(tr("发布"), item.releaseDate);
 
-        QString text = lines.join(QStringLiteral("<br/>"));
+        m_aboutInfo->setText(lines.join(QStringLiteral("<br/>")));
         const QString description = detail.description.trimmed();
-        text += QStringLiteral("<br/><br/>") +
-                (description.isEmpty() ? tr("（站上没写简介）") : description.toHtmlEscaped().replace("\n", "<br/>"));
-        m_aboutState->setText(text);
+        m_aboutState->setText(description.isEmpty() ? tr("（站上没写简介）")
+                                                    : description.toHtmlEscaped().replace("\n", "<br/>"));
+        requestAboutCover(item.coverUrl, item.title.isEmpty() ? m_link.title : item.title);
     });
     connect(m_hall, &HallAPI::reviewsDone, this,
             [this](const QList<HallReview>& rows, int total, bool totalKnown, int offset) {
@@ -501,6 +567,9 @@ void MapInstancePage::refreshHallTabs()
         if (!suggestion.isEmpty())
             text += tr("\n\n本地库里有一张《%1》看起来就是它 —— 点下面的按钮即可关联。").arg(suggestion);
         m_aboutState->setText(text);
+        if (m_aboutInfo != nullptr)
+            m_aboutInfo->clear();
+        requestAboutCover({}, m_title->text().isEmpty() ? m_instance->name() : m_title->text());
         m_aboutLinkButton->setText(suggestion.isEmpty() ? tr("关联到 CTM 地图…") : tr("关联到《%1》").arg(suggestion));
         // 按钮点击时如果已经有建议，直接用它（先把所有旧连接断干净，别越连越多）
         disconnect(m_aboutLinkButton, nullptr, this, nullptr);
@@ -538,11 +607,17 @@ void MapInstancePage::refreshHallTabs()
         m_aboutState->setText(tr("已关联到《%1》，但本地还没有地图库（简介和评论存在库里）。\n"
                                  "打开「添加实例 → CTM 地图」点一次「下载地图库」即可。")
                                   .arg(m_link.title));
+        if (m_aboutInfo != nullptr)
+            m_aboutInfo->clear();
+        requestAboutCover({}, m_link.title);
         m_reviewsState->setText(tr("还没有本地地图库，暂时没有评论可显示。"));
         return;
     }
 
     m_aboutState->setText(tr("正在读取《%1》的简介…").arg(m_link.title));
+    if (m_aboutInfo != nullptr)
+        m_aboutInfo->clear();
+    requestAboutCover({}, m_link.title);
     m_hall->detail(m_link.slug);
 
     /**

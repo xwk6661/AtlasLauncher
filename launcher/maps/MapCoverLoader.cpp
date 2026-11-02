@@ -26,9 +26,12 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QFont>
+#include <QLinearGradient>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPainter>
 #include <QProcess>
 #include <QStandardPaths>
 #include <QTemporaryDir>
@@ -108,6 +111,39 @@ MapCoverLoader* MapCoverLoader::instance()
 {
     static MapCoverLoader loader;
     return &loader;
+}
+
+QPixmap MapCoverLoader::placeholderCover(const QString& title, int width, int height)
+{
+    QPixmap pixmap(width, height);
+    pixmap.fill(Qt::transparent);
+
+    // 由标题算一个稳定的色相，同一张图每次颜色一样
+    uint hash = 2166136261u;
+    for (const QChar ch : title)
+        hash = (hash ^ ch.unicode()) * 16777619u;
+    const int hue = static_cast<int>(hash % 360u);
+
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QLinearGradient gradient(0, 0, width, height);
+    const QColor base = QColor::fromHsv(hue, 90, 110);
+    gradient.setColorAt(0.0, base);
+    gradient.setColorAt(1.0, base.darker(150));
+    painter.setBrush(gradient);
+    painter.setPen(Qt::NoPen);
+    painter.drawRoundedRect(QRect(0, 0, width, height), 3, 3);
+
+    const QString initial = title.trimmed().left(1).toUpper();
+    if (!initial.isEmpty()) {
+        QFont font = painter.font();
+        font.setBold(true);
+        font.setPixelSize(qMax(12, height / 2));
+        painter.setFont(font);
+        painter.setPen(QColor(255, 255, 255, 210));
+        painter.drawText(QRect(0, 0, width, height), Qt::AlignCenter, initial);
+    }
+    return pixmap;
 }
 
 QString MapCoverLoader::cacheDir() const
