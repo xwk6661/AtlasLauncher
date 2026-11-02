@@ -1,126 +1,97 @@
-# 在 Prism Launcher 上做「地图启动器」——可行性评估与实施设计
+# 地图启动器 · 文档索引
 
-> 评估对象：`E:/llmUsage/Minecraft-AIO`（mcml v0.33.0，Electron + TypeScript）
-> 目标基底：`E:/llmUsage/PrismLauncher`（12.0.0-dev，C++/Qt 6.8，GPL-3.0）
-> 日期：2026-10-31
->
-> 三份文档分工：
-> [`HANDOVER.md`](HANDOVER.md)（**当前状态与转接：环境装到哪、卡在哪、接手后第一小时做什么**）、
-> [`01-可行性评估.md`](01-可行性评估.md)（AIO 为什么这么设计、Prism 有什么、还缺什么）、
-> [`02-架构与路线图.md`](02-架构与路线图.md)（新代码放哪、怎么跑通、分几步做）。
-> 本文件只放结论。
+把 [`Minecraft-AIO`](E:/llmUsage/Minecraft-AIO)（mcml v0.33.0，Electron + TypeScript 写的地图启动器）
+的「以地图为中心」搬到 [`PrismLauncher`](E:/llmUsage/PrismLauncher)（12.0.0-dev，C++/Qt 6.8）上：
+**点地图卡片直接进图，版本由程序推断**。
+
+> **状态（2026-11-02）**：构建通过 · 测试 `13 passed / 0 failed / 2 skipped` ·
+> M0 完成，M1–M3 代码落地、**等真机验收** · 分支 `feature/map-launcher`
 
 ---
 
-## 结论
+## 文档地图
 
-**可行，而且比 AIO 从零做省一半以上的工作量。** 但"省"的部分和"难"的部分不是同一批：
-Prism 把**环境、账号、主题、i18n、更新、打包**这些苦活全做完了；
-剩下的三件事 Prism 一行代码都没有——**版本判定**、**旧版本直连存档**、**地图为中心的 UI**。
-
-| 判断 | 内容 |
-| --- | --- |
-| 技术可行性 | ✅ 高。地图导入所需的「压缩包内定位 `level.dat` → 定向解压世界」Prism 已内建（`World::readFromZip` / `World::install`），连嵌套目录偏移都处理了 |
-| 工作量 | 中等。约 **6~8 个新模块、8000~12000 行 C++**（不含 agent 的 Java 部分，那部分直接复用 AIO） |
-| 最大风险 | 不是技术，是 **GPL-3.0**：fork 出来的地图启动器必须开源。这条要在第一行代码之前定死 |
-| 最大技术难点 | ≤1.19.4 的直连（混淆符号解析 + ASM 注入）。**不要用 C++ 重写**，把 AIO 的 Java Agent 与离线符号表当资产搬过来 |
-| 不建议的路线 | 在 Prism 里嵌 Node 引擎跑 AIO 的 `launcher/src`（双运行时、打包体积、错误边界三重代价，换不来什么） |
-
-## 一句话架构
-
-> **Prism 负责"把环境装好、把游戏拉起来"，AIO 的判断逻辑以 C++ 模块形式搬进来，AIO 的 Java Agent 以二进制资产形式搬进来，主窗口换成地图画廊。**
-
-## 需要新写的模块（六个）
-
-| 模块 | 职责 | 难度 |
+| 文件 | 回答什么问题 | 什么时候看 |
 | --- | --- | --- |
-| `maps/MapArchiveScanner` | 免解压嗅探：锚定存档根、找材质包/模组/说明文件 | 低（`MMCZip::ArchiveReader` 已够用） |
-| `maps/MapVersionDetector` | 三级版本判定 + 证据 + 置信度 + 冲突裁决 | 中（逻辑照搬，`DataVersion` 表直接拷 AIO 的 JSON） |
-| `maps/MapImportTask` | `InstanceTask` 子类：建实例 → 解世界 → 写元数据 → 触发下载 | 中（Prism 有现成骨架） |
-| `maps/MapMeta` | `map.json` 读写，与 `instance.cfg` / `mmc-pack.json` 分工 | 低 |
-| `agents/AgentBootstrap` | 按版本查符号表、拼 `-javaagent`、解析事件流 | 高（协议与坑最多，但代码量不大） |
-| `ui/maps/*` | 主窗口、画廊、详情、导入确认、大厅、实例"地图"页签 | 中（Qt 布局工作量大，逻辑简单） |
+| **README.md**（本文） | 索引、状态摘要、代码与术语地图 | 第一次进来 |
+| [`01-可行性评估.md`](01-可行性评估.md) | **为什么可行**：AIO 的设计理念与原理、Prism 已有能力与缺口、三条路线取舍 | 要论证方向、或想理解代码为何这么分 |
+| [`02-架构与路线图.md`](02-架构与路线图.md) | **怎么设计**：模块职责、磁盘布局与数据模型、导入/启动两条主流程、里程碑定义、风险登记 | 改设计之前 |
+| [`03-环境与构建.md`](03-环境与构建.md) | **怎么跑起来**：工具链版本、四个环境坑与配方、构建/测试命令、仓库外动过什么 | 换机器、构建报错 |
+| [`04-踩坑与决策.md`](04-踩坑与决策.md) | **哪些弯路走过、哪些决定不许推翻** | 想改既有行为之前 |
+| [`05-进度与遗留.md`](05-进度与遗留.md) | **现在到哪了**：里程碑状态、文件级清单、还剩什么、哪些没验证 | 接手第一小时 |
+| [`06-变更记录.md`](06-变更记录.md) | **改过什么**：问题总表（#1–#53）+ 四轮迭代记录 | 想查某个行为是哪来的 |
 
-## 三期目标（每期都可独立验收）
-
-| 期 | 内容 | 验收判据 |
-| --- | --- | --- |
-| M1 | 导入 → 建实例 → 1.20+ 直连进图 | 3 张 1.20+ 真实地图，从双击到出生点，无需手动选存档 |
-| M2 | Agent 直连（≤1.19.4）+ 安全退出判定 | 1.16.5 / 1.8.9 各 2 次「进图 → 手动退出 → 存档落盘对齐」 |
-| M3 | 地图大厅 + 打磨（封面缓存、资源包注入、快捷键） | 大厅能搜能看详情；下载仍交浏览器 |
-
-> 详细任务拆分、文件级改动清单、风险登记册见 [`02-架构与路线图.md`](02-架构与路线图.md)。
+阅读顺序：**README → 05 → 03 → 04**；要动设计读 02；要讲清"为什么不做 X"读 01 与 04。
 
 ---
 
-## 当前进度（2026-11-02 第三轮）
+## 30 秒速览
 
-| 项 | 状态 |
+**已经能做的**
+
+- 导入地图（zip / rar / 7z）→ 免解压嗅探 → 三级版本判定（含置信度与证据）→ 建**物理隔离**的实例；
+- 启动即进图：≥1.20 走 `--quickPlaySingleplayer`；≤1.19.4 走 `-javaagent`（6 个版本符号表已随包）；
+- 退出判定：Agent 确认存档落盘后才算 `EXIT_SAFE`，回写 `map.json` 统计；
+- 大厅：CTM Maps **整库本地化**（1000 张地图 / 2243 条详情 / 1000 条评论），搜索、排序、翻页、
+  详情、评论全部本地算；封面走直连 → 浏览器通道，命中后磁盘缓存；
+- 实例「信息」页三页签：简介（封面 + 基本信息卡）、评论（卡片流）、我的（三张卡片）。
+
+**明确不做的**
+
+- 启动器内下载（Cloudflare 只认可见浏览器）；
+- 自研 ECH / QUIC（Qt 在 Windows 走 Schannel，直接借本机 Chromium）；
+- 「一个高版本核心通吃」（1.13 / 1.20.5 两次语义断裂，DFU 不翻译命令方块）。
+
+---
+
+## 代码地图
+
+新代码全部在 `launcher/maps/`（**28 个 .cpp + 31 个 .h，约 1.4 万行**），对既有文件只做加法：
+
+| 分组 | 文件 |
 | --- | --- |
-| 构建 | ✅ 跑通：`build/win-local/Debug/prismlauncher.exe` + `LauncherTests.exe`；日常双击 `build/run-prism-debug.cmd` |
-| 测试 | ✅ **13 passed, 0 failed, 2 skipped**（两个 skip 是需要真实网址的联网用例：封面通道、JSON 通道）；含 AIO 23 个夹具回归，逐项一致 |
-| M0 识别层 | ✅ 完成 |
-| M1 导入 + 主界面融入 + 1.20+ 直连 | 🟡 代码完成，待真机验收 |
-| M2 Agent 直连 | 🟡 代码 + 资产齐备（jar + 6 个版本符号表），单测已验，待真机 |
-| M3 大厅 | 🟡 搜索/排序/**系列·难度·长度·年份筛选 + 重置**/详情/评论分页/**封面真图 + 磁盘缓存**/**评论卡片**/列表分页可用 |
+| **识别** | `MapArchiveScanner`（免解压嗅探）· `LevelDatReader`（NBT）· `MapVersionDetector`（三级判定）· `DataVersionTable` · `MapTypes` · `MapTextUtils` |
+| **数据** | `MapMeta`（`map.json`）· `MapNotes`（`notes.json`，玩家数据）· `MapHallLink`（实例 ↔ 大厅关联）· `HallCache`（大厅本地库） |
+| **导入** | `MapImportTask`（建实例 / 解世界 / 落材质包 / 重装）· `MapRepository`（地图库）· `MapImportDialog` |
+| **启动** | `MapLaunchPrep`（选轨道 / 统一准备点）· `AgentBootstrap`（符号表 → `-javaagent`） |
+| **大厅** | `HallAPI` · `HallTypes` · `HallProxy` · `BrowserFetch` · `HallDialog` · `MapHallPage` |
+| **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（信息页）· `MapGalleryPage/Window` · `MapReviewCard` · `MapCoverLoader` · `MapSettingsDialog` · `OptiFineDialog` · `StarRatingWidget` · `MapTheme` |
 
-**第三轮修掉的问题**（详见 `HANDOVER.md` §5.3–§5.5）：大厅封面一直出不来（Qt/Schannel 不支持 ECH，
-supabase 的 TLS 握手被按 SNI 重置；改为直连失败后切无头浏览器批量取图 + 磁盘缓存）；
-「更新数据」随机失败且误报「浏览器崩溃 62097」（浏览器通道改成本地页面内 XHR + 退避重试，
-一次进程可重试、能读真实状态码）；同步失败会把已有列表顶掉（现在保留本地库并明确提示"不受影响"）；
-评论少时排版散架、评论之间没有边界（补回 stretch + 改成带边框的卡片 + 首字母头像）。
+资源：`launcher/resources/maps/dataversion.json`（483 个版本）、`launcher/resources/agents/`
+（`quickboot.jar` + 6 个符号表）。测试：`tests/MapArchiveScan_test.cpp`（13 项 + 2 项联网用例）。
 
-**本轮修掉的问题**（详见 `HANDOVER.md` §5.2）：启动准备点收敛到 `Application::launch`
-（此前只有主窗口按钮会注入 Agent，双击 / 实例窗口 / 快捷方式启动会静默停在主菜单）；
-多世界选择在 Agent 轨道丢失；陈旧 `agent.log` 导致退出状态误判；深色主题下置信度颜色不可读；
-导入对话框切换世界时版本不同步；大厅请求无超时。
+---
 
-**UI 形态**（2026-11-01 按用户要求定稿）：不做独立地图模式。主界面 = 原生实例列表；
-选中地图实例时，右侧**原生实例操作栏**里出现**地图卡片**（照 AIO 详情栏：中文名/版本徽章/
-置信度/我的评分/笔记预览/状态/游玩/上次/存档/包体积/来源/导入于/风险提示/世界下拉/主按钮「进入地图」）；
-选中实例时卡片里的**加载器徽章**来自实例实际装的组件（Vanilla / Forge / Fabric / NeoForge /
-Quilt），不是导入时猜的 `map.json`；
-中文名、评分、笔记存在实例目录的 `notes.json`（与 `map.json` 分开：重装地图不会冲掉），
-编辑入口在实例窗口的「信息」页（原「地图」页）；卡片出现时侧栏放宽到 240px（对齐 AIO 的 252px 版式：
-chip 行 / 主按钮 / 评分 / 笔记 / KV 分组）；
+## 快速开始
 
-**控制台窗口**（2026-11-01 精简）：**设置置顶且默认打开**（改 Java/内存是日常，看日志是排障），
-其余只留 日志 / 版本 / 模组 / 材质 / 数据包 / 光影 / 信息 / 截图；
-备注、世界、服务器、其他日志默认收起，可在「文件 → 地图设置 → 控制台页签」打开。
-「版本」页右栏新增**安装 OptiFine…**（BMCLAPI 列表 + BMCL/官网双源下载，装进 `mods/`）；
-详情面板底部现在带**评论区**（一页 6 条，名字/星级/游玩时长/日期/正文，「加载更多评论」翻页；
-浏览器通道拿不到 `Content-Range` 时标题显示「已加载 N 条」而不是编总数）；时长统一换算成
-**小时**（「365.2 分钟」→「6.1 小时」，60 分钟以内仍用分钟）；
-大厅详情是「缩略图 + 标题 / 简介·评论 两个页签」：评论独占一屏，不再跟简介挤在小滚动框里；
-封面图来源（`*.supabase.co/storage`、`ctmrepository.com`）一个被 SNI 阻断、一个只认浏览器：
-**Qt 在 Windows 走 Schannel、不支持 ECH，直连必然失败**（2026-11-02 实测：TLS 握手收不到 ServerHello，
-而同一个 URL 用 Edge 无头 `<img>` 3.3 秒出 1920×1080）。所以新增 `maps/MapCoverLoader`：
-先直连、失败就把该 host 切到**浏览器通道**——一个无头进程批量 8 张，`<img>` → canvas 缩到 480px →
-`toDataURL` → 从 `--dump-dom` 取回 base64，落盘到 `<数据目录>/maps/covers/<sha1>.jpg`，
-以后命中磁盘不再出网（实测 6 张 4.1 秒）。`ctmrepository` 那 50 张仍取不到，继续显示**本地生成的占位封面**
-（标题哈希色块 + 首字母）；任何一张真图到手都会自动替换占位。
-**便携式数据布局**（2026-11-02）：exe 旁放 `portable.txt` 即为便携模式 —— 配置、实例、
-地图库（导入即**移动**入库，不留副本）、大厅缓存全部集中在程序目录；详情页三页签
-（简介 / 评论 / 我的）里，「我的」显示本机关联实例的中文名、评分、笔记与游玩记录；
-**大厅数据是本地化的**：第一次进「CTM 地图」会用 4 个请求把整库（列表 / 详情 / 用户 / 评论）
-下到 `<数据目录>/maps/hall-cache.json`，之后搜索、排序、翻页、看详情、看评论全部本地计算，
-毫秒级；点开大厅**只读本地**，拉取放在启动后 20 秒的静默后台任务里
-（开关：`MapHallAutoUpdate`，超过 `MapHallUpdateDays` 天才拉），也可以随时点「更新数据」。大厅**默认走「浏览器通道」**：Qt 网络一旦被掐断，就改用本机的 Edge/Chrome 无头模式取数据
-（实测这条线路封的是 SNI，浏览器走 ECH 能过，**不需要任何代理**；请求在本地页面里用 XHR
-做退避重试——这条链路约 1/3 概率被 RST，4xx 则直接报服务端原因，不会再出现「进程被杀」
-被误报成「浏览器崩溃」）；「地图设置 → 大厅通道」可切
-auto / 只用网络 / 只用浏览器；
-大厅页的失败态是结构化面板（重试 · 出网诊断 · 网络设置 · 反代模板 · 打开原站 + 技术细节），
-「出网诊断」会回报 耗时 / HTTP 状态 / 当前出口；
-卡片出现时原生「启动」让位，其余管理动作保持原样；`JoinWorldOnLaunch` 已接入启动流程，
-**所有启动入口**（原生启动按钮、双击实例、地图卡片）都能自动进图。
+```powershell
+# 构建（Debug）
+& E:\llmUsage\PrismLauncher\build\run-configure.ps1 -Action configure
+& E:\llmUsage\PrismLauncher\build\run-configure.ps1 -Action build-debug
 
-入口：「添加实例」▼ → 自定义 / Modrinth / CurseForge / 本地导入 / **CTM 地图**（新建对话框里的
-地图大厅页：搜索/排序/筛选/封面列表/详情/打开下载页/选已下载文件导入）；
-文件菜单 →「导入地图…」「地图设置…」；视图菜单 →「地图画廊（新窗口）」「地图大厅…」；
-实例窗口 →「地图」页签（含重装地图）；拖压缩包进主窗口自动判定是地图还是整合包。
+# 运行（已配好 Qt / vcpkg 的 DLL 路径）
+build\run-prism-debug.cmd
 
-另外修了一个上游 Debug 构建必崩的竞态（`SequentialTask` 多子任务同时失败时二次 `emitFailed`
-触发 `Q_ASSERT`，Release 无感知）——rebase 时值得保留。
+# 测试
+$env:PATH = "E:\Program File\Qt\6.8.3\msvc2022_64\bin;E:\llmUsage\PrismLauncher\build\win-local\vcpkg_installed\x64-windows\bin;" + $env:PATH
+$env:PRISM_MAP_FIXTURES = "E:\llmUsage\Minecraft-AIO\launcher\fixtures"
+cd build\win-local\Debug; .\LauncherTests.exe MapArchiveScan_test
+```
 
-细节与坑见 [`HANDOVER.md`](HANDOVER.md)。
+细节、四个环境坑、沙箱下的临时配方 → [`03-环境与构建.md`](03-环境与构建.md)。
+
+---
+
+## 术语
+
+| 词 | 含义 |
+| --- | --- |
+| **地图实例** | 一张地图一个 Prism 实例，靠 `map.json` 判定；`saves/` 里只有它自己的存档 |
+| **`map.json`** | 自动产生的元数据：来源包、版本证据、世界列表、统计。重装会覆盖 |
+| **`notes.json`** | 玩家自己的数据：中文名 / 评分 / 笔记。任何自动流程都不许碰 |
+| **`MapWorld`** | 世界目录的固定英文名（quickPlay 与 Agent 都吃字符串，中文路径有历史坑） |
+| **轨道 A / B** | A = ≥1.20 的 `--quickPlaySingleplayer`；B = ≤1.19.4 的 `-javaagent` 注入 |
+| **Agent** | `quickboot.jar`，按符号表拼参数，进图后写 `agent.log` 供宿主判定退出是否安全 |
+| **浏览器通道** | 借本机 Edge/Chrome 无头模式取数据/取封面。目标站被封的是 SNI，Qt 没有 ECH |
+| **大厅本地库** | `<数据目录>/maps/hall-cache.json`，4 个请求拉全量，之后全部本地计算 |
+| **便携模式** | exe 旁放 `portable.txt`，数据根 = exe 目录（当前 Debug 目录即如此） |
