@@ -160,8 +160,9 @@ JDK 21/25 会拒绝 `-source 7`。
 `INCLUDE`/`LIB`，没有 Windows SDK 路径 → cmark 的 try-compile 依次挂在 `rc` 和 `kernel32.lib` 上，
 随后 vcpkg 把 `vcpkg_installed` 清空、项目直接不可编译。
 临时解法是**手工写全** `INCLUDE`/`LIB`/`PATH`（SDK 在前、MSVC 在后），代价是 ABI 哈希与
-`env-toolchain.ps1` 不一致。**接手后建议先跑一次 `build/run-vcpkg.ps1` 归一**（会重编一遍依赖，约 13 分钟），
-之后照 §3.3 的脚本走，否则每次都会全量重编。
+`env-toolchain.ps1` 不一致。该配方落在 `build/_build_env.cmd`（gitignore，不进仓库），
+要复现就直接 `cmd /c build\_build_env.cmd`。**接手后建议先跑一次 `build/run-vcpkg.ps1` 归一**
+（会重编一遍依赖，约 13 分钟），之后照 §3.3 的脚本走，否则每次都会全量重编。
 
 ### 3.3 现在的构建命令（跑通了，别改）
 
