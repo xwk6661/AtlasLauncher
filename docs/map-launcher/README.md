@@ -4,8 +4,8 @@
 的「以地图为中心」搬到 [`PrismLauncher`](E:/llmUsage/PrismLauncher)（12.0.0-dev，C++/Qt 6.8）上：
 **点地图卡片直接进图，版本由程序推断**。
 
-> **状态（2026-11-02）**：构建通过 · 测试 `13 passed / 0 failed / 2 skipped` ·
-> M0 完成，M1–M3 代码落地、**等真机验收** · 分支 `feature/map-launcher`
+> **状态（2026-11-02 21:00）**：构建通过 · 测试 `13 passed / 0 failed / 2 skipped` ·
+> M0 完成，M1–M3 代码落地、**等真机验收** · 分支 `feature/map-launcher`（最新 `6dd674c89`）
 
 ---
 
@@ -19,9 +19,20 @@
 | [`03-环境与构建.md`](03-环境与构建.md) | **怎么跑起来**：工具链版本、四个环境坑与配方、构建/测试命令、仓库外动过什么 | 换机器、构建报错 |
 | [`04-踩坑与决策.md`](04-踩坑与决策.md) | **哪些弯路走过、哪些决定不许推翻** | 想改既有行为之前 |
 | [`05-进度与遗留.md`](05-进度与遗留.md) | **现在到哪了**：里程碑状态、文件级清单、还剩什么、哪些没验证 | 接手第一小时 |
-| [`06-变更记录.md`](06-变更记录.md) | **改过什么**：问题总表（#1–#53）+ 四轮迭代记录 | 想查某个行为是哪来的 |
+| [`06-变更记录.md`](06-变更记录.md) | **改过什么**：时间线 + 问题总表（#1–#53）+ 六个专题 | 想查某个行为是哪来的 |
 
 阅读顺序：**README → 05 → 03 → 04**；要动设计读 02；要讲清"为什么不做 X"读 01 与 04。
+
+**维护约定**（避免同一件事写在两处、改一处就漂移）：
+
+| 只写在这里 | 内容 |
+| --- | --- |
+| [05](05-进度与遗留.md) | 一切状态：里程碑、还剩什么、未验证、文件清单 |
+| [04](04-踩坑与决策.md) §5 | 一切决策与理由（02 只放指针） |
+| [06](06-变更记录.md) | 改过什么、为什么（不写"现在还剩什么"） |
+| [02](02-架构与路线图.md) | 分层、数据结构、两条主流程、里程碑的**验收定义** |
+| [03](03-环境与构建.md) | 工具链、构建/测试命令、仓库外改动 |
+| [01](01-可行性评估.md) | 立项时的论证（已实现的结论就地加批注，不改写历史） |
 
 ---
 
@@ -31,10 +42,13 @@
 
 - 导入地图（zip / rar / 7z）→ 免解压嗅探 → 三级版本判定（含置信度与证据）→ 建**物理隔离**的实例；
 - 启动即进图：≥1.20 走 `--quickPlaySingleplayer`；≤1.19.4 走 `-javaagent`（6 个版本符号表已随包）；
-- 退出判定：Agent 确认存档落盘后才算 `EXIT_SAFE`，回写 `map.json` 统计；
+- 退出即关：≤1.19.4 由 Agent 确认落盘后自己退；**1.20+ 由启动器读游戏日志**（离开存档 → 全部落盘）
+  后关闭游戏窗口，回写 `map.json` 统计；
 - 大厅：CTM Maps **整库本地化**（1000 张地图 / 2243 条详情 / 1000 条评论），搜索、排序、翻页、
   详情、评论全部本地算；封面走直连 → 浏览器通道，命中后磁盘缓存；
-- 实例「信息」页三页签：简介（封面 + 基本信息卡）、评论（卡片流）、我的（三张卡片）。
+- 实例「信息」页三页签：简介（封面 + 基本信息卡）、评论（卡片流）、我的（三张卡片）；
+- 设置页：全局「地图」「资源」两页，实例「设置 → 地图」页签（可覆盖全局）；
+  资源页能把 `assets / libraries / java` **真的迁移**到任意盘（同盘瞬间完成），换启动器不用重下。
 
 **明确不做的**
 
@@ -46,7 +60,8 @@
 
 ## 代码地图
 
-新代码全部在 `launcher/maps/`（**28 个 .cpp + 31 个 .h，约 1.4 万行**），对既有文件只做加法：
+新代码在 `launcher/maps/`（**32 个 .cpp + 36 个 .h，约 1.5 万行**）与 `launcher/ResourcePaths`，
+对既有文件只做加法：
 
 | 分组 | 文件 |
 | --- | --- |
@@ -55,7 +70,9 @@
 | **导入** | `MapImportTask`（建实例 / 解世界 / 落材质包 / 重装）· `MapRepository`（地图库）· `MapImportDialog` |
 | **启动** | `MapLaunchPrep`（选轨道 / 统一准备点）· `AgentBootstrap`（符号表 → `-javaagent`） |
 | **大厅** | `HallAPI` · `HallTypes` · `HallProxy` · `BrowserFetch` · `HallDialog` · `MapHallPage` |
-| **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（信息页）· `MapGalleryPage/Window` · `MapReviewCard` · `MapCoverLoader` · `MapSettingsWidget`/`MapPage`（设置页）· `OptiFineDialog` · `StarRatingWidget` · `MapTheme` |
+| **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（信息页）· `MapGalleryPage/Window` · `MapReviewCard`（评论卡）· `MapInfoCard`（信息卡工厂）· `MapCoverLoader`（封面）· `OptiFineDialog` · `StarRatingWidget` · `MapTheme` |
+| **设置** | `MapSettingsWidget`（内容体）· `MapPage`（全局「地图」）· `MapResourcePage`（全局「资源」）· `ResourceStore`（迁移）· `launcher/ResourcePaths`（路径解析） |
+| **退出** | `MapQuitWatcher`（1.20+ 读日志关游戏） |
 
 资源：`launcher/resources/maps/dataversion.json`（483 个版本）、`launcher/resources/agents/`
 （`quickboot.jar` + 6 个符号表）。测试：`tests/MapArchiveScan_test.cpp`（13 项 + 2 项联网用例）。
@@ -90,8 +107,10 @@ cd build\win-local\Debug; .\LauncherTests.exe MapArchiveScan_test
 | **`map.json`** | 自动产生的元数据：来源包、版本证据、世界列表、统计。重装会覆盖 |
 | **`notes.json`** | 玩家自己的数据：中文名 / 评分 / 笔记。任何自动流程都不许碰 |
 | **`MapWorld`** | 世界目录的固定英文名（quickPlay 与 Agent 都吃字符串，中文路径有历史坑） |
+| **资源库** | `assets` / `libraries` / `java` 三份跨实例共享资源；可整体迁移到别的盘，默认仍在数据目录 |
 | **轨道 A / B** | A = ≥1.20 的 `--quickPlaySingleplayer`；B = ≤1.19.4 的 `-javaagent` 注入 |
 | **Agent** | `quickboot.jar`，按符号表拼参数，进图后写 `agent.log` 供宿主判定退出是否安全 |
 | **浏览器通道** | 借本机 Edge/Chrome 无头模式取数据/取封面。目标站被封的是 SNI，Qt 没有 ECH |
 | **大厅本地库** | `<数据目录>/maps/hall-cache.json`，4 个请求拉全量，之后全部本地计算 |
 | **便携模式** | exe 旁放 `portable.txt`，数据根 = exe 目录（当前 Debug 目录即如此） |
+| **退出看门狗** | `MapQuitWatcher`：1.20+ 没有 Agent，靠日志判断「离开存档 + 落盘完成」再关窗口 |
