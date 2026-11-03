@@ -4,8 +4,9 @@
 把 [`Minecraft-AIO`](E:/llmUsage/Minecraft-AIO)（mcml v0.33.0，Electron + TypeScript）的
 「以地图为中心」搬到了原生 Qt 上 —— **点地图卡片直接进图，版本由程序推断**。
 
-> **状态（2026-11-02 21:00）**：构建通过 · 测试 `13 passed / 0 failed / 2 skipped` ·
-> M0 完成，M1–M3 代码落地、**等真机验收** · 分支 `feature/map-launcher`（最新 `6dd674c89`）
+> **状态（2026-11-03 16:00）**：构建通过 · 测试 `13 passed / 0 failed / 2 skipped` ·
+> M0 完成，M1–M3 代码落地 · 真机已过「1.20+ 进图」与「连开两次都自动关游戏」·
+> **视角异常仍在查（唯一阻塞项）** · 分支 `feature/map-launcher`
 
 ---
 
@@ -41,9 +42,10 @@
 **已经能做的**
 
 - 导入地图（zip / rar / 7z）→ 免解压嗅探 → 三级版本判定（含置信度与证据）→ 建**物理隔离**的实例；
-- 启动即进图：≥1.20 走 `--quickPlaySingleplayer`；≤1.19.4 走 `-javaagent`（6 个版本符号表已随包）；
+- 启动即进图：≥1.20 走 `--quickPlaySingleplayer`；≤1.19.4 走 `-javaagent`（6 个版本符号表已随包）。
+  地图自带老格式数据包时会先弹一次「实验性设置」确认页，点过才进图；
 - 退出即关：≤1.19.4 由 Agent 确认落盘后自己退；**1.20+ 由启动器读游戏日志**（离开存档 → 全部落盘）
-  后关闭游戏窗口，回写 `map.json` 统计；
+  后关闭游戏窗口，回写 `map.json` 统计（真机连开两次均通过）。
 - 大厅：CTM Maps **整库本地化**（1000 张地图 / 2243 条详情 / 1000 条评论），搜索、排序、翻页、
   详情、评论全部本地算；封面走直连 → 浏览器通道，命中后磁盘缓存；
 - 实例「信息」页三页签：简介（封面 + 基本信息卡）、评论（卡片流）、我的（三张卡片）；
@@ -60,7 +62,7 @@
 
 ## 代码地图
 
-新代码在 `launcher/maps/`（**32 个 .cpp + 36 个 .h，约 1.5 万行**）与 `launcher/ResourcePaths`，
+新代码在 `launcher/maps/`（**33 个 .cpp + 37 个 .h，15,435 行**）与 `launcher/ResourcePaths`，
 对既有文件只做加法：
 
 | 分组 | 文件 |
@@ -68,7 +70,7 @@
 | **识别** | `MapArchiveScanner`（免解压嗅探）· `LevelDatReader`（NBT）· `MapVersionDetector`（三级判定）· `DataVersionTable` · `MapTypes` · `MapTextUtils` |
 | **数据** | `MapMeta`（`map.json`）· `MapNotes`（`notes.json`，玩家数据）· `MapHallLink`（实例 ↔ 大厅关联）· `HallCache`（大厅本地库） |
 | **导入** | `MapImportTask`（建实例 / 解世界 / 落材质包 / 重装）· `MapRepository`（地图库）· `MapImportDialog` |
-| **启动** | `MapLaunchPrep`（选轨道 / 统一准备点）· `AgentBootstrap`（符号表 → `-javaagent`） |
+| **启动** | `MapLaunchPrep`（选轨道 / 统一准备点）· `AgentBootstrap`（符号表 → `-javaagent`）· `MapWindowFocus`（把前台交给游戏窗口） |
 | **大厅** | `HallAPI` · `HallTypes` · `HallProxy` · `BrowserFetch` · `HallDialog` · `MapHallPage` |
 | **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（信息页）· `MapGalleryPage/Window` · `MapReviewCard`（评论卡）· `MapInfoCard`（信息卡工厂）· `MapCoverLoader`（封面）· `OptiFineDialog` · `StarRatingWidget` · `MapTheme` |
 | **设置** | `MapSettingsWidget`（内容体）· `MapPage`（全局「地图」）· `MapResourcePage`（全局「资源」）· `ResourceStore`（迁移）· `launcher/ResourcePaths`（路径解析） |
@@ -83,7 +85,7 @@
 
 ```powershell
 # 构建（Debug）
-$repo = "E:\llmUsage\Atlas"
+$repo = "E:\llmUsage\AtlasLauncher"
 & "$repo\build\run-configure.ps1" -Action configure
 & "$repo\build\run-configure.ps1" -Action build-debug
 

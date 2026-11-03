@@ -75,9 +75,15 @@ int closeWindowsOfPid(qint64 pid)
 
 void MapQuitWatcher::attach(MinecraftInstance* instance)
 {
-    if (instance == nullptr || instance->property("mapQuitWatcherInstalled").toBool())
+    if (instance == nullptr)
+        return;
+    // 用「有没有这个子对象」判断，而不是实例属性：属性一旦置上就永远为真，
+    // 万一对象被销毁（父对象重建等），后续启动会以为已经挂过，于是再也不挂 —— 表现为
+    // 「第一次能自动关，第二次起静默失效」（2026-11-03 实测）。
+    if (instance->findChild<MapQuitWatcher*>(QString(), Qt::FindDirectChildrenOnly) != nullptr)
         return;
     instance->setProperty("mapQuitWatcherInstalled", true);
+    qDebug() << "Map quit watcher: attached to" << instance->id();
     new MapQuitWatcher(instance);
 }
 
@@ -92,6 +98,12 @@ MapQuitWatcher::MapQuitWatcher(MinecraftInstance* instance) : QObject(instance),
         }
     });
 
+    // 每 300ms 核对一次「连的是不是当前那个 LaunchTask」。信号来得太早、指针太旧，
+    // 只靠信号必然漏（见头文件注释）；这里只是指针比较，开销可以忽略。
+    m_recheckTimer = new QTimer(this);
+    m_recheckTimer->setInterval(300);
+    connect(m_recheckTimer, &QTimer::timeout, this, &MapQuitWatcher::hookTask);
+
     connect(instance, &BaseInstance::runningStatusChanged, this, &MapQuitWatcher::onRunningChanged);
     // 已经跑起来了（例如从实例窗口重启）就立刻接上
     if (instance->isRunning())
@@ -101,29 +113,36 @@ MapQuitWatcher::MapQuitWatcher(MinecraftInstance* instance) : QObject(instance),
 void MapQuitWatcher::hookTask()
 {
     auto* task = m_instance->getLaunchTask();
-    if (task == nullptr) {
-        // 任务还没建好：等下一拍再试，最多几次
-        if (m_hookRetries++ < 10)
-            QTimer::singleShot(300, this, &MapQuitWatcher::hookTask);
-        return;
-    }
-    // 每次启动都是新任务对象，重复 connect 不会发生；unique 只是兜底
-    connect(task, &LaunchTask::gameLogLine, this, &MapQuitWatcher::onGameLogLine, Qt::UniqueConnection);
+    if (task == nullptr)
+        return;  // 任务还没建：等下一次核对
+    if (task == m_hookedTask && m_logConnection)
+        return;  // 已经连在实例当前的 LaunchTask 上
+
+    if (m_logConnection)
+        disconnect(m_logConnection);
+    m_logConnection = connect(task, &LaunchTask::gameLogLine, this, &MapQuitWatcher::onGameLogLine);
+    m_hookedTask = task;
+
+    const qint64 pid = task->pid();
+    qDebug() << "Map quit watcher: hooked to launch task" << static_cast<const void*>(task) << "pid" << pid << "of"
+             << m_instance->id();
 }
 
 void MapQuitWatcher::onRunningChanged(bool running)
 {
-    if (!running) {
-        m_armed = false;
-        m_fired = false;
-        m_hookRetries = 0;
-        m_killTimer->stop();
-        return;
-    }
     m_armed = false;
     m_fired = false;
-    m_hookRetries = 0;
+    m_killTimer->stop();
+
+    if (!running) {
+        m_recheckTimer->stop();
+        if (m_logConnection)
+            disconnect(m_logConnection);
+        m_hookedTask.clear();
+        return;
+    }
     hookTask();
+    m_recheckTimer->start();
 }
 
 void MapQuitWatcher::onGameLogLine(const QString& line)
@@ -140,6 +159,7 @@ void MapQuitWatcher::onGameLogLine(const QString& line)
             return;
         m_armed = true;
         m_armedAt.start();
+        qDebug() << "Map quit watcher: player left the world, waiting for the save marker" << m_instance->id();
         QTimer::singleShot(ARM_TIMEOUT_MS, this, [this] {
             if (m_armed && !m_fired) {
                 qDebug() << "Map quit watcher: no save marker in time, closing anyway";

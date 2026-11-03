@@ -55,10 +55,10 @@ bool INISettingsObject::reload()
         return false;
     }
 
-    bool suspendSavePrev = m_suspendSave;
+    int suspendSavePrev = m_suspendSave;
     bool doSavePrev = m_doSave;
 
-    m_suspendSave = true;
+    m_suspendSave = suspendSavePrev + 1;
     bool result = SettingsObject::reload();
 
     m_suspendSave = suspendSavePrev;
@@ -68,15 +68,18 @@ bool INISettingsObject::reload()
 
 void INISettingsObject::suspendSave()
 {
-    Q_ASSERT(!m_suspendSave);
-    m_suspendSave = true;
+    ++m_suspendSave;
 }
 
 void INISettingsObject::resumeSave()
 {
-    Q_ASSERT(m_suspendSave);
-    m_suspendSave = false;
-    if (m_doSave) {
+    if (m_suspendSave <= 0) {
+        qCritical() << "INISettingsObject: resumeSave() without a matching suspendSave()";
+        m_suspendSave = 0;
+        return;
+    }
+    --m_suspendSave;
+    if (m_suspendSave == 0 && m_doSave) {
         doSave();
     }
 }

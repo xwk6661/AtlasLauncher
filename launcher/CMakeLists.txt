@@ -804,6 +804,8 @@ set(MAPS_SOURCES
     maps/MapPage.h
     maps/MapQuitWatcher.h
     maps/MapQuitWatcher.cpp
+    maps/MapWindowFocus.h
+    maps/MapWindowFocus.cpp
     maps/ResourceStore.h
     maps/ResourceStore.cpp
     maps/MapResourcePage.h

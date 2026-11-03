@@ -233,6 +233,9 @@ class SettingsObject : public QObject {
 #endif
 
    protected:
-    bool m_suspendSave = false;
+    // Nesting is legitimate: SettingsObject::Lock is RAII and one load path can hold the lock
+    // while another takes it again (e.g. loading an instance inside a settings transaction).
+    // A bool here asserts on the second lock, which kills Debug builds.
+    int m_suspendSave = 0;
     bool m_doSave = false;
 };

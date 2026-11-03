@@ -65,9 +65,10 @@
 
 namespace maps {
 namespace {
-/// 简介页封面：16:9，和站上的 1920×1080 同比例
-constexpr int ABOUT_COVER_W = 200;
-constexpr int ABOUT_COVER_H = 113;
+/// 简介页封面：16:9，和站上的 1920×1080 同比例。
+/// 宽度上限受 MapCoverLoader 的落盘宽度（480px）约束，再大就会糊。
+constexpr int ABOUT_COVER_W = 400;
+constexpr int ABOUT_COVER_H = 225;
 
 }  // namespace
 
@@ -373,7 +374,15 @@ QWidget* MapInstancePage::buildAboutPage()
     linkRow->addStretch(1);
     m_aboutLayout->addLayout(linkRow);
     m_aboutLayout->addStretch(1);
-    return m_aboutPage;
+
+    // 封面放大到 400×225 之后，窗口拉窄时「封面 + 信息列」会顶出可视区（最低约 760px）。
+    // 放进滚动区，窄窗口下是滚动而不是把信息列裁掉。
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    scroll->setWidget(m_aboutPage);
+    return scroll;
 }
 
 void MapInstancePage::requestAboutCover(const QString& url, const QString& title)

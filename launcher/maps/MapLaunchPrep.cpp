@@ -32,6 +32,19 @@
 
 namespace maps {
 
+namespace {
+
+// 「这个版本能不能 quickPlay」在正常流程里靠实例解析后的 traits 判断。但 Application::launch()
+// 走的是「刚启动、组件还没解析完」的时刻，那一刻 traits() 是空的——于是 1.21.1 会被误判成
+// 「不支持 quickPlay」，进而不写 JoinWorldOnLaunch，游戏停在主菜单（2026-11-03 实测）。
+// 所以这里不猜：traits 为空 = 还不知道，由调用方决定怎么降级。
+QSet<QString> traitsFor(MinecraftInstance* instance)
+{
+    return instance->traits();
+}
+
+}  // namespace
+
 QString MapLaunchPrep::trackName(Track track)
 {
     switch (track) {
@@ -65,7 +78,7 @@ MapLaunchPrep::Plan MapLaunchPrep::plan(MinecraftInstance* instance, const MapMe
     plan.closeOnQuit = instance->settings()->get("MapSafeExit").toBool();
     plan.enterDelay = std::clamp(instance->settings()->get("MapEnterDelay").toInt(), 0, 60);
 
-    const auto traits = instance->traits();
+    const auto traits = traitsFor(instance);
     if (traits.contains(QStringLiteral("feature:is_quick_play_singleplayer"))) {
         if (!plan.autoEnter) {
             plan.track = Track::Plain;
@@ -224,10 +237,33 @@ MapLaunchPrep::Plan MapLaunchPrep::prepareForLaunch(MinecraftInstance* instance,
 
     // prepare() 内部已经清过一次 agent.log；这里再清是对「meta 读不出来」分支的兜底
     clearAgentLog(instance->instanceRoot());
+
+    // 连元数据兜底都拿不到（刚启动、meta 还没下完）：这一刻判不出该走 quickPlay 还是 Agent。
+    // 给 1.20+ 注入 Agent 会撞它自己的 quickPlay；不写世界名又会让它停在主菜单。
+    // 折中：只写世界名 —— processMinecraftArgs 里还会按 trait 再判一次，那里组件已解析完。
+    if (traitsFor(instance).isEmpty()) {
+        {
+            const SettingsObject::Lock lock(instance->settings());
+            instance->settings()->set("JoinWorldOnLaunch", requested.isEmpty() ? meta.worlds.first().folder : requested);
+        }
+        // 轨道判不出来，但「退出存档后关游戏」和「是否自动进图」是用户设置，下游要用
+        plan.autoEnter = instance->settings()->get("MapAutoEnter").toBool();
+        plan.closeOnQuit = instance->settings()->get("MapSafeExit").toBool();
+        plan.enterDelay = std::clamp(instance->settings()->get("MapEnterDelay").toInt(), 0, 60);
+        plan.track = Track::Plain;
+        plan.reason = QStringLiteral("组件尚未解析（元数据未就绪），本次由启动参数按版本 trait 自行决定是否进图");
+        qWarning() << "Map launch:" << instance->id() << "traits unknown, wrote world name only, no agent injection";
+        installExitTracker(instance);
+        return plan;
+    }
     // prepare 会通过 appliedPlan 回写**实际**结果（失败时 track 已退化成 Plain），
     // 所以这里的返回值只用来留一条日志，不作为控制流。
     const auto applied = prepare(instance, meta, &plan, requested);
     plan.applicable = true;
+    // 这行是排查「点了启动却停在主菜单」的唯一线索：track 决定走 quickPlay / Agent / 普通启动，
+    // reason 说明为什么。没有它只能靠猜（见 06 变更记录）。
+    qDebug() << "Map launch plan:" << instance->id() << "track=" << static_cast<int>(plan.track) << "world=" << plan.worldFolder
+             << "reason=" << plan.reason;
     if (!applied)
         qDebug() << "Map launch: 无法自动进图 —" << applied.error() << "（实例" << instance->id() << "）";
     installExitTracker(instance);

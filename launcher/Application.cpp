@@ -129,6 +129,7 @@
 #include "maps/MapPage.h"
 #include "maps/MapQuitWatcher.h"
 #include "maps/MapResourcePage.h"
+#include "maps/MapWindowFocus.h"
 
 #include <DesktopServices.h>
 #include <FileSystem.h>
@@ -1625,10 +1626,20 @@ bool Application::launch(MinecraftInstance* instance,
         if (mapPlan.applicable && mapPlan.track == maps::MapLaunchPrep::Track::Plain)
             qDebug() << "Map launch:" << instance->id() << "will not auto-enter world —" << mapPlan.reason;
 
-        // 1.20+ 那条轨道没有 Agent，「退出存档后关游戏」得由启动器自己盯日志完成
-        if (mapPlan.applicable && mapPlan.track == maps::MapLaunchPrep::Track::QuickPlay && mapPlan.autoEnter &&
-            mapPlan.closeOnQuit)
+        // 「退出存档后关游戏」只认日志标记（离开存档 → 全部落盘），没进过存档就永远等不到，
+        // 挂上不会有副作用。所以这里**不按轨道判**：启动瞬间轨道可能还判不出来
+        // （见 MapLaunchPrep 的 traits 兜底），而这条逻辑跟轨道无关。
+        // 只有 Agent 轨道例外 —— 老版本由 Agent 自己 halt。
+        if (mapPlan.applicable && mapPlan.autoEnter && mapPlan.closeOnQuit &&
+            mapPlan.track != maps::MapLaunchPrep::Track::Agent)
             maps::MapQuitWatcher::attach(instance);
+
+        // quickPlay 会跳过标题画面直接进图，而游戏窗口是被「创建」出来的、默认不抢前台。
+        // MC 在窗口没有焦点的情况下 grabMouse()，光标就没被真正锁进窗口 ——
+        // 表现为视角被顶到最高/最低、鼠标一碰就狂转（Mojira MCL-24083）。
+        // 所以启动后把前台交给游戏窗口（只在我们自己还占着前台的时候动手）。
+        if (mapPlan.applicable && mapPlan.autoEnter)
+            maps::armGameWindowFocus(instance);
 
         auto& controller = extras.controller;
         controller = std::make_unique<LaunchController>();

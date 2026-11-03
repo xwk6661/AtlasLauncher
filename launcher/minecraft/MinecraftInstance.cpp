@@ -853,8 +853,22 @@ QString MinecraftInstance::createLaunchScript(AuthSessionPtr session, MinecraftT
     }
 
     // generic minecraft params
-    for (auto param : processMinecraftArgs(session, nullptr /* When using a launch script, the server parameters are handled by it*/
-                                           )) {
+    auto scriptParams = processMinecraftArgs(session, nullptr /* When using a launch script, the server parameters are handled by it*/
+    );
+    // 脚本里已经有 worldName 时（上面那一段），NewLaunch.jar 会自己补
+    // --quickPlaySingleplayer <world>（见 StandardLauncher.java:95）。
+    // 而 processMinecraftArgs 拿 nullptr 时会从 JoinWorldOnLaunch 再拼一遍，
+    // 于是同一个参数出现两次，Minecraft 的 joptsimple 直接抛
+    // MultipleArgumentsForOptionException 崩在参数解析阶段（2026-11-03 实测）。
+    if (targetToJoin && !targetToJoin->world.isEmpty()) {
+        for (int i = scriptParams.size() - 2; i >= 0; --i) {
+            if (scriptParams.at(i) == QLatin1String("--quickPlaySingleplayer")) {
+                scriptParams.removeAt(i + 1);
+                scriptParams.removeAt(i);
+            }
+        }
+    }
+    for (const auto& param : scriptParams) {
         launchScript += "param " + param + "\n";
     }
 

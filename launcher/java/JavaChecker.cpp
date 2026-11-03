@@ -125,10 +125,18 @@ void JavaChecker::finished(int exitcode, QProcess::ExitStatus status)
     qDebug() << "Java checker finished with status" << status << "exit code" << exitcode;
 
     if (status == QProcess::CrashExit || exitcode == 1) {
-        result.validity = Result::Validity::Errored;
-        emit checkFinished(result);
-        emitSucceeded();
-        return;
+        // The 15s kill timer is a last resort: on Windows the JVM sometimes reports its
+        // properties and then lingers (antivirus / WER holding the process), so the checker
+        // gets killed even though the answer is already in m_stdout. Only a *killed* process
+        // gets that benefit of the doubt; a non-zero exit still means "no usable data".
+        const bool killedButUseful = status == QProcess::CrashExit && m_stdout.contains(QLatin1String("java.version"));
+        if (!killedButUseful) {
+            result.validity = Result::Validity::Errored;
+            emit checkFinished(result);
+            emitSucceeded();
+            return;
+        }
+        qWarning() << "Java checker was killed by the timeout, but stdout already holds usable data - continuing.";
     }
 
     bool success = true;

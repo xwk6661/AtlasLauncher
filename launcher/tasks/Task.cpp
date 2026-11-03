@@ -118,8 +118,10 @@ void Task::start()
 
 void Task::emitFailed(QString reason)
 {
-    // Don't fail twice.
-    if (ASSERT_NEVER(!isRunning())) {
+    // Don't fail twice. This is a hard error in upstream (`ASSERT_NEVER`), but in Debug builds
+    // that is qFatal: a launch that fails leaves steps finishing late and the whole launcher
+    // dies instead of showing the error. Log loudly and ignore the second report.
+    if (!isRunning()) {
         qCCritical(taskLogC) << "Task" << describe() << "failed while not running!!!!:" << reason;
         return;
     }
@@ -132,8 +134,8 @@ void Task::emitFailed(QString reason)
 
 void Task::emitAborted()
 {
-    // Don't abort twice.
-    if (ASSERT_NEVER(!isRunning())) {
+    // Don't abort twice. See emitFailed() for why this is not an assertion.
+    if (!isRunning()) {
         qCCritical(taskLogC) << "Task" << describe() << "aborted while not running!!!!";
         return;
     }
@@ -147,8 +149,8 @@ void Task::emitAborted()
 
 void Task::emitSucceeded()
 {
-    // Don't succeed twice.
-    if (ASSERT_NEVER(!isRunning())) {
+    // Don't succeed twice. See emitFailed() for why this is not an assertion.
+    if (!isRunning()) {
         qCCritical(taskLogC) << "Task" << describe() << "succeeded while not running!!!!";
         return;
     }

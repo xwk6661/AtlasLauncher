@@ -19,8 +19,10 @@
 
 #include <QElapsedTimer>
 #include <QObject>
+#include <QPointer>
 
 class QTimer;
+class LaunchTask;
 class MinecraftInstance;
 
 namespace maps {
@@ -58,12 +60,20 @@ class MapQuitWatcher : public QObject {
 
     MinecraftInstance* m_instance = nullptr;
     QTimer* m_killTimer = nullptr;
+    /// 定期核对「现在连的还是不是实例当前的 LaunchTask」。
+    /// 不能只在 runningStatusChanged 时连一次 —— 那个信号发得太早：
+    /// LaunchTask::create() 里 init() 先 setRunning(true)，而 LaunchController
+    /// 是拿到对象之后才写进 m_launchProcess，信号到达时 getLaunchTask() 还是**上一次**
+    /// 那个已经结束的任务（第一次启动时是 nullptr，所以靠重试躲过去了，第二次就静默失效）。
+    QTimer* m_recheckTimer = nullptr;
     QElapsedTimer m_armedAt;
+    /// 当前连着的任务；任务销毁后 QPointer 自动变空，下次核对就会重连
+    QPointer<LaunchTask> m_hookedTask;
+    QMetaObject::Connection m_logConnection;
     /// 已经看到「离开存档」
     bool m_armed = false;
     /// 已经决定要关（避免日志里反复出现的标记重复触发）
     bool m_fired = false;
-    int m_hookRetries = 0;
 };
 
 }  // namespace maps
