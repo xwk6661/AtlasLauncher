@@ -4,9 +4,9 @@
 把 [`Minecraft-AIO`](E:/llmUsage/Minecraft-AIO)（mcml v0.33.0，Electron + TypeScript）的
 「以地图为中心」搬到了原生 Qt 上 —— **点地图卡片直接进图，版本由程序推断**。
 
-> **状态（2026-11-03 16:00）**：构建通过 · 测试 `13 passed / 0 failed / 2 skipped` ·
+> **状态（2026-11-03 19:00）**：构建通过 · 测试 `13 passed / 0 failed / 2 skipped` ·
 > M0 完成，M1–M3 代码落地 · 真机已过「1.20+ 进图」与「连开两次都自动关游戏」·
-> **视角异常仍在查（唯一阻塞项）** · 分支 `feature/map-launcher`
+> **无阻塞项** · 分支 `feature/map-launcher`
 
 ---
 
