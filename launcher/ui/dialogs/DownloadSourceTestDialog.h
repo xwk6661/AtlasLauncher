@@ -55,12 +55,25 @@ class DownloadSourceTestDialog : public QDialog {
         QUrl effective;
         QLabel* status = nullptr;
         QLabel* address = nullptr;
+        int attempts = 0;
+        bool passed = false;
+        QString lastError;
     };
+
+    /**
+     * 一条失败最多试几次。
+     *
+     * BMCLAPI 会把请求 302 到随机的 OpenBMCLAPI 节点，实测单次成功率只有三到五成
+     * （同一个 URL 连打五次：200/302 交替出现）。重试是唯一有效的办法 —— 每次重试都会
+     * 重新 302 到另一个节点。五次之后单条通过率约 95%。
+     */
+    static constexpr int MAX_ATTEMPTS = 5;
 
     void buildUi();
     void startAll();
     void startNext();
     void settle(bool ok, const QString& detail);
+    void finishAll();
 
     bool m_mirror;
     QList<Probe> m_probes;

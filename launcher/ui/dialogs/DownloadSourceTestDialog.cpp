@@ -22,6 +22,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
+#include <QTimer>
 #include <QVBoxLayout>
 
 #include "Application.h"
@@ -35,7 +36,10 @@ namespace {
  * - 版本清单是固定路径；
  * - brigadier 1.3.10 是多年不变的老库；
  * - 资源对象按内容哈希寻址，落地即永久；
- * - Fabric Loader 的 maven 制品从不删除。
+ * - Fabric 的版本清单是固定路径，且镜像有对应的 /fabric-meta。
+ *
+ * 刻意避开 2 MB 级别的 jar：这个窗口是用来判断"通不通"的，不是测带宽。
+ * 之前用 fabric-loader.jar 时，弱网下一条要等几十秒，看起来就像卡死。
  *
  * 全部写**官方**地址：实际请求前会按当前选择过一次 DownloadSource，所以窗口里
  * 显示的地址就是"这次真正会打的地址"。
@@ -51,8 +55,7 @@ constexpr Target TARGETS[] = {
       "https://resources.download.minecraft.net/b9/b9f15e2d6073ed2f28bea176dad96df73bc6200f" },
     { QT_TRANSLATE_NOOP("DownloadSourceTestDialog", "Mojang 库"),
       "https://libraries.minecraft.net/com/mojang/brigadier/1.3.10/brigadier-1.3.10.jar" },
-    { QT_TRANSLATE_NOOP("DownloadSourceTestDialog", "Fabric 库"),
-      "https://maven.fabricmc.net/net/fabricmc/fabric-loader/0.20.1/fabric-loader-0.20.1.jar" },
+    { QT_TRANSLATE_NOOP("DownloadSourceTestDialog", "Fabric 元数据"), "https://meta.fabricmc.net/v2/versions/loader" },
 };
 
 QString humanSize(qint64 bytes)
@@ -144,6 +147,9 @@ void DownloadSourceTestDialog::startAll()
     m_index = 0;
     m_summary->clear();
     for (auto& probe : m_probes) {
+        probe.attempts = 0;
+        probe.passed = false;
+        probe.lastError.clear();
         probe.status->setText(tr("等待中…"));
         probe.status->setStyleSheet(QString());
     }
@@ -158,16 +164,14 @@ void DownloadSourceTestDialog::startNext()
         return;
 
     if (m_index >= m_probes.size()) {
-        if (m_retry != nullptr)
-            m_retry->setEnabled(true);
-        if (m_summary->text().isEmpty())
-            m_summary->setText(tr("全部通过。"));
+        finishAll();
         return;
     }
 
     auto& probe = m_probes[m_index];
-    probe.status->setText(tr("测试中…"));
+    ++probe.attempts;
     probe.status->setStyleSheet(QString());
+    probe.status->setText(probe.attempts > 1 ? tr("重试中（第 %1 次）…").arg(probe.attempts - 1) : tr("测试中…"));
 
     // NoSourceRewrite：地址已经在这里算好了，别再让 Request 按**已保存**的设置改一遍
     // —— 否则"下拉框选官方、但设置里还是镜像"时会测错对象。
@@ -192,7 +196,11 @@ void DownloadSourceTestDialog::startNext()
             Qt::QueuedConnection);
     });
     connect(request.get(), &Task::failed, this, [this, generation](const QString& reason) {
-        const QString text = reason.isEmpty() ? tr("失败") : reason;
+        // 状态码比 errorString 有用得多：镜像的典型失败是「302 之后节点断开」，
+        // 光看 "Connection closed" 分不出是被墙还是节点挂了。
+        const int code = m_current != nullptr ? m_current->replyStatusCode() : -1;
+        const QString text = code > 0 ? tr("%1 %2").arg(code).arg(reason.isEmpty() ? tr("失败") : reason)
+                                      : (reason.isEmpty() ? tr("失败") : reason);
         QMetaObject::invokeMethod(
             this,
             [this, generation, text] {
@@ -212,23 +220,72 @@ void DownloadSourceTestDialog::settle(bool ok, const QString& detail)
         return;
 
     auto& probe = m_probes[m_index];
-    probe.status->setText(detail);
-    probe.status->setStyleSheet(ok ? QStringLiteral("color: #2e7d32;") : QStringLiteral("color: #c62828;"));
+    m_current.reset();
 
-    if (!ok) {
-        // 一条失败就停：后面的多半也是同一个原因，继续跑只会让人等
-        m_summary->setText(m_mirror ? tr("「%1」失败。可以再试一次，或者切回官方源对比。").arg(probe.label)
-                                    : tr("「%1」失败。这与启动器无关，是这条线路打不通；可以试试镜像源。").arg(probe.label));
-        m_summary->setStyleSheet(QStringLiteral("color: #c62828;"));
-        if (m_retry != nullptr)
-            m_retry->setEnabled(true);
-        m_current.reset();
+    if (ok) {
+        probe.passed = true;
+        probe.status->setText(detail);
+        probe.status->setStyleSheet(QStringLiteral("color: #2e7d32;"));
+        ++m_index;
+        startNext();
         return;
     }
 
-    m_current.reset();
+    probe.lastError = detail;
+
+    // 节点抖动就再来一次 —— BMCLAPI 每次请求 302 到不同节点，重试几乎总能绕开
+    if (probe.attempts < MAX_ATTEMPTS) {
+        probe.status->setText(tr("换一个节点重试…"));
+        probe.status->setStyleSheet(QStringLiteral("color: #ef6c00;"));
+        QTimer::singleShot(400, this, [this] {
+            if (!m_cancelled)
+                startNext();
+        });
+        return;
+    }
+
+    probe.status->setText(detail);
+    probe.status->setStyleSheet(QStringLiteral("color: #c62828;"));
+    // 一条失败不影响后面的：否则剩下的行会一直停在"等待中"，看起来像整个功能挂了
     ++m_index;
     startNext();
+}
+
+void DownloadSourceTestDialog::finishAll()
+{
+    if (m_retry != nullptr)
+        m_retry->setEnabled(true);
+
+    int passed = 0;
+    QStringList failed;
+    for (const auto& probe : m_probes) {
+        if (probe.passed)
+            ++passed;
+        else
+            failed.append(probe.label);
+    }
+
+    const int total = m_probes.size();
+    if (passed == total) {
+        m_summary->setText(m_mirror ? tr("%1/%2 全部通过：这台机器到镜像的链路是通的。").arg(passed).arg(total)
+                                    : tr("%1/%2 全部通过：这台机器到官方服务器的链路是通的。").arg(passed).arg(total));
+        m_summary->setStyleSheet(QStringLiteral("color: #2e7d32;"));
+        return;
+    }
+
+    m_summary->setStyleSheet(QStringLiteral("color: #c62828;"));
+    const QString who = failed.join(QStringLiteral("、"));
+    m_summary->setText(
+        m_mirror
+            ? tr("%1/%2 通过；失败的：%3。镜像的节点是随机的，个别节点不可达很常见 —— 点「重新测试」多半能过；"
+                 "如果一直失败，把源切回官方试试。")
+                  .arg(passed)
+                  .arg(total)
+                  .arg(who)
+            : tr("%1/%2 通过；失败的：%3。这说明是这条线路的问题，不是启动器设置错了 —— 可以换到镜像源。")
+                  .arg(passed)
+                  .arg(total)
+                  .arg(who));
 }
 
 void DownloadSourceTestDialog::reject()
