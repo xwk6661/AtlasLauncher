@@ -60,6 +60,8 @@
 #include "ui/dialogs/ResourceDownloadDialog.h"
 #include "ui/dialogs/ResourceUpdateDialog.h"
 
+#include "maps/ModPresetDialog.h"
+
 #include "minecraft/PackProfile.h"
 #include "minecraft/VersionFilterData.h"
 #include "minecraft/mod/Mod.h"
@@ -78,6 +80,12 @@ ModFolderPage::ModFolderPage(MinecraftInstance* inst, ModFolderModel* model, QWi
     m_ui->actionsToolbar->insertActionBefore(m_ui->actionAddItem, m_ui->actionDownloadItem);
 
     connect(m_ui->actionDownloadItem, &QAction::triggered, this, &ModFolderPage::downloadMods);
+
+    // 地图启动器：一组常用模组一次装好，版本按本实例现查（详见 maps/ModPresetDialog）
+    auto* presetAction = new QAction(QIcon::fromTheme(QStringLiteral("loadermods")), tr("模组预设…"), this);
+    presetAction->setToolTip(tr("一次装好一组常用模组（按本实例的版本与加载器自动选文件）"));
+    connect(presetAction, &QAction::triggered, this, [this] { maps::ModPresetDialog::run(m_instance, this); });
+    m_ui->actionsToolbar->insertActionBefore(m_ui->actionAddItem, presetAction);
 
     m_ui->actionUpdateItem->setToolTip(tr("Try to check or update all selected mods (all mods if none are selected)"));
     connect(m_ui->actionUpdateItem, &QAction::triggered, this, [this] { updateMods(); });

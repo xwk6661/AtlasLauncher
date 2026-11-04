@@ -37,6 +37,7 @@
 #include "HallCache.h"
 #include "MapHallLink.h"
 #include "MapMeta.h"
+#include "ModPresetDialog.h"
 #include "MapNotes.h"
 #include "MapRepository.h"
 #include "MapTheme.h"
@@ -147,6 +148,17 @@ void MapInstanceBar::buildUi()
     m_worldCombo = new QComboBox(this);
     m_worldCombo->setVisible(false);
     layout->addWidget(m_worldCombo);
+
+    // 一键装模组预设：地图实例几乎都是 Vanilla，点进来先问加载器，再按版本挑文件
+    m_presets = new QPushButton(tr("装模组预设…"), this);
+    m_presets->setToolTip(tr("按这个实例的 Minecraft 版本与加载器，一次装好一组常用模组。\n"
+                             "安装前可以逐条取消勾选，版本由 Modrinth 现查。"));
+    m_presets->setVisible(false);
+    connect(m_presets, &QPushButton::clicked, this, [this] {
+        if (m_instance != nullptr)
+            ModPresetDialog::run(m_instance, this);
+    });
+    layout->addWidget(m_presets);
 
     m_notice = new QLabel(this);
     m_notice->setWordWrap(true);
@@ -270,6 +282,7 @@ bool MapInstanceBar::updateInstance(MinecraftInstance* instance)
         QObject::disconnect(m_runningHook);
 
     m_instanceId.clear();
+    m_instance = nullptr;
     m_selectedWorld.clear();
 
     if (instance == nullptr)
@@ -284,7 +297,9 @@ bool MapInstanceBar::updateInstance(MinecraftInstance* instance)
         return false;
 
     m_instanceId = instance->id();
+    m_instance = instance;
     m_isMapInstance = isMapInstance;
+    m_presets->setVisible(isMapInstance);
 
     clearRows();
     clearChips();

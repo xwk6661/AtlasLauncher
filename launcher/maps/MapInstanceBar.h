@@ -80,6 +80,7 @@ class MapInstanceBar : public QWidget {
     QWidget* m_chipBox = nullptr;
     QHBoxLayout* m_chipRow = nullptr;
     QPushButton* m_launch = nullptr;
+    QPushButton* m_presets = nullptr;
     QComboBox* m_worldCombo = nullptr;
     QLabel* m_notice = nullptr;
 
@@ -93,6 +94,7 @@ class MapInstanceBar : public QWidget {
     QGridLayout* m_rows = nullptr;
 
     QString m_instanceId;
+    MinecraftInstance* m_instance = nullptr;
     QString m_selectedWorld;
     bool m_isMapInstance = false;
     QMetaObject::Connection m_runningHook;

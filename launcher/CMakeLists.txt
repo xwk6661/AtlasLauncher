@@ -795,6 +795,10 @@ set(MAPS_SOURCES
     maps/MapHallPage.cpp
     maps/MapInstanceBar.h
     maps/MapInstanceBar.cpp
+    maps/ModPresets.h
+    maps/ModPresets.cpp
+    maps/ModPresetDialog.h
+    maps/ModPresetDialog.cpp
     maps/StarRatingWidget.h
     maps/StarRatingWidget.cpp
     maps/MapInstancePage.h

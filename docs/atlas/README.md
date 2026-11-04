@@ -48,6 +48,8 @@
   后关闭游戏窗口，回写 `map.json` 统计（真机连开两次均通过）。
 - 大厅：CTM Maps **整库本地化**（1000 张地图 / 2243 条详情 / 1000 条评论），搜索、排序、翻页、
   详情、评论全部本地算；封面走直连 → 浏览器通道，命中后磁盘缓存；
+- 模组预设：内置性能/实用三套 + 可自建，按实例的 MC 版本与加载器现查 Modrinth，
+  逐条显示版本、可勾选，一次装好；缺加载器先引导安装；
 - 实例「信息」页三页签：简介（封面 + 基本信息卡）、评论（卡片流）、我的（三张卡片）；
 - 设置页：全局「地图」「资源」两页，实例「设置 → 地图」页签（可覆盖全局）；
   资源页能把 `assets / libraries / java` **真的迁移**到任意盘（同盘瞬间完成），换启动器不用重下。
@@ -73,6 +75,7 @@
 | **启动** | `MapLaunchPrep`（选轨道 / 统一准备点）· `AgentBootstrap`（符号表 → `-javaagent`）· `MapWindowFocus`（把前台交给游戏窗口） |
 | **大厅** | `HallAPI` · `HallTypes` · `HallProxy` · `BrowserFetch` · `HallDialog` · `MapHallPage` |
 | **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（信息页）· `MapGalleryPage/Window` · `MapReviewCard`（评论卡）· `MapInfoCard`（信息卡工厂）· `MapCoverLoader`（封面）· `OptiFineDialog` · `StarRatingWidget` · `MapTheme` |
+| **模组** | `ModPresets`（预设数据 + Modrinth 解析）· `ModPresetDialog`（安装 / 编辑） |
 | **设置** | `MapSettingsWidget`（内容体）· `MapPage`（全局「地图」）· `MapResourcePage`（全局「资源」）· `ResourceStore`（迁移）· `launcher/ResourcePaths`（路径解析） |
 | **退出** | `MapQuitWatcher`（1.20+ 读日志关游戏） |
 
