@@ -55,6 +55,16 @@ auto FileSink::init(QNetworkRequest& request) -> InitResult
         return std::unexpected("Could not create folder");
     }
 
+    // 重试会重入 init()（Request 的镜像换节点重试）。上一轮的 QSaveFile 可能还开着、
+    // 临时文件里躺着半截数据 —— 显式 cancelWriting() 掉再换新的，语义就是"从零重写":
+    // QSaveFile 先写 `<目标>.XXXXXX`，只有 commit() 才改名到目标，所以半截数据既不会
+    // append 到下一次，也不会污染目标位置上原有的文件。
+    // （见 tests/RequestRetry_test.cpp 的 fileSinkRestartsFromZero 用例）
+    if (m_outputFile) {
+        m_outputFile->cancelWriting();
+        m_outputFile.reset();
+    }
+
     m_wroteAnyData = false;
     m_outputFile.reset(new PSaveFile(m_filename));
     if (!m_outputFile->open(QIODevice::WriteOnly)) {

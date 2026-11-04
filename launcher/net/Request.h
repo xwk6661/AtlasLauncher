@@ -99,6 +99,8 @@ class Request : public Task {
         AddAPIHeaders = 8,
         /// 不要按「下载源」改写 URL —— 调用方已经自己算好了最终地址（设置页的连通性测试）
         NoSourceRewrite = 16,
+        /// 不要做「镜像节点连接失败自动重试」—— 调用方自己管重试节奏（设置页的连通性测试）
+        NoMirrorRetry = 32,
     };
     Q_DECLARE_FLAGS(Options, Option)
 
@@ -117,6 +119,20 @@ class Request : public Task {
     };
 
    public:
+    /// 镜像节点抖动时的重试上限（总尝试次数 = 1 + MAX_MIRROR_RETRIES）
+    static constexpr int MAX_MIRROR_RETRIES = 3;
+
+    /**
+     * 这个网络错误值得"换一个镜像节点再试一次"吗？
+     *
+     * 只认连接层面没谈成的错误：BMCLAPI 会 302 到随机节点，个别节点不可达（实测单次
+     * 成功率仅 30–50%），换一次 302 就可能落到好节点上。反过来，只要服务器给出过
+     * 4xx/5xx 状态码，就说明对面答了话 —— 那是内容问题，重试不解决。
+     *
+     * 纯函数、不碰成员：判定表是这段逻辑最容易写错的地方，单测直接钉住。
+     */
+    static auto isRetryableMirrorError(QNetworkReply::NetworkError error, int httpStatus) -> bool;
+
 #if defined(LAUNCHER_APPLICATION)
     static auto makeCached(const QUrl& url, MetaEntryPtr entry, Options options = Option::NoOptions) -> Request::Ptr;
 #endif
@@ -154,6 +170,13 @@ class Request : public Task {
    private:
     auto handleRedirect() -> bool;
     void handleAutoRetry(int64_t delay);
+    /**
+     * 镜像节点连接失败时"回到入口重新 302"，落到另一个节点再试。
+     *
+     * 返回 true 表示已经排好重试（调用方不要再走失败分支）。重试前会 abort sink，
+     * 把上一轮写了半截的数据丢掉 —— 安全性见 FileSink::init() 的注释与单测。
+     */
+    auto tryMirrorRetry(QNetworkReply::NetworkError error) -> bool;
     virtual QNetworkReply* getReply(QNetworkRequest&);
 
    protected slots:
@@ -191,6 +214,11 @@ class Request : public Task {
 
     int m_retryCount = 0;
     QTimer m_retryTimer;
+
+    /// 镜像入口地址（302 之前那个）。重试必须回到这里，镜像才会重新挑节点
+    QUrl m_mirrorBaseUrl;
+    int m_mirrorRetryCount = 0;
+    QTimer m_mirrorRetryTimer;
 
     int m_redirectCount = 0;
 

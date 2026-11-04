@@ -100,6 +100,7 @@ Request::Request(const QUrl& url, QByteArray postData, Options options)
 Request::Request(const Spec& spec) : m_options(spec.options), m_url(spec.url), m_httpMethod(spec.method), m_postData(spec.data)
 {
     connect(&m_retryTimer, &QTimer::timeout, this, &Request::executeTask);
+    connect(&m_mirrorRetryTimer, &QTimer::timeout, this, &Request::executeTask);
 
     if (spec.name.isEmpty()) {
         setObjectName(QString("BYTES:") + m_url.toString());
@@ -127,6 +128,12 @@ void Request::executeTask()
     if (!m_options.testFlag(Option::NoSourceRewrite))
         m_url = Net::DownloadSource::rewrite(m_url);
 
+    // 只在第一次记下镜像入口。302 之后的节点地址不在映射表里，重试要回到入口，
+    // 镜像才会重新挑一个节点 —— 否则重试就是在砸同一个坏节点。
+    // 放在 rewrite 之外：连通性测试自己算好的镜像地址同样算"镜像请求"。
+    if (m_mirrorBaseUrl.isEmpty() && Net::DownloadSource::isMirror(m_url))
+        m_mirrorBaseUrl = m_url;
+
     setStatus(tr("Requesting %1").arg(StringUtils::truncateUrlHumanFriendly(m_url, 80)));
 
     if (Net::DownloadSource::isMirror(m_url)) {
@@ -134,7 +141,15 @@ void Request::executeTask()
         m_network = Net::DownloadSource::directNetwork();
     } else if (m_network == nullptr) {
 #ifdef LAUNCHER_APPLICATION
-        m_network = APPLICATION->network();
+        // 用 dynamic_cast 而不是 APPLICATION（static_cast）：单测里 qApp 是个普通
+        // QCoreApplication，静态转换出来的指针不是 Application，取 settings() 会炸。
+        if (auto* app = APPLICATION_DYN) {
+            m_network = app->network();
+        } else {
+            qCCritical(m_logCat) << getUid().toString() << "No network manager set for request:" << m_url.toString();
+            emitFailed("No network manager set for request");
+            return;
+        }
 #else
         qCCritical(m_logCat) << getUid().toString() << "No network manager set for request:" << m_url.toString();
         emitFailed("No network manager set for request");
@@ -163,18 +178,25 @@ void Request::executeTask()
             return;
     }
 
+    // 同上：没有 Application（单测）时不要崩，退化成不加 UA / 不设超时。
+    QString userAgent;
 #ifdef LAUNCHER_APPLICATION
-    auto userAgent = APPLICATION->getUserAgent();
+    if (auto* app = APPLICATION_DYN)
+        userAgent = app->getUserAgent();
 #else
-    auto userAgent = BuildConfig.USER_AGENT;
+    userAgent = BuildConfig.USER_AGENT;
 #endif
-    request.setHeader(QNetworkRequest::UserAgentHeader, userAgent.toUtf8());
+    if (!userAgent.isEmpty())
+        request.setHeader(QNetworkRequest::UserAgentHeader, userAgent.toUtf8());
     for (auto& headerProxy : m_headerProxies) {
         headerProxy->writeHeaders(request);
     }
 
 #ifdef LAUNCHER_APPLICATION
-    request.setTransferTimeout(APPLICATION->settings()->get("RequestTimeout").toInt() * 1000);
+    if (auto* app = APPLICATION_DYN)
+        request.setTransferTimeout(app->settings()->get("RequestTimeout").toInt() * 1000);
+    else
+        request.setTransferTimeout();
 #else
     request.setTransferTimeout();
 #endif
@@ -364,6 +386,67 @@ void Request::handleAutoRetry(int64_t delay)
     m_retryTimer.start();
 }
 
+auto Request::isRetryableMirrorError(QNetworkReply::NetworkError error, int httpStatus) -> bool
+{
+    // 对面给过 4xx/5xx：服务器已经答话了，换节点不会变好（404 换了还是 404）
+    if (httpStatus >= 400)
+        return false;
+
+    switch (error) {
+        // BMCLAPI 302 之后那一段最常见的三种：节点握手被重置、节点域名解析不了、连不上
+        case QNetworkReply::RemoteHostClosedError:
+        case QNetworkReply::ConnectionRefusedError:
+        case QNetworkReply::HostNotFoundError:
+        case QNetworkReply::TimeoutError:
+        case QNetworkReply::TemporaryNetworkFailureError:
+        case QNetworkReply::NetworkSessionFailedError:
+            return true;
+        default:
+            return false;
+    }
+}
+
+auto Request::tryMirrorRetry(QNetworkReply::NetworkError error) -> bool
+{
+    // 只重试"从镜像入口 302 出去"的下载：
+    // - 官方源一个字节都不改（没有 m_mirrorBaseUrl 就不重试）；
+    // - 调用方自己管重试节奏的不插手（Option::NoMirrorRetry，目前只有连通性测试）；
+    // - 只认 GET：重发 POST 可能造成重复副作用。
+    if (m_mirrorBaseUrl.isEmpty() || m_httpMethod != HttpMethod::Get)
+        return false;
+    if (m_options.testFlag(Option::NoMirrorRetry))
+        return false;
+    if (m_mirrorRetryCount >= MAX_MIRROR_RETRIES)
+        return false;
+    if (!isRetryableMirrorError(error, replyStatusCode()))
+        return false;
+
+    m_mirrorRetryCount++;
+
+    const auto attempt = QString("%1/%2").arg(m_mirrorRetryCount).arg(MAX_MIRROR_RETRIES);
+    qCWarning(m_logCat) << getUid().toString() << "Mirror node failed:" << m_url.toString() << "(" << errorString() << ")"
+                        << "- retrying from" << m_mirrorBaseUrl.toString() << attempt;
+
+    // 上一轮可能写了半截文件。abort() 会 cancelWriting() 掉临时文件、作废校验器；
+    // 下一轮 init() 重新建 QSaveFile（先写临时文件，commit 才落盘），所以是截断重写，
+    // 既不会 append 出坏文件，也不会碰目标位置上原有的好文件。
+    m_sink->abort();
+
+    m_state = State::Running;
+    m_url = m_mirrorBaseUrl;
+    m_redirectCount = 0;
+    m_errorResponse.clear();
+    setProgress(0, 0);
+    setStatus(tr("镜像节点无响应，正在换节点重试（%1/%2）").arg(m_mirrorRetryCount).arg(MAX_MIRROR_RETRIES));
+
+    // 用定时器而不是立刻 executeTask()：现在还在 QNetworkReply::finished 的槽里，
+    // 立刻重置 m_reply 等于在信号派发过程中析构发信号的对象。
+    m_mirrorRetryTimer.setTimerType(Qt::CoarseTimer);
+    m_mirrorRetryTimer.setSingleShot(true);
+    m_mirrorRetryTimer.start(400 * m_mirrorRetryCount);
+    return true;
+}
+
 void Request::downloadFinished()
 {
     // currently waiting for retry
@@ -387,6 +470,8 @@ void Request::downloadFinished()
         return;
     }
     if (m_state == State::Failed) {
+        if (tryMirrorRetry(m_reply->error()))
+            return;
         qCDebug(m_logCat) << getUid().toString() << "Request failed in previous step:" << m_url.toString();
         m_sink->abort();
         m_failReason = m_reply->errorString();
@@ -450,6 +535,7 @@ void Request::downloadReadyRead()
 auto Request::abort() -> bool
 {
     m_retryTimer.stop();
+    m_mirrorRetryTimer.stop();
     m_state = State::AbortedByUser;
     if (m_reply && !m_reply->isFinished()) {
         disconnect(m_reply.get(), &QNetworkReply::errorOccurred, nullptr, nullptr);
