@@ -56,6 +56,7 @@
 #include "Application.h"
 #include "net/ApiHeaderProxy.h"
 #include "net/ChecksumValidator.h"
+#include "net/DownloadSource.h"
 #include "net/MetaCacheSink.h"
 #include "settings/SettingsObject.h"
 #else
@@ -120,9 +121,17 @@ void Request::addValidator(Validator* v)
 
 void Request::executeTask()
 {
+    // 下载源改写：设置里选了镜像时，把官方域换成镜像前缀（映射表见 Net::DownloadSource）。
+    // 做在这里而不是构造函数里，是因为重定向也会回到 executeTask —— 镜像自己返回 302 时，
+    // 地址已经不在映射表里，rewrite 对它是空操作，不会二次改写。
+    m_url = Net::DownloadSource::rewrite(m_url);
+
     setStatus(tr("Requesting %1").arg(StringUtils::truncateUrlHumanFriendly(m_url, 80)));
 
-    if (m_network == nullptr) {
+    if (Net::DownloadSource::isMirror(m_url)) {
+        // 镜像走直连：启动器的代理设置对 BMCLAPI 的 302 节点通常是帮倒忙
+        m_network = Net::DownloadSource::directNetwork();
+    } else if (m_network == nullptr) {
 #ifdef LAUNCHER_APPLICATION
         m_network = APPLICATION->network();
 #else

@@ -28,6 +28,7 @@ set(TEST_SOURCES
     Commandline_test.cpp
     MapArchiveScan_test.cpp
     ModPresets_test.cpp
+    DownloadSource_test.cpp
 )
 
 # NOTE(@getchoo): Very funny way of aliasing the Qt generated `main` test functions to respective filenames

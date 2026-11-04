@@ -927,6 +927,10 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
             resetIfInvalid(m_settings->registerSetting("LegacyFMLLibsURLOverride", "").get());
         }
 
+        // 下载源：official（默认，行为与上游完全一致）/ bmclapi（国内镜像，直连不走代理）
+        // 只影响 Mojang、Fabric、Forge 的公共文件域，见 net/DownloadSource。
+        m_settings->registerSetting("DownloadSource", "official");
+
         m_settings->registerSetting("MetaRefreshOnLaunch", true);
         m_settings->registerSetting("CloseAfterLaunch", false);
         m_settings->registerSetting("QuitAfterGameStop", false);

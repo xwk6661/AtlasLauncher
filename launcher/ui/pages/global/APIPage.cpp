@@ -49,6 +49,7 @@
 
 #include "Application.h"
 #include "BuildConfig.h"
+#include "net/DownloadSource.h"
 #include "net/PasteUpload.h"
 #include "settings/SettingsObject.h"
 #include "tools/BaseProfiler.h"
@@ -84,6 +85,10 @@ APIPage::APIPage(QWidget* parent) : QWidget(parent), ui(new Ui::APIPage)
     ui->resourceURL->setPlaceholderText(BuildConfig.DEFAULT_RESOURCE_BASE);
     ui->legacyFMLLibsURL->setPlaceholderText(BuildConfig.LEGACY_FMLLIBS_BASE_URL);
     ui->userAgentLineEdit->setPlaceholderText(BuildConfig.USER_AGENT);
+
+    // 下载源：只影响 Mojang / Fabric / Forge 的公共文件域（见 net/DownloadSource）
+    ui->downloadSourceCombo->addItem(tr("官方（默认）"), QString::fromLatin1(Net::DownloadSource::OFFICIAL));
+    ui->downloadSourceCombo->addItem(tr("BMCLAPI 镜像（国内加速，直连）"), QString::fromLatin1(Net::DownloadSource::BMCLAPI));
 
     loadSettings();
 
@@ -155,6 +160,10 @@ void APIPage::loadSettings()
     QString customUserAgent = s->get("UserAgentOverride").toString();
     ui->userAgentLineEdit->setText(customUserAgent);
     ui->technicClientID->setText(s->get("TechnicClientID").toString());
+
+    const QString downloadSource = s->get("DownloadSource").toString();
+    const int sourceIndex = ui->downloadSourceCombo->findData(downloadSource);
+    ui->downloadSourceCombo->setCurrentIndex(sourceIndex < 0 ? 0 : sourceIndex);
 }
 
 void APIPage::applySettings()
@@ -204,6 +213,9 @@ void APIPage::applySettings()
     s->set("ModrinthToken", modrinthToken);
     s->set("UserAgentOverride", ui->userAgentLineEdit->text());
     s->set("TechnicClientID", ui->technicClientID->text());
+
+    const QString downloadSource = ui->downloadSourceCombo->currentData().toString();
+    s->set("DownloadSource", downloadSource.isEmpty() ? QString::fromLatin1(Net::DownloadSource::OFFICIAL) : downloadSource);
 }
 
 bool APIPage::apply()
