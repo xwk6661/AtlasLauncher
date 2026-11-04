@@ -100,7 +100,7 @@ Request::Request(const QUrl& url, QByteArray postData, Options options)
 Request::Request(const Spec& spec) : m_options(spec.options), m_url(spec.url), m_httpMethod(spec.method), m_postData(spec.data)
 {
     connect(&m_retryTimer, &QTimer::timeout, this, &Request::executeTask);
-    connect(&m_mirrorRetryTimer, &QTimer::timeout, this, &Request::executeTask);
+    connect(&m_networkRetryTimer, &QTimer::timeout, this, &Request::executeTask);
 
     if (spec.name.isEmpty()) {
         setObjectName(QString("BYTES:") + m_url.toString());
@@ -122,17 +122,24 @@ void Request::addValidator(Validator* v)
 
 void Request::executeTask()
 {
+    // 记下"用户真正想要的地址"，供镜像彻底不可用时回落官方源使用。
+    // 只在第一轮记：重定向之后 m_url 已经是节点地址，不能拿它当回落目标。
+    if (m_officialUrl.isEmpty())
+        m_officialUrl = m_url;
+
     // 下载源改写：设置里选了镜像时，把官方域换成镜像前缀（映射表见 Net::DownloadSource）。
     // 做在这里而不是构造函数里，是因为重定向也会回到 executeTask —— 镜像自己返回 302 时，
     // 地址已经不在映射表里，rewrite 对它是空操作，不会二次改写。
     if (!m_options.testFlag(Option::NoSourceRewrite))
         m_url = Net::DownloadSource::rewrite(m_url);
 
-    // 只在第一次记下镜像入口。302 之后的节点地址不在映射表里，重试要回到入口，
+    // 只在第一次记下本轮起点。302 之后的节点地址不在映射表里，重试要回到起点，
     // 镜像才会重新挑一个节点 —— 否则重试就是在砸同一个坏节点。
     // 放在 rewrite 之外：连通性测试自己算好的镜像地址同样算"镜像请求"。
-    if (m_mirrorBaseUrl.isEmpty() && Net::DownloadSource::isMirror(m_url))
-        m_mirrorBaseUrl = m_url;
+    if (m_retryBaseUrl.isEmpty())
+        m_retryBaseUrl = m_url;
+
+    m_stalled = false;
 
     setStatus(tr("Requesting %1").arg(StringUtils::truncateUrlHumanFriendly(m_url, 80)));
 
@@ -163,6 +170,18 @@ void Request::executeTask()
     }
 
     QNetworkRequest request(m_url);
+
+    // 文件下载走 HTTP/1.1，不用 HTTP/2。
+    //
+    // 原因不是"h2 慢"（实测大文件 6 并发：h2 1.86 MB/s / h1.1 1.86 MB/s，没差别），
+    // 而是**一条 h2 连接上的流会互相饿死**：Qt 6.8 + Azure CDN，6 个并发下载共用一个连接时，
+    // 出现过"同一条连接上一条流 75 秒下完、另一条整整 60 秒零字节"（09-日志见 06 §30），
+    // 零字节那条被传输超时掐掉，任务就整体失败。
+    // h1.1 下每个文件一条独立连接，一个连接被掐不会连累其他文件。
+    // 只对"写文件"的请求生效：JSON / API 请求继续用 h2，多路复用对它们是赚的。
+    if (m_sink && dynamic_cast<FileSink*>(m_sink.get()) != nullptr)
+        request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+
     auto result = m_sink->init(request);
     if (!result) {
         emitFailed(result.error());
@@ -251,7 +270,13 @@ void Request::onProgress(qint64 bytesReceived, qint64 bytesTotal)
 void Request::downloadError(QNetworkReply::NetworkError error)
 {
     if (error == QNetworkReply::OperationCanceledError) {
-        qCCritical(m_logCat) << getUid().toString() << "Aborted" << m_url.toString();
+        // 用户主动取消走的是 Request::abort()（先断开 errorOccurred 再 abort，进不到这里）。
+        // 能走到这里的取消只有一个来源：Qt 的传输超时（Request.setTransferTimeout，
+        // 取值是设置里的 RequestTimeout）到期，Qt 内部把 reply abort 掉。
+        // 这是"网络停滞"，不是"用户不要了" —— 必须当成可重试的网络故障，
+        // 否则弱网/被限速时每个大文件都会在 60 秒整点被杀，任务整体失败（见 06 §30）。
+        m_stalled = true;
+        qCWarning(m_logCat) << getUid().toString() << "Network stalled (no data for the transfer timeout):" << m_url.toString();
         m_state = State::Failed;
     } else if (replyStatusCode() == 429 /* HTTP Too Many Requests*/ && m_options.testFlag(Option::AutoRetry)) {
         qCDebug(m_logCat) << getUid().toString() << "Rate Limited!";
@@ -386,7 +411,7 @@ void Request::handleAutoRetry(int64_t delay)
     m_retryTimer.start();
 }
 
-auto Request::isRetryableMirrorError(QNetworkReply::NetworkError error, int httpStatus) -> bool
+auto Request::isRetryableNetworkError(QNetworkReply::NetworkError error, int httpStatus) -> bool
 {
     // 对面给过 4xx/5xx：服务器已经答话了，换节点不会变好（404 换了还是 404）
     if (httpStatus >= 400)
@@ -406,26 +431,48 @@ auto Request::isRetryableMirrorError(QNetworkReply::NetworkError error, int http
     }
 }
 
-auto Request::tryMirrorRetry(QNetworkReply::NetworkError error) -> bool
+auto Request::shouldFallBackToOfficial(const QUrl& retryBase, const QUrl& official, bool alreadyFellBack) -> bool
 {
-    // 只重试"从镜像入口 302 出去"的下载：
-    // - 官方源一个字节都不改（没有 m_mirrorBaseUrl 就不重试）；
-    // - 调用方自己管重试节奏的不插手（Option::NoMirrorRetry，目前只有连通性测试）；
-    // - 只认 GET：重发 POST 可能造成重复副作用。
-    if (m_mirrorBaseUrl.isEmpty() || m_httpMethod != HttpMethod::Get)
+    if (alreadyFellBack || retryBase.isEmpty() || official.isEmpty())
         return false;
-    if (m_options.testFlag(Option::NoMirrorRetry))
+    // 只有"现在打的是镜像、用户本来要的是官方"才回落，方向反过来不成立：
+    // 官方失败不该自动切到镜像（那条路上文件更可能根本下不下来）。
+    return Net::DownloadSource::isMirror(retryBase) && !Net::DownloadSource::isMirror(official);
+}
+
+auto Request::tryNetworkRetry(QNetworkReply::NetworkError error) -> bool
+{
+    // 只重试幂等的 GET：重发 POST 可能造成重复副作用。
+    if (m_httpMethod != HttpMethod::Get)
         return false;
-    if (m_mirrorRetryCount >= MAX_MIRROR_RETRIES)
+    if (m_retryBaseUrl.isEmpty())
         return false;
-    if (!isRetryableMirrorError(error, replyStatusCode()))
+    // 调用方自己管重试节奏的不插手（Option::NoAutoRetry，目前只有连通性测试）
+    if (m_options.testFlag(Option::NoAutoRetry))
         return false;
 
-    m_mirrorRetryCount++;
+    const bool retryable = m_stalled || isRetryableNetworkError(error, replyStatusCode());
+    if (!retryable)
+        return false;
 
-    const auto attempt = QString("%1/%2").arg(m_mirrorRetryCount).arg(MAX_MIRROR_RETRIES);
-    qCWarning(m_logCat) << getUid().toString() << "Mirror node failed:" << m_url.toString() << "(" << errorString() << ")"
-                        << "- retrying from" << m_mirrorBaseUrl.toString() << attempt;
+    const bool budgetLeft = m_networkRetryCount < MAX_NETWORK_RETRIES;
+    const bool canFallBack = !budgetLeft && shouldFallBackToOfficial(m_retryBaseUrl, m_officialUrl, m_fellBackToOfficial);
+
+    if (!budgetLeft && !canFallBack)
+        return false;
+
+    m_networkRetryCount++;
+
+    if (!budgetLeft && canFallBack) {
+        m_fellBackToOfficial = true;
+        m_retryBaseUrl = m_officialUrl;
+        qCWarning(m_logCat) << getUid().toString() << "Mirror gave up after" << MAX_NETWORK_RETRIES
+                            << "attempts - falling back to the official source:" << m_retryBaseUrl.toString();
+    } else {
+        qCWarning(m_logCat) << getUid().toString() << "Request failed:" << m_url.toString() << "(" << errorString() << ")"
+                            << (m_stalled ? "- network stalled, retrying" : "- retrying") << "from" << m_retryBaseUrl.toString()
+                            << QString("(%1/%2)").arg(m_networkRetryCount).arg(MAX_NETWORK_RETRIES);
+    }
 
     // 上一轮可能写了半截文件。abort() 会 cancelWriting() 掉临时文件、作废校验器；
     // 下一轮 init() 重新建 QSaveFile（先写临时文件，commit 才落盘），所以是截断重写，
@@ -433,17 +480,23 @@ auto Request::tryMirrorRetry(QNetworkReply::NetworkError error) -> bool
     m_sink->abort();
 
     m_state = State::Running;
-    m_url = m_mirrorBaseUrl;
+    m_url = m_retryBaseUrl;
     m_redirectCount = 0;
     m_errorResponse.clear();
+    m_stalled = false;
     setProgress(0, 0);
-    setStatus(tr("镜像节点无响应，正在换节点重试（%1/%2）").arg(m_mirrorRetryCount).arg(MAX_MIRROR_RETRIES));
+    if (m_fellBackToOfficial)
+        setStatus(tr("下载源不可用，已改用官方源重试"));
+    else if (m_stalled)
+        setStatus(tr("网络停滞，正在重试（%1/%2）").arg(m_networkRetryCount).arg(MAX_NETWORK_RETRIES));
+    else
+        setStatus(tr("连接中断，正在重试（%1/%2）").arg(m_networkRetryCount).arg(MAX_NETWORK_RETRIES));
 
     // 用定时器而不是立刻 executeTask()：现在还在 QNetworkReply::finished 的槽里，
     // 立刻重置 m_reply 等于在信号派发过程中析构发信号的对象。
-    m_mirrorRetryTimer.setTimerType(Qt::CoarseTimer);
-    m_mirrorRetryTimer.setSingleShot(true);
-    m_mirrorRetryTimer.start(400 * m_mirrorRetryCount);
+    m_networkRetryTimer.setTimerType(Qt::CoarseTimer);
+    m_networkRetryTimer.setSingleShot(true);
+    m_networkRetryTimer.start(400 * m_networkRetryCount);
     return true;
 }
 
@@ -470,12 +523,18 @@ void Request::downloadFinished()
         return;
     }
     if (m_state == State::Failed) {
-        if (tryMirrorRetry(m_reply->error()))
+        if (tryNetworkRetry(m_reply->error()))
             return;
         qCDebug(m_logCat) << getUid().toString() << "Request failed in previous step:" << m_url.toString();
         m_sink->abort();
-        m_failReason = m_reply->errorString();
-        emit failed(m_reply->errorString());
+        // 给用户一句能行动的话：Qt 把传输超时报成 "Operation canceled"，
+        // 和"用户点了中止"长得一模一样，直接抛出去没人看得懂（06 §30）。
+        if (m_stalled) {
+            m_failReason = tr("网络停滞：长时间收不到数据（已重试 %1 次）").arg(m_networkRetryCount);
+        } else {
+            m_failReason = m_reply->errorString();
+        }
+        emit failed(m_failReason);
         emit finished();
         return;
     }
@@ -535,7 +594,7 @@ void Request::downloadReadyRead()
 auto Request::abort() -> bool
 {
     m_retryTimer.stop();
-    m_mirrorRetryTimer.stop();
+    m_networkRetryTimer.stop();
     m_state = State::AbortedByUser;
     if (m_reply && !m_reply->isFinished()) {
         disconnect(m_reply.get(), &QNetworkReply::errorOccurred, nullptr, nullptr);

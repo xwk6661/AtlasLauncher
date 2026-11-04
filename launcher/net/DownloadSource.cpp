@@ -69,9 +69,12 @@ namespace Net {
 bool DownloadSource::mirrorEnabled()
 {
 #ifdef LAUNCHER_APPLICATION
-    if (APPLICATION == nullptr || APPLICATION->settings() == nullptr)
+    // dynamic_cast 而不是 APPLICATION：没有 Application 的上下文（单测）里
+    // APPLICATION（static_cast）是个假指针，取 settings() 会直接崩。
+    auto* app = APPLICATION_DYN;
+    if (app == nullptr || app->settings() == nullptr)
         return false;
-    return APPLICATION->settings()->get("DownloadSource").toString() == QLatin1String(BMCLAPI);
+    return app->settings()->get("DownloadSource").toString() == QLatin1String(BMCLAPI);
 #else
     return false;
 #endif

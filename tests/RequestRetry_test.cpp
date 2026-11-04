@@ -78,7 +78,7 @@ void writeFile(const QString& path, const QByteArray& data)
  */
 class FakeReply : public QNetworkReply {
    public:
-    enum class Mode { Redirect, Fail, Ok };
+    enum class Mode { Redirect, Fail, Stall, Ok };
 
     FakeReply(Mode mode, QByteArray payload = {}, QByteArray location = {}, QObject* parent = nullptr)
         : QNetworkReply(parent), m_mode(mode), m_payload(std::move(payload))
@@ -104,6 +104,11 @@ class FakeReply : public QNetworkReply {
                 case Mode::Fail:
                     setError(QNetworkReply::RemoteHostClosedError, "connection closed");
                     emit errorOccurred(QNetworkReply::RemoteHostClosedError);
+                    break;
+                case Mode::Stall:
+                    // Qt 的传输超时到期时就是这么干的：abort 掉 reply，报 OperationCanceledError
+                    setError(QNetworkReply::OperationCanceledError, "Operation canceled");
+                    emit errorOccurred(QNetworkReply::OperationCanceledError);
                     break;
                 case Mode::Ok:
                     emit readyRead();
@@ -142,6 +147,9 @@ class ScriptedRequest : public Net::Request {
         auto sink = std::make_unique<Net::ByteArraySink>();
         m_output = sink->output();
         setSink(std::move(sink));
+        // 官方地址不会走 directNetwork()，得自己给一个（getReply 被覆写，实际不会用到它）。
+        // 单测里没有 Application，不设的话 Request 会以 "No network manager" 失败。
+        setNetwork(&m_network);
     }
 
     QList<QUrl> requestedUrls;
@@ -162,6 +170,7 @@ class ScriptedRequest : public Net::Request {
    private:
     QList<QPair<FakeReply::Mode, QByteArray>> m_script;
     QByteArray* m_output = nullptr;
+    QNetworkAccessManager m_network;
 };
 
 }  // namespace
@@ -174,21 +183,21 @@ class RequestRetryTest : public QObject {
     {
         using Net::Request;
         // BMCLAPI 302 落到坏节点的三种典型症状
-        QVERIFY(Request::isRetryableMirrorError(QNetworkReply::RemoteHostClosedError, -1));
-        QVERIFY(Request::isRetryableMirrorError(QNetworkReply::ConnectionRefusedError, -1));
-        QVERIFY(Request::isRetryableMirrorError(QNetworkReply::HostNotFoundError, -1));
-        QVERIFY(Request::isRetryableMirrorError(QNetworkReply::TimeoutError, -1));
+        QVERIFY(Request::isRetryableNetworkError(QNetworkReply::RemoteHostClosedError, -1));
+        QVERIFY(Request::isRetryableNetworkError(QNetworkReply::ConnectionRefusedError, -1));
+        QVERIFY(Request::isRetryableNetworkError(QNetworkReply::HostNotFoundError, -1));
+        QVERIFY(Request::isRetryableNetworkError(QNetworkReply::TimeoutError, -1));
         // 下载到一半连接断了：状态码已经是 200，仍然值得换节点重来
-        QVERIFY(Request::isRetryableMirrorError(QNetworkReply::RemoteHostClosedError, 200));
+        QVERIFY(Request::isRetryableNetworkError(QNetworkReply::RemoteHostClosedError, 200));
 
         // 对面答过话的都不是网络抖动，重试只会浪费时间
-        QVERIFY(!Request::isRetryableMirrorError(QNetworkReply::ContentNotFoundError, 404));
-        QVERIFY(!Request::isRetryableMirrorError(QNetworkReply::RemoteHostClosedError, 503));
-        QVERIFY(!Request::isRetryableMirrorError(QNetworkReply::NoError, 200));
+        QVERIFY(!Request::isRetryableNetworkError(QNetworkReply::ContentNotFoundError, 404));
+        QVERIFY(!Request::isRetryableNetworkError(QNetworkReply::RemoteHostClosedError, 503));
+        QVERIFY(!Request::isRetryableNetworkError(QNetworkReply::NoError, 200));
         // 用户自己取消的，绝不能"重试"回来
-        QVERIFY(!Request::isRetryableMirrorError(QNetworkReply::OperationCanceledError, -1));
+        QVERIFY(!Request::isRetryableNetworkError(QNetworkReply::OperationCanceledError, -1));
         // 磁盘/权限这类本地故障，换节点也没用
-        QVERIFY(!Request::isRetryableMirrorError(QNetworkReply::ProtocolFailure, -1));
+        QVERIFY(!Request::isRetryableNetworkError(QNetworkReply::ProtocolFailure, -1));
     }
 
     /// 重入 init() 是"从零写"，不是 append —— 这是重试能不能上线的前提
@@ -290,7 +299,7 @@ class RequestRetryTest : public QObject {
         QCOMPARE(request.requestedUrls.at(2), entrance);                                                       // 回到入口重新 302
     }
 
-    /// 一直连不上：试满 MAX_MIRROR_RETRIES 次就老实失败，不要无限重试
+    /// 一直连不上：试满 MAX_NETWORK_RETRIES 次就老实失败，不要无限重试
     void givesUpAfterRetryBudget()
     {
         const QUrl entrance("https://bmclapi2.bangbang93.com/maven/y.jar");
@@ -302,23 +311,85 @@ class RequestRetryTest : public QObject {
 
         QVERIFY(failed.wait(8000));
         QCOMPARE(succeeded.count(), 0);
-        QCOMPARE(request.requestedUrls.size(), 1 + Net::Request::MAX_MIRROR_RETRIES);
+        QCOMPARE(request.requestedUrls.size(), 1 + Net::Request::MAX_NETWORK_RETRIES);
         for (const auto& url : request.requestedUrls)
             QCOMPARE(url, entrance);
     }
 
     /// 自己管重试的调用方（连通性测试）开关必须真的生效，否则会被叠成 20 次请求
-    void noMirrorRetryOptionDisablesRetry()
+    void noAutoRetryOptionDisablesRetry()
     {
         const QUrl entrance("https://bmclapi2.bangbang93.com/maven/z.jar");
         ScriptedRequest request(entrance, { { FakeReply::Mode::Fail, {} } },
-                                Net::Request::Option::NoSourceRewrite | Net::Request::Option::NoMirrorRetry);
+                                Net::Request::Option::NoSourceRewrite | Net::Request::Option::NoAutoRetry);
 
         QSignalSpy failed(&request, &Task::failed);
         request.start();
 
         QVERIFY(failed.wait(3000));
         QCOMPARE(request.requestedUrls.size(), 1);
+    }
+
+    /// 官方源一样要重试：Azure CDN 也会 `Connection closed`（实测弱网下每轮都有几个）
+    void retriesOfficialSourceToo()
+    {
+        const QUrl official("https://libraries.minecraft.net/io/netty/netty-handler/4.2.7.Final/netty-handler-4.2.7.Final.jar");
+        ScriptedRequest request(official, { { FakeReply::Mode::Fail, {} }, { FakeReply::Mode::Ok, QByteArray("JAR") } });
+
+        QSignalSpy succeeded(&request, &Task::succeeded);
+        request.start();
+
+        QVERIFY(succeeded.wait(8000));
+        QCOMPARE(request.requestedUrls.size(), 2);
+        QCOMPARE(*request.output(), QByteArray("JAR"));
+    }
+
+    /**
+     * 60 秒收不到数据被 Qt 掐掉（OperationCanceledError）不能当成"用户中止"。
+     *
+     * 这条是 06 §30 的病根：原来这种取消被记成 Aborted，既不重试也不给可读的错，
+     * 任务直接失败，界面上只剩一串 "Operation canceled"。
+     */
+    void retriesAfterTransferTimeout()
+    {
+        const QUrl official("https://libraries.minecraft.net/it/unimi/dsi/fastutil/8.5.18/fastutil-8.5.18.jar");
+        ScriptedRequest request(official, { { FakeReply::Mode::Stall, {} }, { FakeReply::Mode::Ok, QByteArray("OK") } });
+
+        QSignalSpy succeeded(&request, &Task::succeeded);
+        request.start();
+
+        QVERIFY(succeeded.wait(8000));
+        QCOMPARE(request.requestedUrls.size(), 2);
+    }
+
+    /// 一直停滞：重试预算用完要给出人话，而不是 "Operation canceled"
+    void stallFailureIsReadable()
+    {
+        const QUrl official("https://libraries.minecraft.net/org/apache/logging/log4j/log4j-api/2.25.2/log4j-api-2.25.2.jar");
+        ScriptedRequest request(official, { { FakeReply::Mode::Stall, {} } });
+
+        QSignalSpy failed(&request, &Task::failed);
+        request.start();
+
+        QVERIFY(failed.wait(8000));
+        QCOMPARE(request.requestedUrls.size(), 1 + Net::Request::MAX_NETWORK_RETRIES);
+        const auto reason = failed.at(0).at(0).toString();
+        QVERIFY2(reason.contains("网络停滞"), qPrintable(reason));
+        QVERIFY2(!reason.contains("Operation canceled"), qPrintable(reason));
+    }
+
+    /// 回落只允许"镜像 → 官方"单向，且只回一次：不能来回绕圈
+    void fallBackRuleIsOneWay()
+    {
+        using Net::Request;
+        const QUrl mirror("https://bmclapi2.bangbang93.com/maven/x.jar");
+        const QUrl official("https://libraries.minecraft.net/x.jar");
+
+        QVERIFY(Request::shouldFallBackToOfficial(mirror, official, false));
+        QVERIFY(!Request::shouldFallBackToOfficial(mirror, official, true));     // 已经回落过
+        QVERIFY(!Request::shouldFallBackToOfficial(official, official, false));  // 本来就在官方
+        QVERIFY(!Request::shouldFallBackToOfficial(mirror, mirror, false));      // 回落目标还是镜像
+        QVERIFY(!Request::shouldFallBackToOfficial(mirror, QUrl(), false));      // 没有可回落目标
     }
 };
 

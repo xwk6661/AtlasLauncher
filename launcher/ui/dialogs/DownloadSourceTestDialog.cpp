@@ -175,10 +175,10 @@ void DownloadSourceTestDialog::startNext()
 
     // NoSourceRewrite：地址已经在这里算好了，别再让 Request 按**已保存**的设置改一遍
     // —— 否则"下拉框选官方、但设置里还是镜像"时会测错对象。
-    // NoMirrorRetry：这里自己就是那层"每条最多 5 次"的重试，再叠一层 Request 的 3 次
+    // NoAutoRetry：这里自己就是那层"每条最多 5 次"的重试，再叠一层 Request 的 3 次
     // 会变成 20 个请求，且界面上的"第 n 次"对不上实际打的次数。
     auto [request, output] = Net::ApiRequest::makeByteArray(
-        probe.effective, Net::Request::Option::NoSourceRewrite | Net::Request::Option::NoMirrorRetry);
+        probe.effective, Net::Request::Option::NoSourceRewrite | Net::Request::Option::NoAutoRetry);
     m_current = request;
     m_timer.start();
     const int generation = m_generation;

@@ -99,8 +99,8 @@ class Request : public Task {
         AddAPIHeaders = 8,
         /// 不要按「下载源」改写 URL —— 调用方已经自己算好了最终地址（设置页的连通性测试）
         NoSourceRewrite = 16,
-        /// 不要做「镜像节点连接失败自动重试」—— 调用方自己管重试节奏（设置页的连通性测试）
-        NoMirrorRetry = 32,
+        /// 不要做「连接失败 / 网络停滞自动重试」—— 调用方自己管重试节奏（设置页的连通性测试）
+        NoAutoRetry = 32,
     };
     Q_DECLARE_FLAGS(Options, Option)
 
@@ -119,19 +119,29 @@ class Request : public Task {
     };
 
    public:
-    /// 镜像节点抖动时的重试上限（总尝试次数 = 1 + MAX_MIRROR_RETRIES）
-    static constexpr int MAX_MIRROR_RETRIES = 3;
+    /// 连接失败 / 网络停滞时的重试上限（总尝试次数 = 1 + MAX_NETWORK_RETRIES）
+    static constexpr int MAX_NETWORK_RETRIES = 3;
 
     /**
-     * 这个网络错误值得"换一个镜像节点再试一次"吗？
+     * 这个网络错误值得再试一次吗？
      *
      * 只认连接层面没谈成的错误：BMCLAPI 会 302 到随机节点，个别节点不可达（实测单次
-     * 成功率仅 30–50%），换一次 302 就可能落到好节点上。反过来，只要服务器给出过
-     * 4xx/5xx 状态码，就说明对面答了话 —— 那是内容问题，重试不解决。
+     * 成功率仅 30–50%），换一次 302 就可能落到好节点上；官方 CDN 在弱网下也会
+     * `Connection closed`。反过来，只要服务器给出过 4xx/5xx 状态码，就说明对面答了话 ——
+     * 那是内容问题，重试不解决。
      *
      * 纯函数、不碰成员：判定表是这段逻辑最容易写错的地方，单测直接钉住。
      */
-    static auto isRetryableMirrorError(QNetworkReply::NetworkError error, int httpStatus) -> bool;
+    static auto isRetryableNetworkError(QNetworkReply::NetworkError error, int httpStatus) -> bool;
+
+    /**
+     * 镜像的节点抽完签还是烂签时，要不要给官方源一次机会？
+     *
+     * 用户选镜像的初衷是"快"，不是"宁可不下载"；而镜像的 302 目标是随机的，
+     * 弱网下抽到不可达节点的概率很高（实测这条线路上 8 个节点里 6 个被 TLS 重置）。
+     * 判定条件写成纯函数，方便单测钉住"不会来回绕圈"。
+     */
+    static auto shouldFallBackToOfficial(const QUrl& retryBase, const QUrl& official, bool alreadyFellBack) -> bool;
 
 #if defined(LAUNCHER_APPLICATION)
     static auto makeCached(const QUrl& url, MetaEntryPtr entry, Options options = Option::NoOptions) -> Request::Ptr;
@@ -171,12 +181,15 @@ class Request : public Task {
     auto handleRedirect() -> bool;
     void handleAutoRetry(int64_t delay);
     /**
-     * 镜像节点连接失败时"回到入口重新 302"，落到另一个节点再试。
+     * 连接失败 / 网络停滞时回到**本轮请求的起点**再试一次。
+     *
+     * 对镜像来说起点就是入口（302 之前的地址）：接着打刚失败的那个节点等于确定性失败，
+     * 回入口才会重新挑节点。对官方源来说起点就是原地址，换一次 DNS/边缘 IP 往往就好了。
      *
      * 返回 true 表示已经排好重试（调用方不要再走失败分支）。重试前会 abort sink，
      * 把上一轮写了半截的数据丢掉 —— 安全性见 FileSink::init() 的注释与单测。
      */
-    auto tryMirrorRetry(QNetworkReply::NetworkError error) -> bool;
+    auto tryNetworkRetry(QNetworkReply::NetworkError error) -> bool;
     virtual QNetworkReply* getReply(QNetworkRequest&);
 
    protected slots:
@@ -215,10 +228,16 @@ class Request : public Task {
     int m_retryCount = 0;
     QTimer m_retryTimer;
 
-    /// 镜像入口地址（302 之前那个）。重试必须回到这里，镜像才会重新挑节点
-    QUrl m_mirrorBaseUrl;
-    int m_mirrorRetryCount = 0;
-    QTimer m_mirrorRetryTimer;
+    /// 本轮请求的起点（302 之前的地址）。重试必须回到这里，镜像才会重新挑节点
+    QUrl m_retryBaseUrl;
+    /// 改写之前用户真正想要的地址。镜像彻底不可用时用它回落（见 tryNetworkRetry）
+    QUrl m_officialUrl;
+    bool m_fellBackToOfficial = false;
+    int m_networkRetryCount = 0;
+    QTimer m_networkRetryTimer;
+    /// 本轮是不是被 Qt 的传输超时掐掉的（`RequestTimeout` 到期 → OperationCanceledError）。
+    /// 这不是用户取消，必须和"用户点了中止"区分开，否则慢盘上的大文件永远装不完。
+    bool m_stalled = false;
 
     int m_redirectCount = 0;
 
