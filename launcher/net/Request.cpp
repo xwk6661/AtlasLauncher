@@ -85,6 +85,24 @@ auto logCatForMethod(HttpMethod method) -> Request::LogCatFunc
     }
     return taskNetLogC;
 }
+
+/// 把 total 字节尽量均匀地切成 count 段，返回 [start, end]（含端点）
+auto splitRange(qint64 total, int count) -> QList<QPair<qint64, qint64>>
+{
+    QList<QPair<qint64, qint64>> out;
+    if (total <= 0 || count < 1)
+        return out;
+    const qint64 per = total / count;
+    qint64 start = 0;
+    for (int i = 0; i < count; ++i) {
+        qint64 end = (i == count - 1) ? total - 1 : start + per - 1;
+        if (end < start)
+            break;
+        out.append({ start, end });
+        start = end + 1;
+    }
+    return out;
+}
 }  // namespace
 
 Request::Request() : Request(Spec{}) {}
@@ -151,7 +169,10 @@ void Request::executeTask()
         // 用 dynamic_cast 而不是 APPLICATION（static_cast）：单测里 qApp 是个普通
         // QCoreApplication，静态转换出来的指针不是 Application，取 settings() 会炸。
         if (auto* app = APPLICATION_DYN) {
-            m_network = app->network();
+            // 文件下载轮转用 QNAM 池：一个 QNAM 每主机只有 6 条连接，
+            // 池子才能把"并发文件数"真正变成"并发连接数"（见 Application::downloadNetwork）。
+            // JSON/API 请求留在主 QNAM，避免把会话/cookie 打散。
+            m_network = dynamic_cast<FileSink*>(m_sink.get()) != nullptr ? app->downloadNetwork() : app->network();
         } else {
             qCCritical(m_logCat) << getUid().toString() << "No network manager set for request:" << m_url.toString();
             emitFailed("No network manager set for request");
@@ -220,8 +241,25 @@ void Request::executeTask()
     request.setTransferTimeout();
 #endif
 
+    // 分片请求要复用同样的 UA / 超时，这里存下来，免得再写一遍上面的 #ifdef
+    m_userAgent = userAgent;
+#ifdef LAUNCHER_APPLICATION
+    m_transferTimeoutMs = APPLICATION_DYN ? APPLICATION_DYN->settings()->get("RequestTimeout").toInt() * 1000 : 0;
+#else
+    m_transferTimeoutMs = 0;
+#endif
+
     m_lastProgressTime = std::chrono::steady_clock::now();
     m_lastProgressBytes = 0;
+
+    // 新一轮尝试：清掉上一轮的分片状态（m_parallelDisabled 保留——降级过就一直单连接）
+    m_parallel = false;
+    m_parallelTried = false;
+    m_chunkFailed = false;
+    m_totalBytes = 0;
+    m_chunks.clear();
+    m_chunkReplies.clear();
+    m_lastChunkReply = nullptr;
 
     auto* rep = getReply(request);
     if (rep == nullptr) {  // it failed
@@ -234,6 +272,8 @@ void Request::executeTask()
     connect(rep, &QNetworkReply::errorOccurred, this, &Request::downloadError);
     connect(rep, &QNetworkReply::sslErrors, this, &Request::sslErrors);
     connect(rep, &QNetworkReply::readyRead, this, &Request::downloadReadyRead);
+    // 头一到就知道文件多大，够大就切成分段并发（见 tryStartParallel）
+    connect(rep, &QNetworkReply::metaDataChanged, this, &Request::tryStartParallel);
 }
 
 void Request::onProgress(qint64 bytesReceived, qint64 bytesTotal)
@@ -500,12 +540,313 @@ auto Request::tryNetworkRetry(QNetworkReply::NetworkError error) -> bool
     return true;
 }
 
+auto Request::parallelChunks() -> int
+{
+#ifdef LAUNCHER_APPLICATION
+    if (auto* app = APPLICATION_DYN)
+        return app->settings()->get("DownloadChunks").toInt();
+#endif
+    // 没有 Application（单测）时一律关闭：分段路径目前是实验性的、默认不启用，
+    // 单测里的假 reply 也不支持 Range。
+    return 0;
+}
+
+auto Request::makeRangeRequest(qint64 start, qint64 end) -> QNetworkRequest
+{
+    QNetworkRequest request(m_url);
+    request.setRawHeader("Range", QStringLiteral("bytes=%1-%2").arg(start).arg(end).toLatin1());
+    // 分片要的是"多条独立连接"，h2 会把它们又塞回一条连接，等于白拆
+    request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
+    if (!m_userAgent.isEmpty())
+        request.setHeader(QNetworkRequest::UserAgentHeader, m_userAgent.toUtf8());
+    if (m_transferTimeoutMs > 0)
+        request.setTransferTimeout(m_transferTimeoutMs);
+    return request;
+}
+
+auto Request::writeAtOffset(qint64 offset, const QByteArray& data) -> Result<>
+{
+    if (auto* fileSink = dynamic_cast<FileSink*>(m_sink.get()))
+        return fileSink->writeAt(offset, data);
+    return m_sink->write(data);
+}
+
+void Request::tryStartParallel()
+{
+    if (m_parallel || m_parallelTried || m_parallelDisabled || m_reply == nullptr || m_sink == nullptr)
+        return;
+    // 只对"写文件"的下载拆段：ByteArraySink 是 JSON，拆了还得自己拼，没意义
+    if (dynamic_cast<FileSink*>(m_sink.get()) == nullptr)
+        return;
+    if (m_httpMethod != HttpMethod::Get)
+        return;
+    if (getState() != State::Running)
+        return;
+
+    const int chunks = parallelChunks();
+    if (chunks < 2)
+        return;
+    // 只有干净的 200 才拆：206/304 是别人已经处理过的场景
+    if (replyStatusCode() != 200)
+        return;
+
+    bool ok = false;
+    const qint64 total = m_reply->header(QNetworkRequest::ContentLengthHeader).toLongLong(&ok);
+    if (!ok || total < PARALLEL_MIN_SIZE)
+        return;
+
+    m_parallelTried = true;
+    m_totalBytes = total;
+
+    // 关键：这条连接没有 Range 头，留着它会把整个文件拉下来，而且写进第 0 段时
+    // 会覆盖掉别的分片已经写好的数据。直接丢掉，N 条带 Range 的连接全部重开。
+    // （代价只是已经收到的几 KB 响应头）
+    m_reply->disconnect(this);
+    m_reply->abort();
+    m_reply.reset();
+
+    auto* fileSink = static_cast<FileSink*>(m_sink.get());
+    auto begun = fileSink->beginParallel(total);
+    if (!begun) {
+        // 连 .part 都建不出来（磁盘满/权限），别再拆了
+        m_parallelDisabled = true;
+        emitFailed(begun.error());
+        return;
+    }
+
+    const auto ranges = splitRange(total, chunks);
+    m_chunks.reserve(ranges.size());
+    for (const auto& range : ranges)
+        m_chunks.append(Chunk{ .start = range.first, .end = range.second });
+    m_parallel = true;
+
+    qCDebug(m_logCat) << getUid().toString() << "Splitting" << total << "bytes into" << m_chunks.size() << "ranges:" << m_url.toString();
+
+    for (int i = 0; i < m_chunks.size(); ++i)
+        startChunk(i);
+}
+
+void Request::startChunk(int index)
+{
+    if (index < 0 || index >= m_chunks.size() || m_network == nullptr)
+        return;
+    auto request = makeRangeRequest(m_chunks[index].start, m_chunks[index].end);
+    auto* reply = m_network->get(request);
+    if (reply == nullptr)
+        return;
+    m_chunkReplies.resize(static_cast<size_t>(m_chunks.size()));
+    m_chunkReplies[static_cast<size_t>(index)].reset(reply);
+
+    connect(reply, &QNetworkReply::readyRead, this, [this, index, reply] { onChunkReadyRead(index, reply); });
+    connect(reply, &QNetworkReply::finished, this, [this, index, reply] { onChunkFinished(index, reply); });
+    connect(reply, &QNetworkReply::errorOccurred, this,
+            [this, index, reply](QNetworkReply::NetworkError error) { onChunkError(index, reply, error); });
+}
+
+void Request::onChunkReadyRead(int index, QNetworkReply* reply)
+{
+    if (!m_parallel || index < 0 || index >= m_chunks.size())
+        return;
+    auto& chunk = m_chunks[index];
+    auto data = reply->readAll();
+    if (data.isEmpty())
+        return;
+
+    // 服务器不认 Range 时会把整个文件塞回来；截到本片应有的长度，并标记失败（随后降级）
+    const qint64 capacity = chunk.end - chunk.start + 1 - chunk.received;
+    if (data.size() > capacity) {
+        data.truncate(static_cast<int>(qMax<qint64>(0, capacity)));
+        m_chunkFailed = true;
+    }
+
+    auto result = writeAtOffset(chunk.start + chunk.received, data);
+    if (!result) {
+        m_chunkFailed = true;
+        reply->abort();
+        return;
+    }
+    chunk.received += data.size();
+    updateParallelProgress();
+}
+
+void Request::onChunkError(int index, QNetworkReply* reply, QNetworkReply::NetworkError error)
+{
+    if (!m_parallel || index < 0 || index >= m_chunks.size())
+        return;
+    // abort 是我们自己发的（降级/取消），不算这一片失败
+    if (error == QNetworkReply::OperationCanceledError && !m_chunkFailed)
+        return;
+    qCWarning(m_logCat) << getUid().toString() << "Range" << index << "failed:" << reply->url().toString() << error;
+    retryChunk(index);
+}
+
+void Request::retryChunk(int index)
+{
+    if (!m_parallel || index < 0 || index >= m_chunks.size())
+        return;
+    auto& chunk = m_chunks[index];
+    if (chunk.done)
+        return;
+    if (++chunk.attempts >= MAX_CHUNK_ATTEMPTS) {
+        qCWarning(m_logCat) << getUid().toString() << "Range" << index << "gave up after" << chunk.attempts << "attempts";
+        m_chunkFailed = true;
+        maybeFinishParallel();
+        return;
+    }
+
+    chunk.received = 0;
+    chunk.done = false;
+    qCDebug(m_logCat) << getUid().toString() << "Retrying range" << index << "attempt" << chunk.attempts << m_url.toString();
+
+    // 现在还在旧 reply 的信号里，下一轮事件循环再重开（startChunk 会替换并析构旧 reply）
+    QTimer::singleShot(200, this, [this, index] {
+        if (m_parallel && index < m_chunks.size() && !m_chunks[index].done)
+            startChunk(index);
+    });
+}
+
+void Request::onChunkFinished(int index, QNetworkReply* reply)
+{
+    if (!m_parallel || index < 0 || index >= m_chunks.size())
+        return;
+    auto& chunk = m_chunks[index];
+
+    // 收尾时把残留数据读干净
+    auto data = reply->readAll();
+    if (!data.isEmpty()) {
+        const qint64 capacity = chunk.end - chunk.start + 1 - chunk.received;
+        if (data.size() > capacity)
+            data.truncate(static_cast<int>(qMax<qint64>(0, capacity)));
+        if (!writeAtOffset(chunk.start + chunk.received, data).has_value())
+            m_chunkFailed = true;
+        else
+            chunk.received += data.size();
+    }
+
+    const bool bad = (replyStatusCode() != 206 && replyStatusCode() != 200) || reply->error() != QNetworkReply::NoError ||
+                     chunk.received != chunk.end - chunk.start + 1;
+    if (bad) {
+        // 这一片没拿全：先单独重试它，别把整个文件拖去走单连接
+        retryChunk(index);
+        return;
+    }
+    m_lastChunkReply = reply;
+
+    chunk.done = true;
+    updateParallelProgress();
+    maybeFinishParallel();
+}
+
+void Request::updateParallelProgress()
+{
+    qint64 received = 0;
+    for (const auto& chunk : m_chunks)
+        received += chunk.received;
+    setProgress(received, m_totalBytes);
+    setDetails(tr("%1 / %2（%3 段并发）")
+                   .arg(StringUtils::humanReadableFileSize(static_cast<double>(received)))
+                   .arg(StringUtils::humanReadableFileSize(static_cast<double>(m_totalBytes)))
+                   .arg(m_chunks.size()));
+}
+
+auto Request::allChunksDone() const -> bool
+{
+    if (!m_parallel || m_chunks.isEmpty())
+        return false;
+    for (const auto& chunk : m_chunks) {
+        if (!chunk.done)
+            return false;
+    }
+    return true;
+}
+
+auto Request::maybeFinishParallel() -> bool
+{
+    if (!m_parallel)
+        return false;
+
+    if (m_chunkFailed) {
+        failParallelAndFallBack();
+        return true;
+    }
+    if (!allChunksDone())
+        return true;
+
+    auto* reply = !m_chunkReplies.empty() && m_chunkReplies[0] ? m_chunkReplies[0].get() : m_lastChunkReply;
+    if (reply == nullptr) {
+        m_sink->abort();
+        m_parallel = false;
+        emitFailed(tr("分段下载失败：没有可用的响应"));
+        return true;
+    }
+    auto result = m_sink->finalize(*reply);
+    if (!result) {
+        qCWarning(m_logCat) << getUid().toString() << "Parallel download failed to finalize:" << result.error();
+        m_sink->abort();
+        m_parallel = false;
+        emitFailed(result.error());
+        return true;
+    }
+
+    qCDebug(m_logCat) << getUid().toString() << "Request succeeded (parallel," << m_chunks.size() << "ranges):" << m_url.toString();
+    m_parallel = false;
+    emitSucceeded();
+    return true;
+}
+
+void Request::failParallelAndFallBack()
+{
+    qCWarning(m_logCat) << getUid().toString() << "Parallel download failed, falling back to a single connection:" << m_url.toString();
+
+    // 先把这个标志关掉再 abort：abort 会同步触发各分片的 finished，
+    // 那时若还认为自己在并行，会再次走进这个函数（曾经的递归崩溃点）。
+    m_parallel = false;
+    m_chunkFailed = false;
+    abortParallel();
+    // 只降级一次：之后这个 Request 全程走单连接，不会在两条路之间来回跳
+    m_parallelDisabled = true;
+    m_parallelTried = true;
+    m_parallel = false;
+    m_chunkFailed = false;
+    m_state = State::Running;
+    m_stalled = false;
+    m_url = m_retryBaseUrl;
+    m_redirectCount = 0;
+    m_errorResponse.clear();
+    setProgress(0, 0);
+    setStatus(tr("分段下载失败，改为单连接重试"));
+
+    // 现在还在某个 QNetworkReply 的信号里，交给事件循环再重开
+    m_networkRetryTimer.setSingleShot(true);
+    m_networkRetryTimer.start(300);
+}
+
+void Request::abortParallel()
+{
+    m_parallel = false;
+    for (auto& reply : m_chunkReplies) {
+        if (reply)
+            reply->abort();
+    }
+    if (m_sink)
+        m_sink->abort();
+}
+
+auto Request::isParallel() const -> bool
+{
+    return m_parallel;
+}
+
 void Request::downloadFinished()
 {
     // currently waiting for retry
     if (m_retryTimer.isActive()) {
         return;
     }
+
+    // 分段模式下所有数据都走分片回调，主 reply 在切分时就被丢掉了
+    if (m_parallel)
+        return;
 
     // handle HTTP redirection first
     if (handleRedirect()) {
@@ -595,6 +936,7 @@ auto Request::abort() -> bool
 {
     m_retryTimer.stop();
     m_networkRetryTimer.stop();
+    abortParallel();
     m_state = State::AbortedByUser;
     if (m_reply && !m_reply->isFinished()) {
         disconnect(m_reply.get(), &QNetworkReply::errorOccurred, nullptr, nullptr);

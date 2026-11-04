@@ -38,6 +38,7 @@
 #pragma once
 
 #include <memory>
+#include <vector>
 
 #include <QApplication>
 #include <QDateTime>
@@ -145,6 +146,21 @@ class Application : public QApplication {
 
     QNetworkAccessManager* network();
 
+    /**
+     * 下载专用的 QNAM 池（轮转分配）。
+     *
+     * Qt 的 QNetworkAccessManager 对**同一主机**最多只开 6 条 HTTP/1.1 连接
+     * （`QHttpNetworkConnection` 的固定默认值，公开 API 改不了）。所以并发文件数
+     * 调得再高，一个 QNAM 也只有 6 条连接在跑 —— 这条线路上单连接约 60 KB/s，
+     * 6 条就是 360 KB/s 的天花板。HMCL 能同时开几十条连接，靠的是它不受这个限制。
+     *
+     * 多个 QNAM 各自维护一份连接池，轮转使用即可突破 6 条（4 个 → 每主机 24 条）。
+     * 只给**文件下载**用：JSON/API 请求留在主 QNAM 上，避免打散会话。
+     */
+    QNetworkAccessManager* downloadNetwork();
+    /// 池里有几个 QNAM（每个最多 6 条/主机连接）
+    static constexpr int DownloadNetworkPoolSize = 4;
+
     HttpMetaCache* metacache();
 
     Meta::Index* metadataIndex();
@@ -242,6 +258,9 @@ class Application : public QApplication {
 
    private:
     std::unique_ptr<QNetworkAccessManager> m_network;
+    /// 下载专用连接池，惰性创建（见 downloadNetwork()）
+    std::vector<std::unique_ptr<QNetworkAccessManager>> m_downloadNetworks;
+    std::size_t m_downloadNetworkCursor = 0;
 
     std::unique_ptr<ExternalUpdater> m_updater;
     std::unique_ptr<AccountList> m_accounts;

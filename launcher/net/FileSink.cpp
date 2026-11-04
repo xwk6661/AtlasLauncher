@@ -65,6 +65,17 @@ auto FileSink::init(QNetworkRequest& request) -> InitResult
         m_outputFile.reset();
     }
 
+    // 上一次尝试若走的是分段模式，会留下 `<目标>.part`；这里一并清掉，
+    // 保证 init() 永远是"从零开始"的语义（顺序模式与分段模式都一样）。
+    if (m_parallel) {
+        if (m_partFile.isOpen())
+            m_partFile.close();
+        if (!m_partPath.isEmpty())
+            QFile::remove(m_partPath);
+        m_partPath.clear();
+        m_parallel = false;
+    }
+
     m_wroteAnyData = false;
     m_outputFile.reset(new PSaveFile(m_filename));
     if (!m_outputFile->open(QIODevice::WriteOnly)) {
@@ -100,10 +111,94 @@ auto FileSink::write(const QByteArray& data) -> Result<>
 
 void FileSink::abort()
 {
+    if (m_parallel) {
+        if (m_partFile.isOpen())
+            m_partFile.close();
+        if (!m_partPath.isEmpty())
+            QFile::remove(m_partPath);
+        m_partPath.clear();
+        m_parallel = false;
+    }
     if (m_outputFile) {
         m_outputFile->cancelWriting();
     }
     failAllValidators();
+}
+
+auto FileSink::writeAt(qint64 offset, const QByteArray& data) -> Result<>
+{
+    if (!m_parallel || !m_partFile.isOpen()) {
+        return std::unexpected(QString("writeAt() on a sink that is not in parallel mode: %1").arg(m_filename));
+    }
+    if (!m_partFile.seek(offset)) {
+        const auto error = QString("Could not seek to %1 in %2: %3").arg(offset).arg(m_partPath, m_partFile.errorString());
+        qCCritical(taskNetLogC) << error;
+        return std::unexpected(error);
+    }
+    if (m_partFile.write(data) != data.size()) {
+        const auto error = QString("Failed writing into %1 at %2: %3").arg(m_partPath).arg(offset).arg(m_partFile.errorString());
+        qCCritical(taskNetLogC) << error;
+        return std::unexpected(error);
+    }
+    m_wroteAnyData = true;
+    return {};
+}
+
+auto FileSink::beginParallel(qint64 totalSize) -> Result<>
+{
+    // init() 已经为顺序模式建好了 QSaveFile（它会在目标目录里占一个临时文件），先撤掉
+    if (m_outputFile) {
+        m_outputFile->cancelWriting();
+        m_outputFile.reset();
+    }
+
+    m_partPath = m_filename + QStringLiteral(".part");
+    QFile::remove(m_partPath);
+    m_partFile.setFileName(m_partPath);
+    if (!m_partFile.open(QIODevice::ReadWrite)) {
+        const auto error = QString("Could not open %1 for writing: %2").arg(m_partPath, m_partFile.errorString());
+        qCCritical(taskNetLogC) << error;
+        m_partPath.clear();
+        return std::unexpected(error);
+    }
+    // 先按总长度把空间占出来：各分片可以直接 seek 到自己的偏移写
+    if (!m_partFile.resize(totalSize)) {
+        const auto error = QString("Could not reserve %1 bytes in %2: %3").arg(totalSize).arg(m_partPath, m_partFile.errorString());
+        qCCritical(taskNetLogC) << error;
+        abort();
+        return std::unexpected(error);
+    }
+
+    m_parallelSize = totalSize;
+    m_parallel = true;
+    m_wroteAnyData = false;
+    m_partFile.seek(0);
+    return {};
+}
+
+auto FileSink::validateSequential(bool commit) -> Result<>
+{
+    // 分段写入时数据没经过校验器（各分片乱序到达），这里按顺序把整份文件喂一遍，
+    // sha1 / md5 才能对得上。
+    QFile reader(m_partPath);
+    if (!reader.open(QIODevice::ReadOnly)) {
+        return std::unexpected(QString("Could not reopen %1 for validation: %2").arg(m_partPath, reader.errorString()));
+    }
+    constexpr qint64 BlockSize = 1 << 20;
+    while (true) {
+        const auto block = reader.read(BlockSize);
+        if (block.isEmpty()) {
+            if (reader.error() != QFileDevice::NoError)
+                return std::unexpected(QString("Failed reading %1 for validation: %2").arg(m_partPath, reader.errorString()));
+            break;
+        }
+        writeAllValidators(block);
+    }
+    reader.close();
+
+    if (!commit)
+        return {};
+    return finalizeAllValidators();
 }
 
 auto FileSink::finalize(QNetworkReply& reply) -> Result<>
@@ -115,6 +210,49 @@ auto FileSink::finalize(QNetworkReply& reply) -> Result<>
     if (validStatus) {
         // this leaves out 304 Not Modified
         gotFile = statusCode == 200 || statusCode == 203;
+    }
+
+    if (m_parallel) {
+        // 分段模式：关文件 → 整份过校验器 → 替换到目标路径
+        if (m_partFile.isOpen() && !m_partFile.flush()) {
+            const auto error = QString("Failed to flush %1: %2").arg(m_partPath, m_partFile.errorString());
+            qCCritical(taskNetLogC) << error;
+            abort();
+            return std::unexpected(error);
+        }
+        if (m_partFile.isOpen())
+            m_partFile.close();
+
+        if (m_partFile.size() != m_parallelSize) {
+            const auto error =
+                QString("Incomplete download to %1: %2 of %3 bytes").arg(m_filename).arg(m_partFile.size()).arg(m_parallelSize);
+            qCCritical(taskNetLogC) << error;
+            abort();
+            return std::unexpected(error);
+        }
+
+        auto result = validateSequential(true);
+        if (!result) {
+            abort();
+            return result;
+        }
+
+        if (!QFile::remove(m_filename) && QFile::exists(m_filename)) {
+            const auto error = QString("Could not replace %1").arg(m_filename);
+            qCCritical(taskNetLogC) << error;
+            abort();
+            return std::unexpected(error);
+        }
+        if (!QFile::rename(m_partPath, m_filename)) {
+            const auto error = QString("Could not move %1 to %2").arg(m_partPath, m_filename);
+            qCCritical(taskNetLogC) << error;
+            abort();
+            return std::unexpected(error);
+        }
+        m_partPath.clear();
+        m_parallel = false;
+        m_wroteAnyData = true;
+        return finalizeCache(reply);
     }
 
     // if we wrote any data to the save file, we try to commit the data to the real file.

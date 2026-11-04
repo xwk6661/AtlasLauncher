@@ -122,6 +122,19 @@ class Request : public Task {
     /// 连接失败 / 网络停滞时的重试上限（总尝试次数 = 1 + MAX_NETWORK_RETRIES）
     static constexpr int MAX_NETWORK_RETRIES = 3;
 
+    /// 小于这个大小的文件不值得拆段（拆段的收益来自"每条连接被限速"，小文件本来就快）
+    static constexpr qint64 PARALLEL_MIN_SIZE = 1 << 20;
+
+    /**
+     * 单个文件拆成几个并发 Range 请求。
+     *
+     * 这条线路上**每条连接**被限速在 60 KB/s 左右：实测同一文件 1 条 60 KB/s、
+     * 8 条 487 KB/s、32 条 1.19 MB/s。PCL2 默认 63+1 条线程、HMCL 同时下 64 个文件，
+     * 快的原因就是这个。Atlas 取 8 作为默认（够拿到 8 倍，又不至于把路由器打爆），
+     * 设置项 `DownloadChunks` 可改，0/1 表示关闭分段。
+     */
+    static int parallelChunks();
+
     /**
      * 这个网络错误值得再试一次吗？
      *
@@ -190,6 +203,35 @@ class Request : public Task {
      * 把上一轮写了半截的数据丢掉 —— 安全性见 FileSink::init() 的注释与单测。
      */
     auto tryNetworkRetry(QNetworkReply::NetworkError error) -> bool;
+    /// 当前这次尝试是不是走的分段并发（供单测/日志判断）
+    auto isParallel() const -> bool;
+
+    // ---- 分段并发下载（大文件） ----
+    struct Chunk {
+        qint64 start = 0;
+        qint64 end = 0;  // 含端点
+        qint64 received = 0;
+        int attempts = 0;
+        bool done = false;
+    };
+    /// 单个分片最多试几次（网络抖一下不该拖垮整个文件）
+    static constexpr int MAX_CHUNK_ATTEMPTS = 3;
+    qint64 chunkExpected() const { return m_totalBytes; }
+    void tryStartParallel();
+    /// 按偏移写（分段模式）。sink 不是 FileSink 时退回顺序写。
+    Result<> writeAtOffset(qint64 offset, const QByteArray& data);
+    void startChunk(int index);
+    auto makeRangeRequest(qint64 start, qint64 end) -> QNetworkRequest;
+    void onChunkReadyRead(int index, QNetworkReply* reply);
+    void onChunkFinished(int index, QNetworkReply* reply);
+    void onChunkError(int index, QNetworkReply* reply, QNetworkReply::NetworkError error);
+    void retryChunk(int index);
+    void updateParallelProgress();
+    auto allChunksDone() const -> bool;
+    auto maybeFinishParallel() -> bool;
+    void failParallelAndFallBack();
+    void abortParallel();
+
     virtual QNetworkReply* getReply(QNetworkRequest&);
 
    protected slots:
@@ -238,6 +280,20 @@ class Request : public Task {
     /// 本轮是不是被 Qt 的传输超时掐掉的（`RequestTimeout` 到期 → OperationCanceledError）。
     /// 这不是用户取消，必须和"用户点了中止"区分开，否则慢盘上的大文件永远装不完。
     bool m_stalled = false;
+
+    // ---- 分段并发下载 ----
+    bool m_parallel = false;
+    bool m_parallelTried = false;
+    bool m_parallelDisabled = false;
+    bool m_chunkFailed = false;
+    qint64 m_totalBytes = 0;
+    QList<Chunk> m_chunks;
+    std::vector<std::unique_ptr<QNetworkReply>> m_chunkReplies;
+    /// 最近一个完成的分片 reply（finalize 需要它读状态码/缓存头）
+    QNetworkReply* m_lastChunkReply = nullptr;
+    /// 供分片请求复用：UA 与超时在 executeTask 里算好，避免重复那段 #ifdef
+    QString m_userAgent;
+    int m_transferTimeoutMs = 0;
 
     int m_redirectCount = 0;
 

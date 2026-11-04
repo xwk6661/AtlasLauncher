@@ -667,7 +667,13 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("MenuBarInsteadOfToolBar", false);
 
         m_settings->registerSetting("NumberOfConcurrentTasks", 10);
-        m_settings->registerSetting("NumberOfConcurrentDownloads", 6);
+        // 6 是上游默认值，但一个 QNAM 每主机也只有 6 条连接（见 downloadNetwork()）；
+        // 配合 4 个 QNAM 的池，24 个并发文件才真的能开出 24 条连接。
+        m_settings->registerSetting("NumberOfConcurrentDownloads", 24);
+        // 单个大文件拆成几个并发 Range 请求（0/1 = 关闭）。见 net/Request::parallelChunks()：
+        // 弱网下"每条连接被限速"，8 条能拿到约 8 倍带宽（实测 60 KB/s → 487 KB/s）。
+        // 0 = 关闭：单文件分段（PCL2 式）还在验证中，默认不开，见 06 §31
+        m_settings->registerSetting("DownloadChunks", 0);
         m_settings->registerSetting("NetworkRetryLimit", 2);
         m_settings->registerSetting("RequestTimeout", 15);
 
@@ -1906,6 +1912,9 @@ void Application::updateProxySettings(const QString& proxyTypeStr,
     qDebug() << "Detecting proxy settings...";
     QNetworkProxy proxy = QNetworkProxy::applicationProxy();
     m_network->setProxy(proxy);
+    // 下载连接池里的 QNAM 也要跟着换代理，否则改完代理得重启才生效
+    for (auto& manager : m_downloadNetworks)
+        manager->setProxy(proxy);
 
     QString proxyDesc;
     if (proxy.type() == QNetworkProxy::NoProxy) {
@@ -1944,6 +1953,22 @@ HttpMetaCache* Application::metacache()
 QNetworkAccessManager* Application::network()
 {
     return m_network.get();
+}
+
+QNetworkAccessManager* Application::downloadNetwork()
+{
+    if (m_downloadNetworks.empty()) {
+        for (int i = 0; i < DownloadNetworkPoolSize; ++i) {
+            auto manager = std::make_unique<QNetworkAccessManager>();
+            // 新建的 QNAM 会继承 applicationProxy，但显式设一次更稳（"Default" 模式下
+            // 走的是 QNetworkProxyFactory，不设就可能拿到不同的结果）
+            manager->setProxy(QNetworkProxy::applicationProxy());
+            m_downloadNetworks.push_back(std::move(manager));
+        }
+    }
+    auto* manager = m_downloadNetworks[m_downloadNetworkCursor].get();
+    m_downloadNetworkCursor = (m_downloadNetworkCursor + 1) % m_downloadNetworks.size();
+    return manager;
 }
 
 Meta::Index* Application::metadataIndex()
