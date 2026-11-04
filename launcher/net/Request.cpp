@@ -86,23 +86,6 @@ auto logCatForMethod(HttpMethod method) -> Request::LogCatFunc
     return taskNetLogC;
 }
 
-/// 把 total 字节尽量均匀地切成 count 段，返回 [start, end]（含端点）
-auto splitRange(qint64 total, int count) -> QList<QPair<qint64, qint64>>
-{
-    QList<QPair<qint64, qint64>> out;
-    if (total <= 0 || count < 1)
-        return out;
-    const qint64 per = total / count;
-    qint64 start = 0;
-    for (int i = 0; i < count; ++i) {
-        qint64 end = (i == count - 1) ? total - 1 : start + per - 1;
-        if (end < start)
-            break;
-        out.append({ start, end });
-        start = end + 1;
-    }
-    return out;
-}
 }  // namespace
 
 Request::Request() : Request(Spec{}) {}
@@ -540,15 +523,35 @@ auto Request::tryNetworkRetry(QNetworkReply::NetworkError error) -> bool
     return true;
 }
 
+auto Request::splitChunks(qint64 total, int count) -> QList<QPair<qint64, qint64>>
+{
+    QList<QPair<qint64, qint64>> out;
+    if (total <= 0 || count < 1)
+        return out;
+
+    // 段数不能超过字节数，否则会出现长度为 0 的分片（Range 请求会直接 416）
+    const int effective = static_cast<int>(qMin<qint64>(count, total));
+    const qint64 per = total / effective;
+    qint64 start = 0;
+    for (int i = 0; i < effective; ++i) {
+        const qint64 end = (i == effective - 1) ? total - 1 : start + per - 1;
+        if (end < start)
+            break;
+        out.append({ start, end });
+        start = end + 1;
+    }
+    return out;
+}
+
 auto Request::parallelChunks() -> int
 {
 #ifdef LAUNCHER_APPLICATION
     if (auto* app = APPLICATION_DYN)
         return app->settings()->get("DownloadChunks").toInt();
 #endif
-    // 没有 Application（单测）时一律关闭：分段路径目前是实验性的、默认不启用，
-    // 单测里的假 reply 也不支持 Range。
-    return 0;
+    // 没有 Application 的上下文（单测 / 临时探针）不读设置，允许用环境变量
+    // 显式打开，方便在不启动整个启动器的情况下验证分段链路。
+    return qEnvironmentVariableIntValue("PRISM_DOWNLOAD_CHUNKS");
 }
 
 auto Request::makeRangeRequest(qint64 start, qint64 end) -> QNetworkRequest
@@ -614,7 +617,7 @@ void Request::tryStartParallel()
         return;
     }
 
-    const auto ranges = splitRange(total, chunks);
+    const auto ranges = splitChunks(total, chunks);
     m_chunks.reserve(ranges.size());
     for (const auto& range : ranges)
         m_chunks.append(Chunk{ .start = range.first, .end = range.second });
@@ -631,7 +634,17 @@ void Request::startChunk(int index)
     if (index < 0 || index >= m_chunks.size() || m_network == nullptr)
         return;
     auto request = makeRangeRequest(m_chunks[index].start, m_chunks[index].end);
-    auto* reply = m_network->get(request);
+
+    // 每个分片换一个池内 QNAM：一个 QNAM 每主机只有 6 条连接，8 个分片挤在一个 QNAM 上
+    // 等于还是 6 条。轮转取池子里的，才能让 8 段真的是 8 条连接。
+    auto* network = m_network;
+#ifdef LAUNCHER_APPLICATION
+    if (auto* app = APPLICATION_DYN)
+        network = app->downloadNetwork();
+#endif
+    if (network == nullptr)
+        return;
+    auto* reply = network->get(request);
     if (reply == nullptr)
         return;
     m_chunkReplies.resize(static_cast<size_t>(m_chunks.size()));
@@ -673,9 +686,8 @@ void Request::onChunkError(int index, QNetworkReply* reply, QNetworkReply::Netwo
 {
     if (!m_parallel || index < 0 || index >= m_chunks.size())
         return;
-    // abort 是我们自己发的（降级/取消），不算这一片失败
-    if (error == QNetworkReply::OperationCanceledError && !m_chunkFailed)
-        return;
+    // 我们自己 abort 掉的分片：abortParallel() 先把 m_parallel 置 false，进不到这里。
+    // 能走到这里的是真失败，包括 Qt 传输超时（也报 OperationCanceledError）—— 都要重试。
     qCWarning(m_logCat) << getUid().toString() << "Range" << index << "failed:" << reply->url().toString() << error;
     retryChunk(index);
 }
@@ -723,8 +735,17 @@ void Request::onChunkFinished(int index, QNetworkReply* reply)
             chunk.received += data.size();
     }
 
-    const bool bad = (replyStatusCode() != 206 && replyStatusCode() != 200) || reply->error() != QNetworkReply::NoError ||
-                     chunk.received != chunk.end - chunk.start + 1;
+    // 状态码必须取分片自己的 reply —— 并行模式下 m_reply 已经丢了
+    const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+
+    // 200 说明服务器根本没理会 Range（把整个文件塞回来了）：别再傻重试，直接降级
+    if (status == 200) {
+        qCWarning(m_logCat) << getUid().toString() << "Server ignored the Range header, giving up on chunking";
+        failParallelAndFallBack();
+        return;
+    }
+
+    const bool bad = status != 206 || reply->error() != QNetworkReply::NoError || chunk.received != chunk.end - chunk.start + 1;
     if (bad) {
         // 这一片没拿全：先单独重试它，别把整个文件拖去走单连接
         retryChunk(index);

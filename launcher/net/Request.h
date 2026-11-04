@@ -135,6 +135,9 @@ class Request : public Task {
      */
     static int parallelChunks();
 
+    /// 把 total 字节切成 count 段，返回 [start, end]（含端点）。纯函数，单测直接钉住。
+    static auto splitChunks(qint64 total, int count) -> QList<QPair<qint64, qint64>>;
+
     /**
      * 这个网络错误值得再试一次吗？
      *

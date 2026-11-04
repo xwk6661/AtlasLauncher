@@ -378,6 +378,85 @@ class RequestRetryTest : public QObject {
         QVERIFY2(!reason.contains("Operation canceled"), qPrintable(reason));
     }
 
+    /// 切分必须无缝无重叠地覆盖 [0, total-1]：漏一个字节就是坏文件
+    void splitsIntoContiguousRanges()
+    {
+        for (qint64 total : { qint64(1), qint64(1023), qint64(1024 * 1024), qint64(23965563) }) {
+            for (int count : { 1, 2, 3, 8, 32 }) {
+                const auto ranges = Net::Request::splitChunks(total, count);
+                QVERIFY(!ranges.isEmpty());
+                QCOMPARE(ranges.first().first, qint64(0));
+                QCOMPARE(ranges.last().second, total - 1);
+                for (int i = 0; i < ranges.size(); ++i) {
+                    QVERIFY(ranges.at(i).first <= ranges.at(i).second);
+                    if (i > 0)
+                        QCOMPARE(ranges.at(i).first, ranges.at(i - 1).second + 1);
+                }
+            }
+        }
+        // 段数比字节数还多：不能切出空段
+        const auto tiny = Net::Request::splitChunks(3, 8);
+        QCOMPARE(tiny.size(), 3);
+        for (const auto& range : tiny)
+            QCOMPARE(range.second - range.first + 1, qint64(1));
+        QVERIFY(Net::Request::splitChunks(0, 8).isEmpty());
+    }
+
+    /// 分段模式按偏移写：乱序写入后落盘内容必须正确
+    void fileSinkWritesAtOffsets()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("chunked.bin");
+
+        Net::FileSink sink(path);
+        QNetworkRequest request{ QUrl("https://libraries.minecraft.net/x.jar") };
+        QVERIFY(sink.init(request).has_value());
+        QVERIFY(sink.beginParallel(10).has_value());
+
+        // 故意倒着写，模拟分片乱序到达
+        QVERIFY(sink.writeAt(5, QByteArray("FGHIJ")).has_value());
+        QVERIFY(sink.writeAt(0, QByteArray("ABCDE")).has_value());
+
+        StubReply reply(200);
+        QVERIFY(sink.finalize(reply).has_value());
+        QCOMPARE(readAll(path), QByteArray("ABCDEFGHIJ"));
+    }
+
+    /// 分段写入没经过校验器，finalize 要按顺序补一遍；校验不过不能落盘
+    void parallelDownloadHonoursChecksum()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString good = dir.filePath("good.bin");
+        const QString bad = dir.filePath("bad.bin");
+        const QByteArray payload("ABCDEFGHIJ");
+
+        for (const auto& [path, expected] :
+             { qMakePair(good, QString::fromLatin1(QCryptographicHash::hash(payload, QCryptographicHash::Md5).toHex())),
+               qMakePair(bad, QString("00000000000000000000000000000000")) }) {
+            Net::FileSink sink(path);
+            auto* checksum = new Net::ChecksumValidator(QCryptographicHash::Md5, expected);
+            sink.addValidator(checksum);
+
+            QNetworkRequest request{ QUrl("https://libraries.minecraft.net/y.jar") };
+            QVERIFY(sink.init(request).has_value());
+            QVERIFY(sink.beginParallel(payload.size()).has_value());
+            QVERIFY(sink.writeAt(5, payload.mid(5)).has_value());
+            QVERIFY(sink.writeAt(0, payload.left(5)).has_value());
+
+            StubReply reply(200);
+            const auto result = sink.finalize(reply);
+            if (path == good) {
+                QVERIFY(result.has_value());
+                QCOMPARE(readAll(path), payload);
+            } else {
+                QVERIFY(!result.has_value());
+                QVERIFY2(!QFile::exists(path), "校验失败时不能把坏文件落到目标位置");
+            }
+        }
+    }
+
     /// 回落只允许"镜像 → 官方"单向，且只回一次：不能来回绕圈
     void fallBackRuleIsOneWay()
     {

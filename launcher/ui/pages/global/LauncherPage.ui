@@ -735,6 +735,44 @@
             </property>
            </widget>
           </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="downloadChunksLabel">
+            <property name="toolTip">
+             <string>把一个大文件切成多段、同时用多条连接下载。只在"单条连接被限速"的网络里有意义（国内直连 Mojang CDN 是典型情况）。0 = 关闭。</string>
+            </property>
+            <property name="text">
+             <string>大文件分片下载：</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QSpinBox" name="downloadChunksSpinBox">
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="toolTip">
+             <string>每个大文件拆成几段并发下载（0 = 关闭，1 = 等同关闭）。8 段在弱网下通常能快 3–6 倍；段数越多越吃 CPU 和磁盘，也更容易触发服务器的连接数限制。</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>60</width>
+              <height>0</height>
+             </size>
+            </property>
+            <property name="minimum">
+             <number>0</number>
+            </property>
+            <property name="maximum">
+             <number>32</number>
+            </property>
+            <property name="suffix">
+             <string> 段</string>
+            </property>
+           </widget>
+          </item>
           <item row="3" column="0">
            <widget class="QLabel" name="timeoutSecondsLabel">
             <property name="toolTip">

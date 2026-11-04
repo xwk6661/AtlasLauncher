@@ -246,6 +246,8 @@ void LauncherPage::applySettings()
     s->set("NumberOfConcurrentDownloads", ui->numberOfConcurrentDownloadsSpinBox->value());
     s->set("NetworkRetryLimit", ui->networkRetryLimitSpinBox->value());
     s->set("RequestTimeout", ui->timeoutSecondsSpinBox->value());
+    // 0/1 都表示"不拆段"（见 Net::Request::parallelChunks）
+    s->set("DownloadChunks", ui->downloadChunksSpinBox->value());
 
     // Console settings
     s->set("ConsoleMaxLines", ui->lineLimitSpinBox->value());
@@ -330,6 +332,7 @@ void LauncherPage::loadSettings()
     ui->numberOfConcurrentDownloadsSpinBox->setValue(s->get("NumberOfConcurrentDownloads").toInt());
     ui->networkRetryLimitSpinBox->setValue(s->get("NetworkRetryLimit").toInt());
     ui->timeoutSecondsSpinBox->setValue(s->get("RequestTimeout").toInt());
+    ui->downloadChunksSpinBox->setValue(s->get("DownloadChunks").toInt());
 
     // Console settings
     ui->lineLimitSpinBox->setValue(s->get("ConsoleMaxLines").toInt());

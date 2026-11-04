@@ -672,8 +672,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("NumberOfConcurrentDownloads", 24);
         // 单个大文件拆成几个并发 Range 请求（0/1 = 关闭）。见 net/Request::parallelChunks()：
         // 弱网下"每条连接被限速"，8 条能拿到约 8 倍带宽（实测 60 KB/s → 487 KB/s）。
-        // 0 = 关闭：单文件分段（PCL2 式）还在验证中，默认不开，见 06 §31
-        m_settings->registerSetting("DownloadChunks", 0);
+        // 单文件拆成几段并发（0/1 = 关闭）。实测同一文件：1 条连接 98 KB/s，
+        // 8 段 3324 KB/s，sha1 一致（见 06 §32）。服务器不认 Range 时自动退回单连接。
+        m_settings->registerSetting("DownloadChunks", 8);
         m_settings->registerSetting("NetworkRetryLimit", 2);
         m_settings->registerSetting("RequestTimeout", 15);
 
