@@ -48,7 +48,6 @@
 
 class EditableLabel;
 class LaunchController;
-class NewsChecker;
 class QLabel;
 class QTextEdit;
 class QToolButton;
@@ -149,10 +148,6 @@ class MainWindow : public QMainWindow {
 
     void on_actionOpenWiki_triggered();
 
-    void on_actionMoreNews_triggered();
-
-    void newsButtonClicked();
-
     void on_actionLaunchInstance_triggered();
 
     void on_actionKillInstance_triggered();
@@ -206,8 +201,6 @@ class MainWindow : public QMainWindow {
     void changeActiveAccount();
 
     void repopulateAccountsMenu();
-
-    void updateNewsLabel();
 
     void konamiTriggered();
 
@@ -267,7 +260,6 @@ class MainWindow : public QMainWindow {
     /// 实例操作栏自检是否已跑过（旧窗口状态可能把它藏起来）
     bool m_instanceToolBarChecked = false;
     InstanceProxyModel* proxymodel = nullptr;
-    QToolButton* newsLabel = nullptr;
     QLabel* m_statusLeft = nullptr;
     QLabel* m_statusCenter = nullptr;
     QToolButton* m_changeIconButton = nullptr;
@@ -276,8 +268,6 @@ class MainWindow : public QMainWindow {
     EditableLabel* m_nameLabel = nullptr;
     QToolButton* helpMenuButton = nullptr;
     KonamiCode* secretEventFilter = nullptr;
-
-    unique_qobject_ptr<NewsChecker> m_newsChecker;
 
     MinecraftInstance* m_selectedInstance = nullptr;
     QString m_currentInstIcon;

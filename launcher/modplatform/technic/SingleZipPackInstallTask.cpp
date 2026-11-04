@@ -66,8 +66,13 @@ void Technic::SingleZipPackInstallTask::downloadSucceeded()
 
     // open the zip and find relevant files in it
     m_packZip.reset(new MMCZip::ArchiveReader(m_archivePath));
-    m_extractFuture =
-        QtConcurrent::run(QThreadPool::globalInstance(), MMCZip::extractSubDir, m_packZip.get(), QString(""), extractDir.absolutePath());
+    // 用 lambda 包一层：extractSubDir 现在多了一个（默认的）进度回调参数，
+    // 直接取函数地址交给 QtConcurrent 会推导不出 3 参数的调用。
+    auto* packZip = m_packZip.get();
+    const QString extractTarget = extractDir.absolutePath();
+    m_extractFuture = QtConcurrent::run(QThreadPool::globalInstance(), [packZip, extractTarget]() {
+        return MMCZip::extractSubDir(packZip, QString(), extractTarget);
+    });
     connect(&m_extractFutureWatcher, &QFutureWatcher<QStringList>::finished, this, &Technic::SingleZipPackInstallTask::extractFinished);
     connect(&m_extractFutureWatcher, &QFutureWatcher<QStringList>::canceled, this, &Technic::SingleZipPackInstallTask::extractAborted);
     m_extractFutureWatcher.setFuture(m_extractFuture);

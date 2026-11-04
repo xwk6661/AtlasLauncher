@@ -33,7 +33,8 @@ InstanceSettingsPage::InstanceSettingsPage(MinecraftInstance* instance, QWidget*
     m_mapSettings = new maps::MapSettingsWidget(m_instance, this);
     // 走 objectName 拿页签容器：直接包含 ui_ 头会触发 AUTOUIC 按 .cpp 所在目录找 .ui（这里找不到）
     if (auto* tabs = findChild<QTabWidget*>(QStringLiteral("settingsTabs")))
-        tabs->insertTab(1, m_mapSettings, QIcon::fromTheme("worlds"), tr("地图"));
+        // 不带图标：和「常规」「Java」这些页签保持一致（图标只在左侧导航栏用）
+        tabs->insertTab(1, m_mapSettings, tr("地图"));
 
     connect(APPLICATION, &Application::globalSettingsAboutToOpen, this, &InstanceSettingsPage::apply);
     connect(APPLICATION, &Application::globalSettingsApplied, this, &InstanceSettingsPage::loadSettings);

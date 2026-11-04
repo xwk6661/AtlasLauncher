@@ -801,6 +801,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("MapAutoEnter", true);          // 启动时直接进图
         m_settings->registerSetting("MapSafeExit", true);           // 退出后判定落盘并回写统计
         m_settings->registerSetting("MapEnterDelay", 1);            // Agent 进图前等待秒数
+        // 1.20+：地图自带改过世界生成的数据包时，原版会先弹「不支持使用实验性设置的世界」，
+        // quickPlay 会停在那一页。开着就注入 introskip agent 直接加载（不动世界数据）
+        m_settings->registerSetting("MapSkipExperimentalPrompt", true);
         // 控制台（实例窗口）页签开关：地图启动器默认收起这四页，
         // 一个地图一个实例，世界/服务器/备注/其他日志基本用不上
         m_settings->registerSetting("MapConsoleShowNotes", false);
@@ -1364,11 +1367,15 @@ bool Application::createSetupWizard()
 
 bool Application::updaterEnabled()
 {
-#if defined(Q_OS_MAC)
-    return BuildConfig.UPDATER_ENABLED;
-#else
-    return BuildConfig.UPDATER_ENABLED && QFileInfo(FS::PathCombine(m_rootPath, updaterBinaryName())).isFile();
-#endif
+    // Atlas 不做自更新（2026-11-04 明确）。
+    //
+    // 这段来自 Prism：CMake 里只要填了 `Launcher_UPDATER_GITHUB_REPO` 与 `Launcher_BUILD_ARTIFACT`，
+    // 它就会去那个 GitHub 仓库拉 release、跟自己的版本比、推「有新版」。那个仓库是上游的，
+    // 对 Atlas 来说全是别人的包 —— 装上去等于把本启动器覆盖成 Prism。
+    // 现在 CMake 默认已置空（`CMakeLists.txt` §Set Application options），这里再硬关一道：
+    // 即使构建缓存里残留了旧值，也不会有任何更新检查与提示。
+    // 分发仍按文档约定：下载交系统浏览器。
+    return false;
 }
 
 QString Application::updaterBinaryName()

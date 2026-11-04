@@ -64,9 +64,18 @@ Result<> createModdedJar(QString sourceJarPath, QString targetJarPath, const QLi
 #endif
 
 /**
+ * 解压进度回调：done / total 是条目数。返回 false 表示放弃（会删掉已解出的文件并失败返回）。
+ *
+ * 存在的理由：解压是同步阻塞的，调用方如果在 GUI 线程里（实例导入就是这样），
+ * 大包会让窗口长时间无响应 —— 回调里 processEvents 一下即可让界面保持刷新。
+ */
+using ExtractProgress = std::function<bool(qint64 done, qint64 total)>;
+
+/**
  * Extract a subdirectory from an archive
  */
-Result<QStringList> extractSubDir(ArchiveReader* zip, const QString& subdir, const QString& target);
+Result<QStringList> extractSubDir(ArchiveReader* zip, const QString& subdir, const QString& target,
+                                  const ExtractProgress& progress = {});
 
 /**
  * Extract a whole archive.

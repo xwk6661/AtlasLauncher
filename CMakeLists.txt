@@ -176,7 +176,9 @@ include(CTest)
 ##################################### Set Application options #####################################
 
 ######## Set URLs ########
-set(Launcher_NEWS_RSS_URL "https://prismlauncher.org/feed/feed.xml" CACHE STRING "URL to fetch Prism Launcher's news RSS feed from.")
+# Atlas 不订阅上游新闻源：这条 RSS 里的最新条目会是「Prism Launcher Release x.y.z, now available」，
+# 属于别人的版本公告。留空 = 主窗口不建新闻栏、也不发这次请求。
+set(Launcher_NEWS_RSS_URL "" CACHE STRING "URL to fetch the launcher's news RSS feed from. Empty = no news bar.")
 set(Launcher_NEWS_OPEN_URL "https://prismlauncher.org/news" CACHE STRING "URL that gets opened when the user clicks 'More News'")
 set(Launcher_WIKI_URL "https://prismlauncher.org/wiki/" CACHE STRING "URL that gets opened when the user clicks 'Launcher Help'")
 set(Launcher_HELP_URL "https://prismlauncher.org/wiki/help-pages/%1" CACHE STRING "URL (with arg %1 to be substituted with page-id) that gets opened when the user requests help in a dialog window")

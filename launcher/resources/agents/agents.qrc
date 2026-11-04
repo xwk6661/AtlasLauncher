@@ -2,6 +2,8 @@
 <RCC version="1.0">
     <qresource prefix="/agents">
         <file>quickboot.jar</file>
+        <file>introskip.jar</file>
+        <file>introskip.json</file>
         <file alias="symbols/1.7.10.json">symbols/1.7.10.json</file>
         <file alias="symbols/1.8.9.json">symbols/1.8.9.json</file>
         <file alias="symbols/1.12.2.json">symbols/1.12.2.json</file>

@@ -19,6 +19,7 @@
 
 #include <QDateTime>
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QString>
 
 namespace maps {
@@ -80,6 +81,15 @@ static bool detailsCoverList(const HallSnapshot& snapshot);
 
     /// 缓存多大（给设置页显示"已缓存 X MB"）
     static qint64 sizeBytes();
+
+    /**
+     * 按 slug 从本地快照里取一行原始数据（列表视图 `maps_search_view` 的行）。
+     *
+     * 给「实例侧栏要显示作者/系列」这类同步场合用：只读本地、不联网，
+     * 解析结果按文件 mtime 缓存在进程内，反复刷新侧栏不会每次都啃 2.6 MB JSON。
+     * 没缓存、没命中都返回空对象 —— 调用方据此决定"不显示"。
+     */
+    static QJsonObject findListRow(const QString& slug);
 };
 
 }  // namespace maps

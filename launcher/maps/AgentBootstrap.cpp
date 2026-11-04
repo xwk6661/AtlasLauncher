@@ -63,11 +63,15 @@ QString jarTargetPath()
     return FS::PathCombine(dataRoot(), "quickboot.jar");
 }
 
-/// 把随包的 jar 释放到数据目录（-javaagent 只认真实文件，读不了 qrc）
-bool ensureAgentJar()
+QString introSkipJarTargetPath()
 {
-    const QString target = jarTargetPath();
-    QFile bundled(QStringLiteral(":/agents/quickboot.jar"));
+    return FS::PathCombine(dataRoot(), "introskip.jar");
+}
+
+/// 把随包的 jar 释放到数据目录（-javaagent 只认真实文件，读不了 qrc）
+bool copyBundledJar(const QString& resource, const QString& target)
+{
+    QFile bundled(resource);
     if (!bundled.exists())
         return false;
 
@@ -88,6 +92,16 @@ bool ensureAgentJar()
     return true;
 }
 
+bool ensureAgentJar()
+{
+    return copyBundledJar(QStringLiteral(":/agents/quickboot.jar"), jarTargetPath());
+}
+
+bool ensureIntroSkipJar()
+{
+    return copyBundledJar(QStringLiteral(":/agents/introskip.jar"), introSkipJarTargetPath());
+}
+
 QString dotted(const QString& internalName)
 {
     QString out = internalName;
@@ -106,6 +120,55 @@ bool AgentBootstrap::hasAgentJar()
 QString AgentBootstrap::agentJarPath()
 {
     return jarTargetPath();
+}
+
+bool AgentBootstrap::hasIntroSkipJar()
+{
+    ensureAgentsResources();
+    return QFile::exists(introSkipJarTargetPath()) || QFile::exists(QStringLiteral(":/agents/introskip.jar"));
+}
+
+QString AgentBootstrap::introSkipJarPath()
+{
+    return introSkipJarTargetPath();
+}
+
+std::optional<IntroSkipRule> AgentBootstrap::introSkipRule(const QString& mcVersion, QString* error)
+{
+    ensureAgentsResources();
+    if (mcVersion.isEmpty()) {
+        if (error != nullptr)
+            *error = QStringLiteral("版本号为空");
+        return std::nullopt;
+    }
+
+    QFile file(QStringLiteral(":/agents/introskip.json"));
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (error != nullptr)
+            *error = QStringLiteral("随包缺少 introskip.json");
+        return std::nullopt;
+    }
+
+    QJsonParseError parseError{};
+    const auto document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError) {
+        if (error != nullptr)
+            *error = QStringLiteral("introskip.json 不是合法 JSON：%1").arg(parseError.errorString());
+        return std::nullopt;
+    }
+
+    const auto item = document.object().value(QStringLiteral("versions")).toObject().value(mcVersion).toObject();
+    IntroSkipRule rule;
+    rule.className = item.value(QStringLiteral("class")).toString();
+    rule.method = item.value(QStringLiteral("method")).toString();
+    rule.descriptor = item.value(QStringLiteral("desc")).toString();
+    rule.loadLevelSlot = item.value(QStringLiteral("index")).toInt(3);
+    if (rule.className.isEmpty() || rule.method.isEmpty() || rule.descriptor.isEmpty()) {
+        if (error != nullptr)
+            *error = QStringLiteral("%1 没有「实验性设置确认页」的签名（只影响少点一次，不影响进图）").arg(mcVersion);
+        return std::nullopt;
+    }
+    return rule;
 }
 
 bool AgentBootstrap::hasSymbols(const QString& mcVersion)
@@ -251,6 +314,33 @@ AgentBootstrap::ArgsResult AgentBootstrap::buildAgentArgs(const AgentSymbolTable
     return result;
 }
 
+namespace {
+
+constexpr const char* MAP_AGENT_PROPERTY = "mapsJavaAgents";
+
+QString agentArgument(const QString& jarPath, const QString& agentArgs)
+{
+    const QString jar = QDir::toNativeSeparators(jarPath);
+    return agentArgs.isEmpty() ? QStringLiteral("-javaagent:%1").arg(jar)
+                               : QStringLiteral("-javaagent:%1=%2").arg(jar, agentArgs);
+}
+
+/// 换掉同一个 jar 的旧条目，再放新的。
+/// 直接作为 argv 元素交给 JVM：不经 JvmArgs 的字符串拼接与二次切分，也不用引号来回转义。
+void setMapAgent(MinecraftInstance* instance, const QString& jarPath, const QString& agentArgs)
+{
+    const QString prefix = QStringLiteral("-javaagent:%1=").arg(QDir::toNativeSeparators(jarPath));
+    QStringList agents = instance->property(MAP_AGENT_PROPERTY).toStringList();
+    for (int i = agents.size() - 1; i >= 0; --i) {
+        if (agents.at(i).startsWith(prefix))
+            agents.removeAt(i);
+    }
+    agents.append(agentArgument(jarPath, agentArgs));
+    instance->setProperty(MAP_AGENT_PROPERTY, agents);
+}
+
+}  // namespace
+
 Result<> AgentBootstrap::injectIntoJvmArgs(MinecraftInstance* instance, const QString& agentArgs)
 {
     if (instance == nullptr)
@@ -260,46 +350,65 @@ Result<> AgentBootstrap::injectIntoJvmArgs(MinecraftInstance* instance, const QS
     if (!ensureAgentJar())
         return std::unexpected{ QStringLiteral("找不到 Agent jar（resources/agents/quickboot.jar）") };
 
-    const QString jar = QDir::toNativeSeparators(jarTargetPath());
-
-    // JvmArgs 会被 Commandline::splitArgs 按空格切成 argv，所以整条参数（含日志路径里的空格）
-    // 必须当成一个 argv 元素交给 JVM —— 用启动器自带的引号工具，反斜杠才会被正确还原。
-    const QString agentArg = QStringLiteral("-javaagent:%1=%2").arg(jar, agentArgs);
-    const QString quoted = Commandline::quoteForSplitCommand(agentArg);
-
-    const SettingsObject::Lock lock(instance->settings());
-    const QString current = instance->settings()->get("JvmArgs").toString();
-    QStringList parts = Commandline::splitArgs(current);
-
-    // 每次启动的世界 / 延迟可能变了：摘掉上一次我们自己注入的那条再放新的。
-    // 别人手动配的 -javaagent（路径不是我们的 jar）一律不碰，冲突时直接放弃注入。
-    const QString ourPrefix = QStringLiteral("-javaagent:%1=").arg(jar);
-    int existing = -1;
-    for (int i = 0; i < parts.size(); ++i) {
-        const QString& part = parts.at(i);
-        if (!part.startsWith(QLatin1String("-javaagent:")))
-            continue;
-        if (part.startsWith(ourPrefix)) {
-            existing = i;
-            continue;
-        }
-        return std::unexpected{ QStringLiteral("实例已经配置了别的 -javaagent（%1），跳过自动注入以免冲突").arg(part) };
-    }
-
-    if (existing < 0) {
-        // 没注入过：直接在原文后面追加，不动用户已有的写法
-        instance->settings()->set("JvmArgs", current.isEmpty() ? quoted : current + QLatin1Char(' ') + quoted);
-        return {};
-    }
-
-    // 注入过：重排一次（引号由 quoteForSplitCommand 负责，splitArgs 能原样读回来）
-    parts[existing] = agentArg;
-    QStringList rendered;
-    rendered.reserve(parts.size());
-    for (const auto& part : parts)
-        rendered.append(Commandline::quoteForSplitCommand(part));
-    instance->settings()->set("JvmArgs", rendered.join(QLatin1Char(' ')));
+    setMapAgent(instance, jarTargetPath(), agentArgs);
     return {};
+}
+
+Result<> AgentBootstrap::injectIntroSkip(MinecraftInstance* instance, const IntroSkipRule& rule, const QString& logPath)
+{
+    if (instance == nullptr)
+        return std::unexpected{ QStringLiteral("实例为空，无法注入 Agent") };
+    if (!ensureIntroSkipJar())
+        return std::unexpected{ QStringLiteral("找不到 introskip.jar（resources/agents/introskip.jar）") };
+
+    QString args = QStringLiteral("cls=%1,method=%2,desc=%3,index=%4")
+                       .arg(rule.className, rule.method, rule.descriptor)
+                       .arg(rule.loadLevelSlot);
+    if (!logPath.isEmpty())
+        args += QStringLiteral(",log=%1").arg(QDir::toNativeSeparators(logPath));
+
+    setMapAgent(instance, introSkipJarTargetPath(), args);
+    return {};
+}
+
+Result<> AgentBootstrap::clearIntroSkip(MinecraftInstance* instance)
+{
+    if (instance == nullptr)
+        return {};
+
+    const QString prefix = QStringLiteral("-javaagent:%1=").arg(QDir::toNativeSeparators(introSkipJarTargetPath()));
+    QStringList agents = instance->property(MAP_AGENT_PROPERTY).toStringList();
+    const int before = agents.size();
+    for (int i = agents.size() - 1; i >= 0; --i) {
+        if (agents.at(i).startsWith(prefix))
+            agents.removeAt(i);
+    }
+    if (agents.size() != before)
+        instance->setProperty(MAP_AGENT_PROPERTY, agents);
+    return {};
+}
+
+QString AgentBootstrap::introSkipLogPath(MinecraftInstance* instance)
+{
+    if (instance == nullptr)
+        return {};
+    // 用实例 id 的哈希做文件名：目录名可能是中文/希腊字母，但日志路径必须保持 ASCII
+    const QString key = QString::number(qHash(instance->id()), 16);
+    return FS::PathCombine(dataRoot(), QStringLiteral("introskip-%1.log").arg(key));
+}
+
+QStringList AgentBootstrap::mapAgents(MinecraftInstance* instance)
+{
+    if (instance == nullptr)
+        return {};
+    return instance->property(MAP_AGENT_PROPERTY).toStringList();
+}
+
+void AgentBootstrap::clearMapAgents(MinecraftInstance* instance)
+{
+    if (instance == nullptr)
+        return;
+    instance->setProperty(MAP_AGENT_PROPERTY, QStringList());
 }
 
 AgentBootstrap::Event AgentBootstrap::parseEvent(const QString& line, int* saveSequence)

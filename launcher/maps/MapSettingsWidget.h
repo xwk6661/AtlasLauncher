@@ -69,6 +69,7 @@ class MapSettingsWidget : public QWidget {
     QGroupBox* m_behaviorBox = nullptr;
     QCheckBox* m_autoEnter = nullptr;
     QCheckBox* m_safeExit = nullptr;
+    QCheckBox* m_skipPrompt = nullptr;
     QSpinBox* m_enterDelay = nullptr;
 
     // 以下仅全局作用域可见

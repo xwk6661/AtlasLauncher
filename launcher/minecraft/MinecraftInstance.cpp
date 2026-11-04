@@ -38,6 +38,7 @@
 #include "MinecraftInstance.h"
 #include "ResourcePaths.h"
 #include "Application.h"
+#include "maps/AgentBootstrap.h"
 #include "BuildConfig.h"
 #include "Json.h"
 #include "QObjectPtr.h"
@@ -245,6 +246,7 @@ void MinecraftInstance::loadSpecificSettings()
         auto mapBehaviorsOverride = m_settings->registerSetting("OverrideMapBehaviors", false);
         m_settings->registerOverride(global_settings->getSetting("MapAutoEnter"), mapBehaviorsOverride);
         m_settings->registerOverride(global_settings->getSetting("MapSafeExit"), mapBehaviorsOverride);
+        m_settings->registerOverride(global_settings->getSetting("MapSkipExperimentalPrompt"), mapBehaviorsOverride);
         m_settings->registerOverride(global_settings->getSetting("MapEnterDelay"), mapBehaviorsOverride);
 
         // Legacy-related options
@@ -535,6 +537,11 @@ static QString replaceTokensIn(const QString& text, const QMap<QString, QString>
 QStringList MinecraftInstance::extraArguments()
 {
     auto list = BaseInstance::extraArguments();
+
+    // 地图启动器在运行时注入的 -javaagent（quickboot / introskip）。
+    // 不写 JvmArgs：那是 override 设置，没开「覆盖全局 Java 参数」时实例里的值读不到，
+    // 会静默失效（2026-11-03 真机踩到）。
+    list.append(maps::AgentBootstrap::mapAgents(this));
     auto version = getPackProfile();
     if (!version)
         return list;

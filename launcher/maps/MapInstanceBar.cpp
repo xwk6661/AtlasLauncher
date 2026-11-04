@@ -32,9 +32,10 @@
 
 #include <algorithm>
 
-#include "AgentBootstrap.h"
 #include "BaseInstance.h"
 #include "FileSystem.h"
+#include "HallCache.h"
+#include "MapHallLink.h"
 #include "MapMeta.h"
 #include "MapNotes.h"
 #include "MapRepository.h"
@@ -81,13 +82,19 @@ QString formatWhen(const QDateTime& when)
     return when.toLocalTime().toString(QStringLiteral("MM-dd HH:mm"));
 }
 
-QString exitText(const QString& exit)
+/// CTM 的 creators 有两种形态：数组（creators_array）或单个字符串（creator）
+QString creatorText(const QJsonValue& value)
 {
-    if (exit == QLatin1String("safe"))
-        return QStringLiteral("正常落盘");
-    if (exit == QLatin1String("crash"))
-        return QStringLiteral("异常退出");
-    return QStringLiteral("未判定");
+    if (value.isArray()) {
+        QStringList names;
+        for (const auto& entry : value.toArray()) {
+            const QString name = entry.toString().trimmed();
+            if (!name.isEmpty())
+                names.append(name);
+        }
+        return names.join(QStringLiteral(", "));
+    }
+    return value.toString().trimmed();
 }
 
 }  // namespace
@@ -113,11 +120,13 @@ void MapInstanceBar::buildUi()
     m_alias->setVisible(false);
     layout->addWidget(m_alias);
 
-    // ── 徽章行（AIO 的 .badges：版本 / 加载器 / 置信度） ──
+    // ── 徽章行（AIO 的 .badges：版本 / 加载器；置信度不在这里，见「信息」页） ──
     m_chipBox = new QWidget(this);
     m_chipRow = new QHBoxLayout(m_chipBox);
     m_chipRow->setContentsMargins(0, 0, 0, 0);
     m_chipRow->setSpacing(3);
+    // 首尾各一个 stretch：只有两侧都有弹性空间，chips 才会居中（原来只加尾巴 → 左对齐）
+    m_chipRow->addStretch(1);
     m_chipRow->addStretch(1);
     layout->addWidget(m_chipBox);
 
@@ -173,9 +182,12 @@ void MapInstanceBar::buildUi()
     m_rows = new QGridLayout(m_rowsBox);
     m_rows->setContentsMargins(0, 0, 0, 0);
     m_rows->setHorizontalSpacing(8);
-    m_rows->setVerticalSpacing(1);
+    m_rows->setVerticalSpacing(3);
     m_rows->setColumnMinimumWidth(0, 52);
     m_rows->setColumnStretch(1, 1);
+    // 垂直方向按 sizeHint 当最小值：侧栏高度不够时，宁可让下面的原生按钮少一点空间，
+    // 也不要把这里每行的字压扁（Minimum 策略决定了网格不会被分到更小的空间）
+    m_rowsBox->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Minimum);
     layout->addWidget(m_rowsBox);
 }
 
@@ -198,12 +210,15 @@ void MapInstanceBar::addChip(const QString& text, const QColor& color)
 
 void MapInstanceBar::clearChips()
 {
-    while (m_chipRow->count() > 1) {
+    while (m_chipRow->count() > 0) {
         QLayoutItem* item = m_chipRow->takeAt(0);
         if (QWidget* widget = item->widget())
             widget->deleteLater();
         delete item;
     }
+    // 清空会把两端的 stretch 一起删掉，补回来，下次 addChip 仍然居中
+    m_chipRow->addStretch(1);
+    m_chipRow->addStretch(1);
 }
 
 void MapInstanceBar::setRow(const QString& key, const QString& value, const QString& tooltip)
@@ -212,10 +227,18 @@ void MapInstanceBar::setRow(const QString& key, const QString& value, const QStr
     auto* keyLabel = new QLabel(key, m_rowsBox);
     keyLabel->setEnabled(false);
     auto* valueLabel = new QLabel(value, m_rowsBox);
-    valueLabel->setWordWrap(true);
+    // 这里都是短值（时间 / 体积 / 数量），不换行：换行会让 minimumSizeHint 变成 0，
+    // 侧栏高度不够时网格就把行压扁，字的下半截被切掉（2026-11-04 真机截图）
+    valueLabel->setWordWrap(false);
     valueLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     if (!tooltip.isEmpty())
         valueLabel->setToolTip(tooltip);
+
+    const int lineHeight = std::max(keyLabel->fontMetrics().lineSpacing(), valueLabel->fontMetrics().lineSpacing());
+    keyLabel->setMinimumHeight(lineHeight);
+    valueLabel->setMinimumHeight(lineHeight);
+    keyLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
+    valueLabel->setAlignment(Qt::AlignTop | Qt::AlignLeft);
 
     m_rows->addWidget(keyLabel, row, 0, Qt::AlignTop);
     m_rows->addWidget(valueLabel, row, 1, Qt::AlignTop);
@@ -300,14 +323,14 @@ void MapInstanceBar::showMapCard(MinecraftInstance* instance)
         m_alias->setVisible(true);
     }
 
-    // 徽章：版本 / 加载器 / 置信度
+    // 徽章：版本 / 加载器
     addChip(meta.version.isKnown() ? meta.version.mcVersion : tr("版本未知"), ui::accentColor());
     // 加载器取实例实际装的组件：Vanilla 也要显示 —— 玩家靠这一格判断"要不要先装 Forge"
     addChip(entry.loaderVersion.isEmpty()
                 ? entry.loaderName
                 : QStringLiteral("%1 %2").arg(entry.loaderName, entry.loaderVersion),
             ui::mutedTextColor());
-    addChip(confidenceToString(entry.confidence), ui::confidenceColor(entry.confidence));
+    // 置信度（LOW / HIGH）只留在导入确认与实例「信息」页；侧栏是日常操作区，不摆判定细节
 
     // 世界下拉：一包多世界才出现
     for (const auto& world : meta.worlds)
@@ -332,18 +355,29 @@ void MapInstanceBar::showMapCard(MinecraftInstance* instance)
         m_note->setToolTip(notes.note);
     }
 
-    // 详情：KV 行
+    // 详情：KV 行。
+    // 「状态」「存档」「导入于」是导入时的判定留痕，不进日常操作区（完整信息在实例「信息」页）；
+    // 这里只留玩家看卡片时真正会用的：玩了多久、上次什么时候、多大、这张图是谁做的。
     const auto& stats = meta.stats;
-    setRow(tr("状态"), exitText(stats.lastExit));
     setRow(tr("游玩"), formatPlayTime(stats.playSeconds), tr("累计游玩时长（含本次）"));
     setRow(tr("上次"), formatWhen(stats.lastPlayed));
-    setRow(tr("存档"), tr("%1 个").arg(meta.worlds.size()));
     if (meta.archive.size > 0) {
         setRow(tr("包体积"), QStringLiteral("%1 MB").arg(meta.archive.size / 1024.0 / 1024.0, 0, 'f', 1),
                meta.archive.path);
     }
-    if (meta.importedAt.isValid())
-        setRow(tr("导入于"), formatWhen(meta.importedAt));
+
+    // 已关联 CTM 地图：作者 / 系列从本地大厅库补（hall-link.json + hall-cache.json）。
+    // 只读本地缓存、不联网 —— 侧栏刷新是同步的，不能在这里等网络。
+    const MapHallLink link = MapHallLink::load(instance->instanceRoot());
+    if (link.isValid()) {
+        const QJsonObject row = HallCache::findListRow(link.slug);
+        const QString author = creatorText(row.value(QStringLiteral("creators_array")));
+        const QString series = row.value(QStringLiteral("series")).toString().trimmed();
+        if (!author.isEmpty())
+            setRow(tr("作者"), author, tr("来自 CTM 地图库"));
+        if (!series.isEmpty())
+            setRow(tr("系列"), series, tr("来自 CTM 地图库"));
+    }
 
     // 风险提示：能提前说清楚的都不要等到进游戏才发现
     QStringList notices;
@@ -360,9 +394,6 @@ void MapInstanceBar::showMapCard(MinecraftInstance* instance)
         notices.append(tr("⚠ 压缩包里没带 mods/，需要自备整合包"));
     if (!meta.version.isKnown()) {
         notices.append(tr("⚠ 版本未判定，进游戏前请先确认版本"));
-    } else if (!instance->traits().contains(QStringLiteral("feature:is_quick_play_singleplayer")) &&
-               !AgentBootstrap::hasSymbols(meta.version.mcVersion)) {
-        notices.append(tr("⚠ %1 没有离线符号表，只能停在主菜单手动选存档").arg(meta.version.mcVersion));
     }
     if (!notices.isEmpty()) {
         m_notice->setText(notices.join(QStringLiteral("\n")));
@@ -400,16 +431,7 @@ void MapInstanceBar::showWorldCard(MinecraftInstance* instance, const QStringLis
 
     setRow(tr("存档"), tr("%1 个").arg(worlds.size()));
 
-    QStringList notices;
-    if (!instance->traits().contains(QStringLiteral("feature:is_quick_play_singleplayer")) &&
-        !AgentBootstrap::hasSymbols(version)) {
-        notices.append(tr("⚠ %1 没有离线符号表，启动后会停在主菜单，需要手动选存档").arg(version));
-    }
-    if (!notices.isEmpty()) {
-        m_notice->setText(notices.join(QStringLiteral("\n")));
-        m_notice->setStyleSheet(QStringLiteral("color: %1;").arg(ui::noticeColorName()));
-        m_notice->setVisible(true);
-    }
+    // 符号表覆盖 / 置信度属于「版本细节」，只在导入确认与实例「信息」页出现，侧栏不提醒
 }
 
 }  // namespace maps

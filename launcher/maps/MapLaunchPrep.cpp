@@ -43,6 +43,40 @@ QSet<QString> traitsFor(MinecraftInstance* instance)
     return instance->traits();
 }
 
+/**
+ * 1.20+ 的补丁注入：把「不支持使用实验性设置的世界」那一页跳过。
+ *
+ * 与轨道无关 —— 只要这个版本有签名表就注入。原因有两个：
+ *   · 1.20+ 走 quickPlay 时，这一页正是唯一会挡住自动进图的东西；
+ *   · 启动瞬间 traits 可能还没解析（命令行/快捷方式冷启动），那时判不出轨道，
+ *     但补丁本身不需要知道轨道，先注进去就行。
+ * 失败一律不挡启动：最多少点一次「我知道我在做什么」。
+ */
+void tryInjectIntroSkip(MinecraftInstance* instance, const MapMeta& meta, MapLaunchPrep::Plan* plan)
+{
+    if (!instance->settings()->get("MapSkipExperimentalPrompt").toBool()) {
+        // 关掉开关还不够：上一次启动写进 JvmArgs 的那条会继续生效，得摘掉
+        (void) AgentBootstrap::clearIntroSkip(instance);
+        return;
+    }
+
+    QString error;
+    const auto rule = AgentBootstrap::introSkipRule(meta.version.mcVersion, &error);
+    if (!rule) {
+        plan->warnings.append(error);
+        (void) AgentBootstrap::clearIntroSkip(instance);
+        return;
+    }
+
+    const QString logPath = AgentBootstrap::introSkipLogPath(instance);
+    const auto injected = AgentBootstrap::injectIntroSkip(instance, *rule, logPath);
+    if (!injected) {
+        plan->warnings.append(injected.error());
+        return;
+    }
+    plan->reason += QStringLiteral("；已注入 introskip（跳过实验性设置确认页，日志 %1）").arg(logPath);
+}
+
 }  // namespace
 
 QString MapLaunchPrep::trackName(Track track)
@@ -158,11 +192,13 @@ Result<> MapLaunchPrep::prepare(MinecraftInstance* instance, const MapMeta& meta
     const SettingsObject::Lock lock(instance->settings());
 
     switch (plan.track) {
-        case Track::QuickPlay:
+        case Track::QuickPlay: {
             // Prism 启动时读的是 MinecraftTarget->world（见 MinecraftInstance::processMinecraftArgs），
             // 这里写设置只是为了设置页回填与「创建快捷方式」能带上这张图。
             instance->settings()->set("JoinWorldOnLaunch", plan.worldFolder);
+            tryInjectIntroSkip(instance, meta, &plan);
             return finish({});
+        }
 
         case Track::Agent: {
             QString error;
@@ -213,6 +249,10 @@ MapLaunchPrep::Plan MapLaunchPrep::prepareForLaunch(MinecraftInstance* instance,
     if (instance == nullptr)
         return plan;
 
+    // 每次启动先清空上一次的运行时注入：属性不会落盘，但同一个实例对象会复用 ——
+    // 不清的话，从地图实例切到「普通启动」时 agent 还会被带上。
+    AgentBootstrap::clearMapAgents(instance);
+
     const QString metaPath = FS::PathCombine(instance->instanceRoot(), MapMeta::fileName());
     if (!QFile::exists(metaPath))
         return plan;  // 不是地图实例：一行都不碰，普通实例的启动路径保持原样
@@ -252,6 +292,8 @@ MapLaunchPrep::Plan MapLaunchPrep::prepareForLaunch(MinecraftInstance* instance,
         plan.enterDelay = std::clamp(instance->settings()->get("MapEnterDelay").toInt(), 0, 60);
         plan.track = Track::Plain;
         plan.reason = QStringLiteral("组件尚未解析（元数据未就绪），本次由启动参数按版本 trait 自行决定是否进图");
+        // 确认页补丁不依赖轨道：1.20+ 冷启动时 traits 还没解析，但补丁照样能装
+        tryInjectIntroSkip(instance, meta, &plan);
         qWarning() << "Map launch:" << instance->id() << "traits unknown, wrote world name only, no agent injection";
         installExitTracker(instance);
         return plan;

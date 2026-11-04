@@ -87,8 +87,13 @@ void MapSettingsWidget::buildBehaviorGroup(QWidget* parent, QVBoxLayout* layout)
                                "1.20+ 的版本关闭后不再带 --quickPlaySingleplayer。"));
     m_safeExit = new QCheckBox(tr("在游戏里退出存档后自动关闭游戏"), m_behaviorBox);
     m_safeExit->setToolTip(tr("存档落盘后让 JVM 自己退出，启动器再据此判定「正常退出 / 异常退出」。"));
+    m_skipPrompt = new QCheckBox(tr("跳过「不支持使用实验性设置的世界」确认页"), m_behaviorBox);
+    m_skipPrompt->setToolTip(tr("地图自带改过世界生成的数据包时，1.20+ 每次加载都会先问一次；\n"
+                                "勾上后由随包的 Java Agent 直接执行「我知道我在做什么」，不动世界数据。\n"
+                                "只对 1.20+ 生效，且只认表里有的版本。"));
     boxLayout->addWidget(m_autoEnter);
     boxLayout->addWidget(m_safeExit);
+    boxLayout->addWidget(m_skipPrompt);
 
     auto* form = new QFormLayout();
     form->setContentsMargins(0, 0, 0, 0);
@@ -221,6 +226,7 @@ void MapSettingsWidget::loadSettings()
 
     m_autoEnter->setChecked(m_settings->get("MapAutoEnter").toBool());
     m_safeExit->setChecked(m_settings->get("MapSafeExit").toBool());
+    m_skipPrompt->setChecked(m_settings->get("MapSkipExperimentalPrompt").toBool());
     m_enterDelay->setValue(m_settings->get("MapEnterDelay").toInt());
 
     if (m_instance != nullptr)
@@ -249,10 +255,12 @@ void MapSettingsWidget::saveSettings()
         if (overriding) {
             m_settings->set("MapAutoEnter", m_autoEnter->isChecked());
             m_settings->set("MapSafeExit", m_safeExit->isChecked());
+            m_settings->set("MapSkipExperimentalPrompt", m_skipPrompt->isChecked());
             m_settings->set("MapEnterDelay", m_enterDelay->value());
         } else {
             m_settings->reset("MapAutoEnter");
             m_settings->reset("MapSafeExit");
+            m_settings->reset("MapSkipExperimentalPrompt");
             m_settings->reset("MapEnterDelay");
         }
         return;
@@ -260,6 +268,7 @@ void MapSettingsWidget::saveSettings()
 
     m_settings->set("MapAutoEnter", m_autoEnter->isChecked());
     m_settings->set("MapSafeExit", m_safeExit->isChecked());
+    m_settings->set("MapSkipExperimentalPrompt", m_skipPrompt->isChecked());
     m_settings->set("MapEnterDelay", m_enterDelay->value());
     m_settings->set("MapLibraryDir", m_libraryDir->text().trimmed());
     m_settings->set("MapHallEndpoint", m_hallEndpoint->text().trimmed());

@@ -17,8 +17,10 @@
  */
 #include "MapImportTask.h"
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
 #include <QRegularExpression>
@@ -213,7 +215,15 @@ Result<> MapImportTask::extractWorlds()
             return std::unexpected{ tr("无法创建临时目录：%1").arg(tempDir) };
 
         const QString subDir = world.rootPath.isEmpty() ? QString() : world.rootPath + QLatin1Char('/');
-        if (const auto extracted = MMCZip::extractSubDir(&reader, subDir, tempDir); !extracted) {
+        // 解压是同步的：每解一个文件让事件循环跑一圈，否则几百 MB 的包会把窗口冻成「未响应」。
+        // 排除用户输入是故意的 —— 让对话框在这段里无法被关掉，避免任务执行到一半对象被销毁。
+        const auto progress = [this](qint64 done, qint64 total) {
+            setStatus(tr("正在解压存档… %1 / %2").arg(done).arg(total));
+            setProgress(done, total);
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+            return isRunning();
+        };
+        if (const auto extracted = MMCZip::extractSubDir(&reader, subDir, tempDir, progress); !extracted) {
             FS::deletePath(tempDir);
             return std::unexpected{ tr("解压世界 %1 失败：%2").arg(world.folderLabel, extracted.error()) };
         }
@@ -425,7 +435,12 @@ Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMe
             return std::unexpected{ tr("无法创建临时目录：%1").arg(tempDir) };
 
         const QString subDir = world.sourceRoot.isEmpty() ? QString() : world.sourceRoot + QLatin1Char('/');
-        if (const auto extracted = MMCZip::extractSubDir(&reader, subDir, tempDir); !extracted) {
+        // 重装走的是实例页的同步调用，同样要避免大包冻住界面
+        const auto keepAlive = [](qint64, qint64) {
+            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+            return true;
+        };
+        if (const auto extracted = MMCZip::extractSubDir(&reader, subDir, tempDir, keepAlive); !extracted) {
             FS::deletePath(tempDir);
             return std::unexpected{ tr("重装时解压失败：%1").arg(extracted.error()) };
         }

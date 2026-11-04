@@ -23,6 +23,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSaveFile>
+#include <QHash>
 #include <QSet>
 
 #include "Application.h"
@@ -108,6 +109,38 @@ bool HallCache::save(const HallSnapshot& snapshot, QString* error)
         return false;
     }
     return true;
+}
+
+QJsonObject HallCache::findListRow(const QString& slug)
+{
+    if (slug.isEmpty())
+        return {};
+
+    static QHash<QString, QJsonObject> rows;
+    static QDateTime loadedAt;
+
+    const QFileInfo info(path());
+    if (!info.exists()) {
+        rows.clear();
+        loadedAt = QDateTime();
+        return {};
+    }
+
+    // 文件被同步流程整体换掉时 mtime 会变，此时重建成索引
+    if (rows.isEmpty() || info.lastModified() != loadedAt) {
+        rows.clear();
+        const HallSnapshot snapshot = load();
+        rows.reserve(snapshot.listRows.size());
+        for (const auto& value : snapshot.listRows) {
+            const QJsonObject row = value.toObject();
+            const QString key = row.value(QStringLiteral("slug")).toString();
+            if (!key.isEmpty())
+                rows.insert(key, row);
+        }
+        loadedAt = info.lastModified();
+    }
+
+    return rows.value(slug);
 }
 
 void HallCache::clear()

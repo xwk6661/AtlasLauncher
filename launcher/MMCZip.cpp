@@ -165,7 +165,8 @@ Result<> createModdedJar(QString sourceJarPath, QString targetJarPath, const QLi
 #endif
 
 // ours
-Result<QStringList> extractSubDir(ArchiveReader* zip, const QString& subdir, const QString& target)
+Result<QStringList> extractSubDir(ArchiveReader* zip, const QString& subdir, const QString& target,
+                                  const ExtractProgress& progress)
 {
     auto target_top_dir = QUrl::fromLocalFile(target);
 
@@ -179,10 +180,12 @@ Result<QStringList> extractSubDir(ArchiveReader* zip, const QString& subdir, con
         return extracted;
     }
 
+    const qint64 totalEntries = zip->getFiles().size();
+
     auto extPtr = ArchiveWriter::createDiskWriter();
     auto ext = extPtr.get();
 
-    if (const auto result = zip->parse([&subdir, &target, &target_top_dir, ext, &extracted](ArchiveReader::File* f) -> Result<> {
+    if (const auto result = zip->parse([&subdir, &target, &target_top_dir, ext, &extracted, &progress, totalEntries](ArchiveReader::File* f) -> Result<> {
             QString file_name = f->filename();
             file_name = FS::RemoveInvalidPathChars(file_name);
             if (!file_name.startsWith(subdir)) {
@@ -222,6 +225,10 @@ Result<QStringList> extractSubDir(ArchiveReader* zip, const QString& subdir, con
             extracted.append(target_file_path);
 
             qDebug() << "Extracted file" << relative_file_name << "to" << target_file_path;
+
+            if (progress && !progress(extracted.size(), totalEntries)) {
+                return std::unexpected{ QStringLiteral("解压被中止") };
+            }
             return {};
         });
         !result) {

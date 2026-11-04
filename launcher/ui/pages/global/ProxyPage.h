@@ -53,7 +53,7 @@ class ProxyPage : public QWidget, public BasePage {
     explicit ProxyPage(QWidget* parent = 0);
     ~ProxyPage();
 
-    QString displayName() const override { return tr("Proxy"); }
+    QString displayName() const override { return tr("代理"); }
     QIcon icon() const override { return QIcon::fromTheme("proxy"); }
     QString id() const override { return "proxy-settings"; }
     QString helpPage() const override { return "Proxy-settings"; }

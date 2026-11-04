@@ -1,0 +1,84 @@
+{
+  "note": "WorldOpenFlows.askForBackup 的混淆名；把它改写成 loadLevel.run() 即可跳过实验性设置确认页",
+  "schema": 1,
+  "versions": {
+    "1.20": {
+      "class": "ezk",
+      "desc": "(Leuq;Ljava/lang/String;ZLjava/lang/Runnable;)V",
+      "index": 4,
+      "method": "a"
+    },
+    "1.20.1": {
+      "class": "ezk",
+      "desc": "(Leuq;Ljava/lang/String;ZLjava/lang/Runnable;)V",
+      "index": 4,
+      "method": "a"
+    },
+    "1.20.2": {
+      "class": "fdi",
+      "desc": "(Leyk;Ljava/lang/String;ZLjava/lang/Runnable;)V",
+      "index": 4,
+      "method": "a"
+    },
+    "1.20.3": {
+      "class": "fib",
+      "desc": "(Legm$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.20.4": {
+      "class": "fib",
+      "desc": "(Legm$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.20.5": {
+      "class": "fsd",
+      "desc": "(Lepx$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.20.6": {
+      "class": "fse",
+      "desc": "(Lepy$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.21": {
+      "class": "ftm",
+      "desc": "(Lerf$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.21.1": {
+      "class": "ftm",
+      "desc": "(Lerf$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.21.2": {
+      "class": "fzj",
+      "desc": "(Lewc$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.21.3": {
+      "class": "fzk",
+      "desc": "(Lewd$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.21.4": {
+      "class": "fzy",
+      "desc": "(Levg$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.21.5": {
+      "class": "gfe",
+      "desc": "(Lfah$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    }
+  }
+}
