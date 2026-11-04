@@ -79,9 +79,12 @@ bool DownloadSource::mirrorEnabled()
 
 QUrl DownloadSource::rewrite(const QUrl& url)
 {
-    if (!mirrorEnabled())
-        return url;
-    return mapToMirror(url);
+    return rewriteFor(url, mirrorEnabled());
+}
+
+QUrl DownloadSource::rewriteFor(const QUrl& url, bool mirror)
+{
+    return mirror ? mapToMirror(url) : url;
 }
 
 QUrl DownloadSource::mapToMirror(const QUrl& url)

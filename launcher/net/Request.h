@@ -97,6 +97,8 @@ class Request : public Task {
         MakeEternal = 2,
         AutoRetry = 4,
         AddAPIHeaders = 8,
+        /// 不要按「下载源」改写 URL —— 调用方已经自己算好了最终地址（设置页的连通性测试）
+        NoSourceRewrite = 16,
     };
     Q_DECLARE_FLAGS(Options, Option)
 

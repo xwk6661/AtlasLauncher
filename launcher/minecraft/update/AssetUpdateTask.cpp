@@ -1,4 +1,6 @@
 #include "AssetUpdateTask.h"
+
+#include "net/DownloadSource.h"
 #include "ResourcePaths.h"
 #include "FileSystem.h"
 
@@ -116,6 +118,12 @@ bool AssetUpdateTask::abort()
 
 QString AssetUpdateTask::resourceUrl()
 {
+    // 下载源选了镜像时，资源地址由镜像接管：自定义的「资源服务器」在这时会被
+    // Net::DownloadSource::rewrite 无视（映射表只认官方域），留着它只会出现
+    // "设置了镜像却仍在打自定义地址"的怪现象。设置值本身保留，切回官方即恢复。
+    if (Net::DownloadSource::mirrorEnabled())
+        return BuildConfig.DEFAULT_RESOURCE_BASE;
+
     if (const QString urlOverride = APPLICATION->settings()->get("ResourceURLOverride").toString(); !urlOverride.isEmpty()) {
         return urlOverride;
     }

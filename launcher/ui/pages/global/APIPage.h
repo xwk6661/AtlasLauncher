@@ -66,6 +66,10 @@ class APIPage : public QWidget, public BasePage {
     void updateBaseURLPlaceholder(int index);
     void loadSettings();
     void applySettings();
+    /// 按当前选中的下载源，决定哪些服务器地址还能改
+    void updateDownloadSourceState();
+    /// 「测试连通性…」：用**尚未保存**的选择去跑四个真实文件
+    void runDownloadSourceTest();
 
    private:
     Ui::APIPage* ui;

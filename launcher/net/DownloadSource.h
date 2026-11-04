@@ -54,6 +54,9 @@ class DownloadSource {
     /// 官方 → 镜像。设置没开启镜像、或不在映射表里、或本来就是镜像，一律原样返回。
     static QUrl rewrite(const QUrl& url);
 
+    /// 同上，但显式指定是否走镜像 —— 设置页的「测试连通性」要在**尚未保存**的选择上跑。
+    static QUrl rewriteFor(const QUrl& url, bool mirror);
+
     /**
      * 只做映射、不看设置 —— 供单测直接验证映射表。
      *

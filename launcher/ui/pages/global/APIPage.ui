@@ -39,6 +39,65 @@
       </property>
       <layout class="QVBoxLayout" name="verticalLayout">
        <item>
+        <widget class="QGroupBox" name="groupBox_downloadSource">
+         <property name="title">
+          <string>下载源（D）</string>
+         </property>
+         <layout class="QVBoxLayout" name="verticalLayout_downloadSource">
+          <item>
+           <widget class="QLabel" name="label_downloadSource">
+            <property name="text">
+             <string>官方服务器在部分网络下无法访问时，可以把&lt;b&gt;文件下载&lt;/b&gt;切到镜像。只影响 Minecraft 资源、依赖库、版本清单与 Java 运行时；Modrinth、CurseForge 这类数据接口不在镜像范围内。镜像请求&lt;b&gt;不使用代理&lt;/b&gt;。</string>
+            </property>
+            <property name="textFormat">
+             <enum>Qt::RichText</enum>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="downloadSourceRow">
+            <item>
+             <widget class="QComboBox" name="downloadSourceCombo">
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                <horstretch>1</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="downloadSourceTestButton">
+              <property name="text">
+               <string>测试连通性…</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <widget class="QLabel" name="downloadSourceHint">
+            <property name="text">
+             <string/>
+            </property>
+            <property name="textFormat">
+             <enum>Qt::RichText</enum>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="enabled">
+             <bool>false</bool>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
         <widget class="QGroupBox" name="groupBox_paste">
          <property name="title">
           <string>&amp;Pastebin Service</string>
@@ -164,31 +223,6 @@
              <string>Use Default</string>
             </property>
            </widget>
-          </item>
-         </layout>
-        </widget>
-       </item>
-       <item>
-        <widget class="QGroupBox" name="groupBox_downloadSource">
-         <property name="title">
-          <string>Download Source</string>
-         </property>
-         <layout class="QVBoxLayout" name="verticalLayout_downloadSource">
-          <item>
-           <widget class="QLabel" name="label_downloadSource">
-            <property name="text">
-             <string>Mojang, Fabric and Forge files can be fetched from a mirror when the official servers are unreachable. Only file downloads are affected; Modrinth and CurseForge APIs are never mirrored. Mirror requests ignore the proxy set above.</string>
-            </property>
-            <property name="textFormat">
-             <enum>Qt::RichText</enum>
-            </property>
-            <property name="wordWrap">
-             <bool>true</bool>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QComboBox" name="downloadSourceCombo"/>
           </item>
          </layout>
         </widget>

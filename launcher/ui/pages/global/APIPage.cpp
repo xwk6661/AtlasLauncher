@@ -50,6 +50,7 @@
 #include "Application.h"
 #include "BuildConfig.h"
 #include "net/DownloadSource.h"
+#include "ui/dialogs/DownloadSourceTestDialog.h"
 #include "net/PasteUpload.h"
 #include "settings/SettingsObject.h"
 #include "tools/BaseProfiler.h"
@@ -89,6 +90,8 @@ APIPage::APIPage(QWidget* parent) : QWidget(parent), ui(new Ui::APIPage)
     // 下载源：只影响 Mojang / Fabric / Forge 的公共文件域（见 net/DownloadSource）
     ui->downloadSourceCombo->addItem(tr("官方（默认）"), QString::fromLatin1(Net::DownloadSource::OFFICIAL));
     ui->downloadSourceCombo->addItem(tr("BMCLAPI 镜像（国内加速，直连）"), QString::fromLatin1(Net::DownloadSource::BMCLAPI));
+    connect(ui->downloadSourceCombo, currentIndexChangedSignal, this, [this](int) { updateDownloadSourceState(); });
+    connect(ui->downloadSourceTestButton, &QPushButton::clicked, this, &APIPage::runDownloadSourceTest);
 
     loadSettings();
 
@@ -164,6 +167,34 @@ void APIPage::loadSettings()
     const QString downloadSource = s->get("DownloadSource").toString();
     const int sourceIndex = ui->downloadSourceCombo->findData(downloadSource);
     ui->downloadSourceCombo->setCurrentIndex(sourceIndex < 0 ? 0 : sourceIndex);
+    updateDownloadSourceState();
+}
+
+void APIPage::updateDownloadSourceState()
+{
+    const bool mirror = ui->downloadSourceCombo->currentData().toString() == QLatin1String(Net::DownloadSource::BMCLAPI);
+
+    // 镜像模式下资源地址由镜像接管：`AssetUpdateTask::resourceUrl()` 会无视这里的自定义值。
+    // 所以禁用而不是隐藏 —— 让玩家看见"它还在，只是这会儿不算数"，切回官方立刻恢复。
+    ui->resourceURL->setEnabled(!mirror);
+    ui->resourceURL->setToolTip(mirror ? tr("当前由下载源接管：镜像模式会忽略这里填的地址（设置值会保留）。") : QString());
+    ui->label_7->setEnabled(!mirror);
+
+    // 其余几项与文件下载源无关，保持可改：
+    // - 元数据服务器指向 prism 的组件库，BMCLAPI 不镜像它，换源后照样生效；
+    // - 旧版 FML 库服务器（MC 1.5.2 及更早）也没有被镜像；
+    // - Pastebin、用户代理跟下载完全无关。
+    ui->downloadSourceHint->setText(
+        mirror ? tr("已启用镜像：Minecraft 资源、依赖库、版本清单与 Java 运行时都从 BMCLAPI 下载，且不走代理。"
+                    "下面的「资源服务器」会被忽略；元数据服务器与旧版 FML 库服务器不受影响。")
+               : tr("当前使用官方服务器。如果下载经常卡住或报「连接被关闭」，试试镜像。"));
+}
+
+void APIPage::runDownloadSourceTest()
+{
+    const bool mirror = ui->downloadSourceCombo->currentData().toString() == QLatin1String(Net::DownloadSource::BMCLAPI);
+    DownloadSourceTestDialog dialog(mirror, this);
+    dialog.exec();
 }
 
 void APIPage::applySettings()

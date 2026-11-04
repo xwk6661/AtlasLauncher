@@ -99,6 +99,15 @@ class DownloadSourceTest : public QObject {
         QCOMPARE(Net::DownloadSource::mapToMirror(official).toString(), official.toString());
     }
 
+    void rewriteForHonoursExplicitChoice()
+    {
+        // 设置页的「测试连通性」用未保存的下拉选择，所以必须能显式指定
+        const QUrl official("https://libraries.minecraft.net/com/mojang/brigadier/1.3.10/brigadier-1.3.10.jar");
+        QCOMPARE(Net::DownloadSource::rewriteFor(official, false).toString(), official.toString());
+        QCOMPARE(Net::DownloadSource::rewriteFor(official, true).toString(),
+                 QString("https://bmclapi2.bangbang93.com/maven/com/mojang/brigadier/1.3.10/brigadier-1.3.10.jar"));
+    }
+
     void isIdempotent()
     {
         const QUrl mirrored("https://bmclapi2.bangbang93.com/assets/b9/b9f15e2d6073ed2f28bea176dad96df73bc6200f");
