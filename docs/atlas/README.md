@@ -4,9 +4,9 @@
 把 [`Minecraft-AIO`](E:/llmUsage/Minecraft-AIO)（mcml v0.33.0，Electron + TypeScript）的
 「以地图为中心」搬到了原生 Qt 上 —— **点地图卡片直接进图，版本由程序推断**。
 
-> **状态（2026-11-03 19:00）**：构建通过 · 测试 `13 passed / 0 failed / 2 skipped` ·
-> M0 完成，M1–M3 代码落地 · 真机已过「1.20+ 进图」与「连开两次都自动关游戏」·
-> **无阻塞项** · 分支 `feature/map-launcher`
+> **状态（2026-11-04 15:10）**：构建通过 · 测试 `27 passed / 0 failed / 2 skipped` ·
+> M0 完成，M1–M4 代码落地 · 真机已过「1.20+ 进图」与「连开两次都自动关游戏」·
+> **代码无阻塞项**，现实阻碍是网络（官方资源域在部分线路被断连，见 05 §8）· 分支 `feature/map-launcher`
 
 ---
 
@@ -64,7 +64,7 @@
 
 ## 代码地图
 
-新代码在 `launcher/maps/`（**33 个 .cpp + 37 个 .h，15,435 行**）与 `launcher/ResourcePaths`，
+新代码在 `launcher/maps/`（**36 个 .cpp + 40 个 .h，18,019 行**）与 `launcher/ResourcePaths`，
 对既有文件只做加法：
 
 | 分组 | 文件 |
