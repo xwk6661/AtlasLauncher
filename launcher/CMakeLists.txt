@@ -799,6 +799,8 @@ set(MAPS_SOURCES
     maps/ModPresets.cpp
     maps/ModPresetDialog.h
     maps/ModPresetDialog.cpp
+    maps/ModSearchDialog.h
+    maps/ModSearchDialog.cpp
     maps/StarRatingWidget.h
     maps/StarRatingWidget.cpp
     maps/MapInstancePage.h

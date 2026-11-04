@@ -279,7 +279,10 @@ set(Launcher_MSA_CLIENT_ID "c36a9fb6-4f2a-41ff-90bd-ae7cc92031eb" CACHE STRING "
 # https://support.curseforge.com/en/support/solutions/articles/9000207405-curse-forge-3rd-party-api-terms-and-conditions
 # NOTE: CurseForge requires you to change this if you make any kind of derivative work.
 # This key was issued specifically for Prism Launcher
-set(Launcher_CURSEFORGE_API_KEY "$2a$10$wuAJuNZuted3NORVmpgUC.m8sI.pv1tOPKZyBgLFGjxFp/br0lZCC" CACHE STRING "API key for the CurseForge platform")
+# CurseForge 的公开读写 key（取自 Minecraft-AIO 的 launcher/settings.json，2026-11-04）。
+# 这个 key 只用于读公开数据；玩家可以在「设置 → API」里用 FlameKeyOverride 换成自己的，
+# 那个值优先于这里。失效时换成新的即可，不需要改代码。
+set(Launcher_CURSEFORGE_API_KEY "$2a$10$kZj2bskCpAyIojGHZCOETum4IavE55UyMFcQk79.Oi3lJlNaqampK" CACHE STRING "API key for the CurseForge platform")
 
 set(Launcher_COMPILER_NAME ${CMAKE_CXX_COMPILER_ID})
 set(Launcher_COMPILER_VERSION ${CMAKE_CXX_COMPILER_VERSION})

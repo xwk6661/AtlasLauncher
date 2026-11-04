@@ -55,7 +55,8 @@ class ModPresetDialog : public QDialog {
     void buildUi();
     void reloadPresets();
     void startResolve();
-    void updateRow(int index);
+    void rebuildTable(bool resolving);
+    void refreshRow(int index);
     void updateSummary();
     void install();
     void editPresets();
@@ -96,7 +97,7 @@ class ModPresetEditorDialog : public QDialog {
     Q_OBJECT
 
    public:
-    explicit ModPresetEditorDialog(QWidget* parent = nullptr);
+    explicit ModPresetEditorDialog(const QString& gameVersion, const QString& loader, QWidget* parent = nullptr);
 
    private:
     void reloadPresets(const QString& selectId = {});
@@ -107,6 +108,9 @@ class ModPresetEditorDialog : public QDialog {
 
     QList<ModPreset> m_presets;
     QString m_currentId;
+    /// 打开搜索时用的实例版本/加载器（不是下面那个下拉框 m_loader）
+    QString m_gameVersion;
+    QString m_instanceLoader;
 
     QComboBox* m_presetCombo = nullptr;
     QLineEdit* m_name = nullptr;

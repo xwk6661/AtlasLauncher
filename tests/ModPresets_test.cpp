@@ -46,6 +46,9 @@ class ModPresetsTest : public QObject {
                 QVERIFY2(!mod.project.isEmpty(), qPrintable(preset.id));
                 // slug 里不会有空格；有空格通常是把显示名误填进了 project
                 QVERIFY2(!mod.project.contains(QLatin1Char(' ')), qPrintable(mod.project));
+                // 每个内置条目都要有一句人话说明，否则表格里只有名字
+                QVERIFY2(!mod.note.isEmpty(), qPrintable(mod.project));
+                QCOMPARE(mod.provider, QStringLiteral("modrinth"));
             }
         }
     }

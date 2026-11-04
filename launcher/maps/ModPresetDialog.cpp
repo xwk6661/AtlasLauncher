@@ -17,6 +17,8 @@
  */
 #include "ModPresetDialog.h"
 
+#include "ModSearchDialog.h"
+
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
@@ -165,14 +167,15 @@ void ModPresetDialog::buildUi()
     layout->addWidget(m_description);
 
     m_table = new QTableWidget(this);
-    m_table->setColumnCount(3);
-    m_table->setHorizontalHeaderLabels({ tr("装"), tr("模组"), tr("版本") });
+    m_table->setColumnCount(4);
+    m_table->setHorizontalHeaderLabels({ tr("装"), tr("模组"), tr("说明"), tr("版本") });
     m_table->verticalHeader()->setVisible(false);
     m_table->setSelectionMode(QAbstractItemView::NoSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
-    m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Stretch);
-    m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    m_table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
     layout->addWidget(m_table, 1);
 
     m_status = new QLabel(this);
@@ -277,28 +280,10 @@ void ModPresetDialog::startResolve()
     for (int i = 0; i < m_current.mods.size(); ++i)
         m_results[i].entry = m_current.mods.at(i);
 
-    m_table->setRowCount(m_current.mods.size());
-    for (int row = 0; row < m_current.mods.size(); ++row) {
-        const auto& entry = m_current.mods.at(row);
-
-        auto* check = new QTableWidgetItem();
-        check->setFlags((check->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
-        check->setCheckState(entry.enabled ? Qt::Checked : Qt::Unchecked);
-        m_table->setItem(row, 0, check);
-
-        auto* name = new QTableWidgetItem(entry.name.isEmpty() ? entry.project : entry.name);
-        if (!entry.note.isEmpty())
-            name->setToolTip(entry.note);
-        m_table->setItem(row, 1, name);
-
-        auto* version = new QTableWidgetItem(tr("查询中…"));
-        version->setFlags(version->flags() & ~Qt::ItemIsEnabled);
-        m_table->setItem(row, 2, version);
-    }
+    rebuildTable(true);
 
     m_status->setText(tr("正在按 %1 / %2 解析版本…").arg(m_mcVersion, loaderDisplayName(m_loader)));
     m_installButton->setEnabled(false);
-    updateSummary();
 
     const int generation = m_generation;
     QList<ModPresetEntry> entries = m_current.mods;
@@ -307,16 +292,15 @@ void ModPresetDialog::startResolve()
     connect(m_task, &ModPresetResolveTask::entryResolved, this, [this, generation](int index) {
         if (generation != m_generation)
             return;
-        updateRow(index);
+        refreshRow(index);
     });
     connect(m_task, &Task::succeeded, this, [this, generation] {
         if (generation != m_generation)
             return;
+        // 依赖是解析过程中才发现的，完成后整表重建一次，把它们排在主条目后面
         m_results = m_task->results();
-        for (int row = 0; row < m_table->rowCount(); ++row)
-            updateRow(row);
+        rebuildTable(false);
         m_status->clear();
-        updateSummary();
     });
     connect(m_task, &Task::failed, this, [this, generation](const QString& reason) {
         if (generation != m_generation)
@@ -332,20 +316,79 @@ void ModPresetDialog::startResolve()
     m_task->start();
 }
 
-void ModPresetDialog::updateRow(int index)
+void ModPresetDialog::rebuildTable(bool resolving)
 {
-    if (index < 0 || index >= m_results.size() || index >= m_table->rowCount())
+    // 记住用户手动改过的勾选：重建时不能把人刚取消的又勾回去
+    QList<int> previousStates;
+    for (int row = 0; row < m_table->rowCount(); ++row) {
+        auto* item = m_table->item(row, 0);
+        previousStates.append(item != nullptr ? static_cast<int>(item->checkState()) : -1);
+    }
+
+    m_table->setRowCount(m_results.size());
+    for (int row = 0; row < m_results.size(); ++row) {
+        const auto& result = m_results.at(row);
+        const auto& entry = result.entry;
+
+        auto* check = new QTableWidgetItem();
+        check->setFlags((check->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
+        const int previous = row < previousStates.size() ? previousStates.at(row) : -1;
+        check->setCheckState(previous >= 0 ? static_cast<Qt::CheckState>(previous)
+                                          : (entry.enabled ? Qt::Checked : Qt::Unchecked));
+        m_table->setItem(row, 0, check);
+
+        QString name = result.packName;
+        if (name.isEmpty())
+            name = entry.name;
+        if (name.isEmpty())
+            name = entry.project;
+        if (result.dependency)
+            name += tr("（依赖）");
+        auto* nameItem = new QTableWidgetItem(name);
+        nameItem->setToolTip(entry.project);
+        m_table->setItem(row, 1, nameItem);
+
+        QString note = entry.note;
+        if (note.isEmpty())
+            note = result.description;
+        if (result.dependency && !result.requiredBy.isEmpty()) {
+            const QString owner = tr("由 %1 需要").arg(result.requiredBy);
+            note = note.isEmpty() ? owner : owner + QStringLiteral(" · ") + note;
+        }
+        auto* noteItem = new QTableWidgetItem(note);
+        noteItem->setToolTip(note);
+        m_table->setItem(row, 2, noteItem);
+
+        auto* version = new QTableWidgetItem();
+        if (result.ok) {
+            version->setText(result.versionLabel);
+            version->setToolTip(result.packName);
+        } else if (result.error.isEmpty()) {
+            version->setText(resolving ? tr("查询中…") : tr("未解析"));
+            version->setFlags(version->flags() & ~Qt::ItemIsEnabled);
+        } else {
+            version->setText(result.error);
+            version->setFlags(version->flags() & ~Qt::ItemIsEnabled);
+            check->setCheckState(Qt::Unchecked);
+            check->setFlags(check->flags() & ~Qt::ItemIsEnabled);
+        }
+        m_table->setItem(row, 3, version);
+    }
+
+    updateSummary();
+}
+
+void ModPresetDialog::refreshRow(int index)
+{
+    if (m_task == nullptr || index < 0 || index >= m_task->results().size() || index >= m_table->rowCount())
         return;
 
-    // 任务逐条发信号时 results() 里可能还没同步，直接读任务的（拷贝一份，避免引用悬空）
-    ModPresetResolution result;
-    if (m_task != nullptr && index < m_task->results().size())
-        result = m_task->results().at(index);
-    else
-        result = m_results.at(index);
-    m_results[index] = result;
+    // 逐条到达时先只改这一行，依赖等结束后统一重建
+    const auto result = m_task->results().at(index);
+    if (index < m_results.size())
+        m_results[index] = result;
 
-    auto* version = m_table->item(index, 2);
+    auto* version = m_table->item(index, 3);
     auto* check = m_table->item(index, 0);
     if (version == nullptr || check == nullptr)
         return;
@@ -353,12 +396,9 @@ void ModPresetDialog::updateRow(int index)
     if (result.ok) {
         version->setText(result.versionLabel);
         version->setFlags(version->flags() | Qt::ItemIsEnabled);
-        version->setToolTip(tr("%1 · %2").arg(result.packName, result.versionLabel));
-        check->setFlags(check->flags() | Qt::ItemIsEnabled);
-        if (!m_current.mods.at(index).enabled)
-            check->setCheckState(Qt::Unchecked);
-    } else {
-        version->setText(result.error.isEmpty() ? tr("不可用") : result.error);
+        version->setToolTip(result.packName);
+    } else if (!result.error.isEmpty()) {
+        version->setText(result.error);
         version->setFlags(version->flags() & ~Qt::ItemIsEnabled);
         check->setCheckState(Qt::Unchecked);
         check->setFlags(check->flags() & ~Qt::ItemIsEnabled);
@@ -465,7 +505,7 @@ void ModPresetDialog::openModBrowser()
 
 void ModPresetDialog::editPresets()
 {
-    ModPresetEditorDialog editor(this);
+    ModPresetEditorDialog editor(m_mcVersion, m_loader, this);
     editor.exec();
 
     // 编辑完可能改名/删了当前预设，重新读一遍
@@ -478,7 +518,8 @@ void ModPresetDialog::editPresets()
 
 // ───────────────────────────── 编辑器 ─────────────────────────────
 
-ModPresetEditorDialog::ModPresetEditorDialog(QWidget* parent) : QDialog(parent)
+ModPresetEditorDialog::ModPresetEditorDialog(const QString& gameVersion, const QString& loader, QWidget* parent)
+    : QDialog(parent), m_gameVersion(gameVersion), m_instanceLoader(loader)
 {
     setWindowTitle(tr("管理模组预设"));
     resize(620, 560);
@@ -521,14 +562,47 @@ ModPresetEditorDialog::ModPresetEditorDialog(QWidget* parent) : QDialog(parent)
     layout->addLayout(descRow);
 
     auto* hint = new QLabel(
-        tr("每行一个模组：<code>slug | 显示名 | 备注</code>。slug 是 Modrinth 地址最后一段，"
-           "例如 <code>https://modrinth.com/mod/sodium</code> 里的 <code>sodium</code>。"
+        tr("每行一个模组：<code>项目 | 显示名 | 说明</code>。Modrinth 填地址最后一段"
+           "（<code>https://modrinth.com/mod/sodium</code> → <code>sodium</code>）；"
+           "CurseForge 填数字 id 并加前缀 <code>cf:</code>（如 <code>cf:238222</code>）。"
            "后两段可以省略；行首加 <code>-</code> 表示默认不勾选。"),
         this);
     hint->setWordWrap(true);
     hint->setTextFormat(Qt::RichText);
     hint->setEnabled(false);
     layout->addWidget(hint);
+
+    auto* searchRow = new QHBoxLayout();
+    auto* searchButton = new QPushButton(tr("搜索并添加…"), this);
+    searchButton->setToolTip(tr("从 Modrinth 或 CurseForge 搜索，勾选后把条目追加到下面的列表。"));
+    connect(searchButton, &QPushButton::clicked, this, [this] {
+        ModSearchDialog dialog(m_gameVersion, m_instanceLoader, this);
+        if (dialog.exec() != QDialog::Accepted)
+            return;
+
+        QStringList lines;
+        for (const auto& entry : dialog.selected()) {
+            QString line = entry.provider == QLatin1String(modprovider::CURSEFORGE)
+                               ? QStringLiteral("cf:") + entry.project
+                               : entry.project;
+            QString note = entry.note;
+            note.replace(QLatin1Char('\n'), QLatin1Char(' '));  // 简介可能带换行，压成一行
+            if (!entry.name.isEmpty() || !note.isEmpty()) {
+                line += QStringLiteral(" | ") + entry.name;
+                if (!note.isEmpty())
+                    line += QStringLiteral(" | ") + note;
+            }
+            lines.append(line);
+        }
+        if (lines.isEmpty())
+            return;
+        if (!m_mods->toPlainText().trimmed().isEmpty())
+            m_mods->appendPlainText(QString());
+        m_mods->appendPlainText(lines.join(QLatin1Char('\n')));
+    });
+    searchRow->addWidget(searchButton);
+    searchRow->addStretch(1);
+    layout->addLayout(searchRow);
 
     m_mods = new QPlainTextEdit(this);
     m_mods->setPlaceholderText(QStringLiteral("sodium | Sodium | 渲染优化\nlithium\n-ferrite-core"));
@@ -581,7 +655,9 @@ void ModPresetEditorDialog::loadIntoEditors(const QString& id)
 
         QStringList lines;
         for (const auto& mod : preset.mods) {
-            QString line = mod.project;
+            QString line = mod.provider == QLatin1String(modprovider::CURSEFORGE)
+                               ? QStringLiteral("cf:") + mod.project
+                               : mod.project;
             if (!mod.name.isEmpty() || !mod.note.isEmpty()) {
                 line += QStringLiteral(" | ") + mod.name;
                 if (!mod.note.isEmpty())
@@ -625,7 +701,18 @@ void ModPresetEditorDialog::saveCurrent()
         const auto parts = line.split(QLatin1Char('|'));
         entry.project = parts.value(0).trimmed();
         entry.name = parts.value(1).trimmed();
-        entry.note = parts.value(2).trimmed();
+        // 说明里本身可能有竖线，第三段之后一律并回 note
+        if (parts.size() > 2)
+            entry.note = parts.mid(2).join(QLatin1Char('|')).trimmed();
+
+        if (entry.project.startsWith(QLatin1String("cf:"), Qt::CaseInsensitive)) {
+            entry.provider = QString::fromLatin1(modprovider::CURSEFORGE);
+            entry.project = entry.project.mid(3).trimmed();
+        } else if (!entry.project.isEmpty() && entry.project.toInt() > 0) {
+            // 纯数字只可能是 CurseForge 的 modId
+            entry.provider = QString::fromLatin1(modprovider::CURSEFORGE);
+        }
+
         if (!entry.project.isEmpty())
             preset.mods.append(entry);
     }
