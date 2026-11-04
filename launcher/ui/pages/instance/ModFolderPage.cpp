@@ -82,7 +82,8 @@ ModFolderPage::ModFolderPage(MinecraftInstance* inst, ModFolderModel* model, QWi
     connect(m_ui->actionDownloadItem, &QAction::triggered, this, &ModFolderPage::downloadMods);
 
     // 地图启动器：一组常用模组一次装好，版本按本实例现查（详见 maps/ModPresetDialog）
-    auto* presetAction = new QAction(QIcon::fromTheme(QStringLiteral("loadermods")), tr("模组预设…"), this);
+    // 不配图标：侧栏是纯文字按钮，别自作主张塞一个不相关的主题图标
+    auto* presetAction = new QAction(tr("模组预设…"), this);
     presetAction->setToolTip(tr("一次装好一组常用模组（按本实例的版本与加载器自动选文件）"));
     connect(presetAction, &QAction::triggered, this, [this] { maps::ModPresetDialog::run(m_instance, this); });
     m_ui->actionsToolbar->insertActionBefore(m_ui->actionAddItem, presetAction);

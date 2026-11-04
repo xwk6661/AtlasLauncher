@@ -19,6 +19,7 @@
 
 #include <QDialog>
 #include <QList>
+#include <QSet>
 
 #include "ModPresets.h"
 
@@ -57,6 +58,11 @@ class ModPresetDialog : public QDialog {
     void startResolve();
     void rebuildTable(bool resolving);
     void refreshRow(int index);
+    /// 主条目勾选状态变化时，连带它的依赖（递归）
+    void setDependentsChecked(const QString& key, bool checked, QSet<QString>& visited);
+    /// 读实例现有的 mods，按 (provider, projectId/slug) 建索引
+    void collectInstalled();
+    bool isInstalled(const ModPresetEntry& entry, const ModPresetResolution& result) const;
     void updateSummary();
     void install();
     void editPresets();
@@ -82,6 +88,12 @@ class ModPresetDialog : public QDialog {
     QPushButton* m_selectNone = nullptr;
 
     ModPresetResolveTask* m_task = nullptr;
+    /// 已安装模组的键：`provider:projectId` 与 `provider:slug`
+    QSet<QString> m_installed;
+    /// 已安装模组的显示名（小写）：同一个模组在 Modrinth / CurseForge 两边用不同 id 发布时按名字认
+    QSet<QString> m_installedNames;
+    /// 批量改动勾选时挡住 itemChanged，避免自己触发自己
+    bool m_syncingChecks = false;
     /// 切换预设时递增，旧任务迟到的信号直接丢掉
     int m_generation = 0;
 };

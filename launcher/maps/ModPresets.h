@@ -99,6 +99,8 @@ struct ModPresetResolution {
     bool dependency = false;
     /// 依赖方显示名（"Fabric API" / "Sodium"）
     QString requiredBy;
+    /// 依赖方的唯一键（provider:project），用于"取消主条目时连带取消依赖"
+    QString requiredByKey;
     QString error;
     QString packName;
     /// 平台简介（预设没写 note 时用来填「说明」列）
@@ -152,7 +154,7 @@ class ModPresetResolveTask : public Task {
     void applyEnriched(const QByteArray& data, const QString& providerName);
 
     void enqueueDependency(const QString& provider, const QString& project, const QString& requiredBy,
-                           const QString& nameHint);
+                           const QString& requiredByKey, const QString& nameHint);
 
     QList<Pending> m_pending;
     QList<ModPresetResolution> m_results;
@@ -189,6 +191,9 @@ class ModSearchTask : public Task {
     ModSearchTask(QString provider, QString query, QString gameVersion, QString loader, QObject* parent = nullptr);
 
     const QList<ModSearchHit>& hits() const { return m_hits; }
+
+    /// 纯解析（不联网）：两个平台的搜索响应结构不一样，单独抽出来方便单测
+    static QList<ModSearchHit> parseHits(const QString& provider, const QByteArray& data);
 
     void executeTask() override;
 

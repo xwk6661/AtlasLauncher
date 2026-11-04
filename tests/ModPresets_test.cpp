@@ -69,6 +69,43 @@ class ModPresetsTest : public QObject {
         QTest::newRow("forge not fabric") << "forge" << "fabric" << false;
     }
 
+    void searchHits_data()
+    {
+        QTest::addColumn<QString>("provider");
+        QTest::addColumn<QByteArray>("payload");
+        QTest::addColumn<int>("rows");
+
+        // Modrinth 的 /v2/search 返回 { hits: [...] }，不是裸数组 —— 这里专门钉住这个结构
+        QTest::newRow("modrinth") << "modrinth"
+                                  << QByteArray(R"({"hits":[{"project_id":"AABB","slug":"sodium","title":"Sodium","description":"rendering","author":"jelly","downloads":1234}],"offset":0,"limit":10,"total_hits":1})")
+                                  << 1;
+
+        QTest::newRow("modrinth empty") << "modrinth"
+                                        << QByteArray(R"({"hits":[],"offset":0,"limit":10,"total_hits":0})") << 0;
+
+        // CurseForge 返回 { data: [...] }
+        QTest::newRow("curseforge") << "curseforge"
+                                    << QByteArray(R"({"data":[{"id":394468,"name":"Sodium","summary":"rendering","downloadCount":999,"authors":[{"name":"jelly"}]}]})")
+                                    << 1;
+    }
+
+    void searchHits()
+    {
+        QFETCH(QString, provider);
+        QFETCH(QByteArray, payload);
+        QFETCH(int, rows);
+
+        const auto hits = maps::ModSearchTask::parseHits(provider, payload);
+        QCOMPARE(hits.size(), rows);
+        if (rows == 0)
+            return;
+
+        QCOMPARE(hits.first().provider, provider);
+        QVERIFY(!hits.first().project.isEmpty());
+        QVERIFY(!hits.first().name.isEmpty());
+        QVERIFY(!hits.first().author.isEmpty());
+    }
+
     void loaderMatching()
     {
         QFETCH(QString, presetLoader);

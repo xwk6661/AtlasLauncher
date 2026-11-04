@@ -19,6 +19,8 @@
 
 #include "ModSearchDialog.h"
 
+#include "modplatform/packwiz/Packwiz.h"
+
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QHBoxLayout>
@@ -139,6 +141,7 @@ ModPresetDialog::ModPresetDialog(MinecraftInstance* instance, QWidget* parent) :
     setWindowTitle(tr("模组预设"));
     resize(640, 520);
     buildUi();
+    collectInstalled();
     reloadPresets();
 }
 
@@ -216,6 +219,20 @@ void ModPresetDialog::buildUi()
     connect(m_installButton, &QPushButton::clicked, this, &ModPresetDialog::install);
     actionRow->addWidget(m_installButton);
     layout->addLayout(actionRow);
+
+    connect(m_table, &QTableWidget::itemChanged, this, [this](QTableWidgetItem* item) {
+        if (m_syncingChecks || item == nullptr || item->column() != 0)
+            return;
+        const int row = item->row();
+        if (row < 0 || row >= m_results.size())
+            return;
+
+        m_syncingChecks = true;
+        QSet<QString> visited;
+        setDependentsChecked(m_results.at(row).entry.key(), item->checkState() == Qt::Checked, visited);
+        m_syncingChecks = false;
+        updateSummary();
+    });
 
     connect(m_presetCombo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, [this](int) { startResolve(); });
 }
@@ -318,6 +335,8 @@ void ModPresetDialog::startResolve()
 
 void ModPresetDialog::rebuildTable(bool resolving)
 {
+    m_syncingChecks = true;
+
     // 记住用户手动改过的勾选：重建时不能把人刚取消的又勾回去
     QList<int> previousStates;
     for (int row = 0; row < m_table->rowCount(); ++row) {
@@ -329,12 +348,16 @@ void ModPresetDialog::rebuildTable(bool resolving)
     for (int row = 0; row < m_results.size(); ++row) {
         const auto& result = m_results.at(row);
         const auto& entry = result.entry;
+        const bool installed = isInstalled(entry, result);
 
         auto* check = new QTableWidgetItem();
         check->setFlags((check->flags() | Qt::ItemIsUserCheckable) & ~Qt::ItemIsEditable);
         const int previous = row < previousStates.size() ? previousStates.at(row) : -1;
-        check->setCheckState(previous >= 0 ? static_cast<Qt::CheckState>(previous)
-                                          : (entry.enabled ? Qt::Checked : Qt::Unchecked));
+        bool checked = previous >= 0 ? previous == static_cast<int>(Qt::Checked) : entry.enabled;
+        // 已经装过的默认不勾：预设是"补齐"，不是"重装一遍"
+        if (installed && (previous < 0 || resolving))
+            checked = false;
+        check->setCheckState(checked ? Qt::Checked : Qt::Unchecked);
         m_table->setItem(row, 0, check);
 
         QString name = result.packName;
@@ -344,6 +367,8 @@ void ModPresetDialog::rebuildTable(bool resolving)
             name = entry.project;
         if (result.dependency)
             name += tr("（依赖）");
+        if (installed)
+            name += tr("（已安装）");
         auto* nameItem = new QTableWidgetItem(name);
         nameItem->setToolTip(entry.project);
         m_table->setItem(row, 1, nameItem);
@@ -360,7 +385,10 @@ void ModPresetDialog::rebuildTable(bool resolving)
         m_table->setItem(row, 2, noteItem);
 
         auto* version = new QTableWidgetItem();
-        if (result.ok) {
+        if (installed) {
+            version->setText(tr("已安装 %1").arg(result.versionLabel.isEmpty() ? entry.project : result.versionLabel));
+            version->setToolTip(result.packName);
+        } else if (result.ok) {
             version->setText(result.versionLabel);
             version->setToolTip(result.packName);
         } else if (result.error.isEmpty()) {
@@ -375,7 +403,79 @@ void ModPresetDialog::rebuildTable(bool resolving)
         m_table->setItem(row, 3, version);
     }
 
+    m_syncingChecks = false;
     updateSummary();
+}
+
+void ModPresetDialog::setDependentsChecked(const QString& key, bool checked, QSet<QString>& visited)
+{
+    const Qt::CheckState state = checked ? Qt::Checked : Qt::Unchecked;
+    for (int row = 0; row < m_results.size(); ++row) {
+        if (m_results.at(row).requiredByKey != key)
+            continue;
+
+        auto* item = m_table->item(row, 0);
+        if (item != nullptr && item->checkState() != state)
+            item->setCheckState(state);
+
+        const QString child = m_results.at(row).entry.key();
+        if (visited.contains(child))
+            continue;
+        visited.insert(child);
+        setDependentsChecked(child, checked, visited);
+    }
+}
+
+void ModPresetDialog::collectInstalled()
+{
+    m_installed.clear();
+    m_installedNames.clear();
+
+    auto* mods = m_instance != nullptr ? m_instance->loaderModList() : nullptr;
+    if (mods == nullptr)
+        return;
+
+    // 直接读 mods/.index 里的 pw.toml，而不是 ResourceFolderModel 的内存元数据：
+    // 模型是异步解析的，刚打开的实例里 metadata() 可能还是空的，那样"已安装"永远标不出来。
+    const QDir indexDir(FS::PathCombine(mods->dir().absolutePath(), QStringLiteral(".index")));
+    if (!indexDir.exists())
+        return;
+
+    const auto files = indexDir.entryList({ QStringLiteral("*.pw.toml") }, QDir::Files);
+    for (const auto& name : files) {
+        QString stem = name;
+        stem.remove(QStringLiteral(".pw.toml"));
+
+        const auto mod = Packwiz::V1::getIndexForMod(indexDir, stem);
+        const QString provider = mod.provider == ModPlatform::ResourceProvider::FLAME
+                                     ? QString::fromLatin1(modprovider::CURSEFORGE)
+                                     : QString::fromLatin1(modprovider::MODRINTH);
+        const QString prefix = provider + QLatin1Char(':');
+
+        if (!mod.projectId.toString().isEmpty())
+            m_installed.insert(prefix + mod.projectId.toString());
+        if (!mod.slug.isEmpty())
+            m_installed.insert(prefix + mod.slug);
+        m_installed.insert(prefix + stem);
+
+        if (!mod.name.isEmpty())
+            m_installedNames.insert(mod.name.trimmed().toLower());
+    }
+}
+
+bool ModPresetDialog::isInstalled(const ModPresetEntry& entry, const ModPresetResolution& result) const
+{
+    const QString prefix = entry.provider + QLatin1Char(':');
+    if (m_installed.contains(prefix + entry.project))
+        return true;
+    if (result.pack != nullptr && !result.pack->addonId.isNull() &&
+        m_installed.contains(prefix + result.pack->addonId.toString()))
+        return true;
+
+    // 跨平台兜底：同一个模组常常两边都发（Sodium 在 Modrinth 是 slug，在 CurseForge 是 394468），
+    // 严格按 provider:id 会漏掉，按名字再认一次
+    const QString name = !result.packName.isEmpty() ? result.packName : entry.name;
+    return !name.isEmpty() && m_installedNames.contains(name.trimmed().toLower());
 }
 
 void ModPresetDialog::refreshRow(int index)
@@ -394,7 +494,8 @@ void ModPresetDialog::refreshRow(int index)
         return;
 
     if (result.ok) {
-        version->setText(result.versionLabel);
+        version->setText(isInstalled(result.entry, result) ? tr("已安装 %1").arg(result.versionLabel)
+                                                           : result.versionLabel);
         version->setFlags(version->flags() | Qt::ItemIsEnabled);
         version->setToolTip(result.packName);
     } else if (!result.error.isEmpty()) {

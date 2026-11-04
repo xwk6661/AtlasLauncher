@@ -468,7 +468,8 @@ void ModPresetResolveTask::parseModrinth(int index, const QByteArray& data)
     for (const auto& dependency : chosen->dependencies) {
         if (dependency.type != ModPlatform::DependencyType::REQUIRED)
             continue;
-        enqueueDependency(QString::fromLatin1(modprovider::MODRINTH), dependency.addonId.toString(), pack->name, {});
+        enqueueDependency(QString::fromLatin1(modprovider::MODRINTH), dependency.addonId.toString(), pack->name,
+                          result.entry.key(), {});
     }
 }
 
@@ -536,12 +537,13 @@ void ModPresetResolveTask::parseCurseForge(int index, const QByteArray& data)
     for (const auto& dependency : chosen->dependencies) {
         if (dependency.type != ModPlatform::DependencyType::REQUIRED)
             continue;
-        enqueueDependency(QString::fromLatin1(modprovider::CURSEFORGE), dependency.addonId.toString(), pack->name, {});
+        enqueueDependency(QString::fromLatin1(modprovider::CURSEFORGE), dependency.addonId.toString(), pack->name,
+                          result.entry.key(), {});
     }
 }
 
 void ModPresetResolveTask::enqueueDependency(const QString& provider, const QString& project, const QString& requiredBy,
-                                             const QString& nameHint)
+                                             const QString& requiredByKey, const QString& nameHint)
 {
     if (project.isEmpty())
         return;
@@ -565,6 +567,7 @@ void ModPresetResolveTask::enqueueDependency(const QString& provider, const QStr
     placeholder.entry = pending.entry;
     placeholder.dependency = true;
     placeholder.requiredBy = requiredBy;
+    placeholder.requiredByKey = requiredByKey;
     m_results.append(placeholder);
 
     emit dependencyAdded(m_results.size() - 1);
@@ -671,6 +674,7 @@ void ModPresetResolveTask::applyEnriched(const QByteArray& data, const QString& 
         return;
 
     const bool curse = providerName == QLatin1String(modprovider::CURSEFORGE);
+    // Modrinth 的 /projects?ids=... 直接返回数组，CurseForge 的 /mods 返回 { data: [...] }
     const QJsonArray rows = curse ? document->object().value(QStringLiteral("data")).toArray() : document->array();
 
     for (const auto& value : rows) {
@@ -769,17 +773,27 @@ void ModSearchTask::executeTask()
 
 void ModSearchTask::parse(const QByteArray& data)
 {
+    m_hits = parseHits(m_provider, data);
+}
+
+QList<ModSearchHit> ModSearchTask::parseHits(const QString& provider, const QByteArray& data)
+{
+    QList<ModSearchHit> hits;
+
     auto document = Json::requireDocument(data, QStringLiteral("search"));
     if (!document)
-        return;
+        return hits;
 
-    const bool curse = m_provider == QLatin1String(modprovider::CURSEFORGE);
-    const QJsonArray rows = curse ? document->object().value(QStringLiteral("data")).toArray() : document->array();
+    const bool curse = provider == QLatin1String(modprovider::CURSEFORGE);
+    // Modrinth 的 /v2/search 返回 { hits: [...] }，不是裸数组；
+    // CurseForge 的 /v1/mods/search 返回 { data: [...] }
+    const QJsonArray rows = curse ? document->object().value(QStringLiteral("data")).toArray()
+                                  : document->object().value(QStringLiteral("hits")).toArray();
 
     for (const auto& value : rows) {
         const auto row = value.toObject();
         ModSearchHit hit;
-        hit.provider = m_provider;
+        hit.provider = provider;
         if (curse) {
             hit.project = QString::number(row.value(QStringLiteral("id")).toInt());
             hit.name = textOr(row.value(QStringLiteral("name")));
@@ -796,8 +810,9 @@ void ModSearchTask::parse(const QByteArray& data)
             hit.downloads = static_cast<qint64>(row.value(QStringLiteral("downloads")).toDouble());
         }
         if (!hit.project.isEmpty())
-            m_hits.append(hit);
+            hits.append(hit);
     }
+    return hits;
 }
 
 }  // namespace maps
