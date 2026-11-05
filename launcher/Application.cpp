@@ -2145,6 +2145,13 @@ bool Application::handleDataMigration(const QString& currentData, const QString&
         filters.append(startsWith("libraries/"));
         filters.append(startsWith("mods/"));
         filters.append(startsWith("themes/"));
+        // 少了这三样，「搬完」等于资源库只搬了一半：
+        // meta/ 是版本与索引的 json（缺了要重新拉），
+        // metacache 是「哪些库文件已经下过」的账本（缺了 libraries/ 会被整份重下），
+        // java/ 是解压好的运行时（缺了要重下 ~500 MB）。
+        filters.append(startsWith("meta/"));
+        filters.append(startsWith("java/"));
+        filters.append(equals("metacache"));
 
         ProgressDialog diag;
         DataMigrationTask task(oldData, currentData, any(std::move(filters)));

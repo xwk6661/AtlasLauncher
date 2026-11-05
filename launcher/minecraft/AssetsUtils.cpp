@@ -283,7 +283,10 @@ Net::Request::Ptr AssetObject::getDownloadAction() const
 
 QString AssetObject::getLocalPath() const
 {
-    return "assets/objects/" + getRelPath();
+    // 必须走 resource::assetsDir()。以前这里是硬编码的相对路径 "assets/objects/..."，
+    // 没设「共享资源目录」时等价；一旦设了，indexes 与启动参数（assets_root）都指向共享目录，
+    // 只有 objects 还落在数据目录 —— 结果是素材一遍遍重下、游戏却找不到。
+    return FS::PathCombine(resource::assetsDir(), "objects", getRelPath());
 }
 
 QUrl AssetObject::getUrl() const
