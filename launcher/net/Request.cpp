@@ -105,6 +105,35 @@ Request::Request(const Spec& spec) : m_options(spec.options), m_url(spec.url), m
 
     // 连响应头都没见到就干等着，是官方域最常见的失败形态：不报错、不断开、也不回包。
     // 传输超时要等满 RequestTimeout（60 秒），对这种"死连接"太慢（06 §37）。
+    // 吞吐看门狗：连续两个 10 秒窗口都低于 15 KB/s 就换一条连接重试。
+    // 换过源（官方↔镜像）之后不再打断，避免在慢速网络上反复放弃。
+    connect(&m_speedTimer, &QTimer::timeout, this, [this] {
+        if (m_parallel || m_reply == nullptr || m_state != State::Running)
+            return;
+        if (m_slowAborts >= MAX_SLOW_ABORTS || m_fellBackToOfficial || m_fellBackToMirror)
+            return;
+
+        const qint64 received = m_bytesThisAttempt;
+        const qint64 delta = received - m_lastSpeedBytes;
+        m_lastSpeedBytes = received;
+
+        if (delta >= MIN_SPEED_BYTES_PER_WINDOW) {
+            m_slowTicks = 0;
+            return;
+        }
+
+        if (++m_slowTicks < 2)
+            return;
+
+        const double kbps = double(delta) / (SPEED_WINDOW_MS / 1000.0) / 1024.0;
+        qCWarning(m_logCat) << getUid().toString() << "Download is crawling at" << QString::number(kbps, 'f', 1)
+                            << "KB/s, dropping this connection:" << m_url.toString();
+        m_slowTicks = 0;
+        m_slowAborts++;
+        m_stalled = true;
+        m_reply->abort();
+    });
+
     connect(&m_noResponseTimer, &QTimer::timeout, this, [this] {
         if (m_gotAnyResponse || m_reply == nullptr || m_state != State::Running)
             return;
@@ -288,10 +317,17 @@ void Request::executeTask()
     m_gotAnyResponse = false;
     if (m_transferTimeoutMs > 0)
         m_noResponseTimer.start(qMin(m_transferTimeoutMs, NO_RESPONSE_TIMEOUT_MS));
+
+    m_bytesThisAttempt = 0;
+    m_lastSpeedBytes = 0;
+    m_slowTicks = 0;
+    m_speedTimer.start(SPEED_WINDOW_MS);
 }
 
 void Request::onProgress(qint64 bytesReceived, qint64 bytesTotal)
 {
+    m_bytesThisAttempt = bytesReceived;
+
     // 续传时 Qt 只报"这一段"的进度，把前缀加回去才是文件整体进度
     if (m_resumeOffset > 0) {
         bytesReceived += m_resumeOffset;
@@ -567,6 +603,13 @@ auto Request::tryNetworkRetry(QNetworkReply::NetworkError error) -> bool
     m_errorResponse.clear();
     m_stalled = false;
     m_rangeOutOfBounds = false;
+    // 这一轮结束了：两个看门狗都停掉，等 executeTask 重新起表，
+    // 否则计时器会把上一轮的"慢"算到下一轮头上。
+    m_noResponseTimer.stop();
+    m_speedTimer.stop();
+    m_slowTicks = 0;
+    m_lastSpeedBytes = 0;
+    m_bytesThisAttempt = 0;
     setProgress(0, 0);
     if (m_fellBackToOfficial)
         setStatus(tr("下载源不可用，已改用官方源重试"));
@@ -948,6 +991,7 @@ auto Request::isParallel() const -> bool
 void Request::downloadFinished()
 {
     m_noResponseTimer.stop();
+    m_speedTimer.stop();
     // currently waiting for retry
     if (m_retryTimer.isActive()) {
         return;
@@ -1069,6 +1113,7 @@ auto Request::abort() -> bool
     m_retryTimer.stop();
     m_networkRetryTimer.stop();
     m_noResponseTimer.stop();
+    m_speedTimer.stop();
     abortParallel();
     m_state = State::AbortedByUser;
     if (m_reply && !m_reply->isFinished()) {

@@ -309,6 +309,26 @@ class Request : public Task {
     QTimer m_noResponseTimer;
     bool m_gotAnyResponse = false;
 
+    /**
+     * "在爬"的看门狗：服务器回包了、也一直在给数据，但只有 20 KB/s。
+     *
+     * 传输超时只认"完全没数据"，对这种龟速毫无办法 —— 实测一个 17.5 MB 的 client.jar
+     * 以 ~20 KB/s 爬了 278 秒才被服务器关掉，界面看起来就是卡死（06 §38）。
+     * 这里按"每 10 秒收了多少字节"判定，连续两个窗口低于阈值就放弃这次尝试
+     * （有断点续传，换一条连接重试几乎不亏）。
+     *
+     * 只在"还没换过源"时启用：两个源都试过了就不再打断，宁可慢也让它下完。
+     */
+    static constexpr int SPEED_WINDOW_MS = 10000;
+    static constexpr qint64 MIN_SPEED_BYTES_PER_WINDOW = 150 * 1024;  // ≈15 KB/s
+    static constexpr int MAX_SLOW_ABORTS = 3;
+    QTimer m_speedTimer;
+    /// 本次尝试收到的字节（来自 downloadProgress，不含续传前缀）
+    qint64 m_bytesThisAttempt = 0;
+    qint64 m_lastSpeedBytes = 0;
+    int m_slowTicks = 0;
+    int m_slowAborts = 0;
+
     /// 服务端回了 416（Range 越界）：说明 .part 已经不小于文件长度，必须丢掉重来
     bool m_rangeOutOfBounds = false;
     /// 已经因为"官方不行"回落到镜像了（防止在官方/镜像之间来回绕）
