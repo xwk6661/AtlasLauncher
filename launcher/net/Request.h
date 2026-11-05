@@ -123,7 +123,10 @@ class Request : public Task {
     static constexpr int MAX_NETWORK_RETRIES = 3;
 
     /// 小于这个大小的文件不值得拆段（拆段的收益来自"每条连接被限速"，小文件本来就快）
-    static constexpr qint64 PARALLEL_MIN_SIZE = 1 << 20;
+    /// 超过这个大小才值得拆段。1 MB 的库拆成 8 条连接纯粹是浪费：
+    /// 每条都要 TLS 握手，还把一个本来 1 秒的文件摊成 8 个请求（实测 60 个小库
+    /// 就是这样把连接数打到 190+ 的）。4 MB 以上（client jar、fastutil 这类）才拆。
+    static constexpr qint64 PARALLEL_MIN_SIZE = 4 << 20;
 
     /**
      * 单个文件拆成几个并发 Range 请求。
@@ -215,10 +218,18 @@ class Request : public Task {
         qint64 end = 0;  // 含端点
         qint64 received = 0;
         int attempts = 0;
+        /// 上一次重试时的 received：用来判断这一片是不是"试了但一个字节都没进来"
+        qint64 lastAttemptReceived = 0;
+        int zeroProgress = 0;
         bool done = false;
     };
     /// 单个分片最多试几次（网络抖一下不该拖垮整个文件；分片会从断点续，所以多试几次很便宜）
     static constexpr int MAX_CHUNK_ATTEMPTS = 6;
+    /// 连续几次"一个字节都没收到"就放弃分片、退回单连接。
+    ///
+    /// 有的主机（实测 piston-data 的 client.jar）会对某一段持续不理人：每 60 秒传输超时一次、
+    /// 重试还是同一个偏移、依旧零字节。硬试满 6 次就是 6 分钟白等，所以要早点认输。
+    static constexpr int MAX_ZERO_PROGRESS_ATTEMPTS = 2;
     qint64 chunkExpected() const { return m_totalBytes; }
     void tryStartParallel();
     /// 按偏移写（分段模式）。sink 不是 FileSink 时退回顺序写。

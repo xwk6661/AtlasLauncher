@@ -144,9 +144,19 @@ void Request::executeTask()
 
     setStatus(tr("Requesting %1").arg(StringUtils::truncateUrlHumanFriendly(m_url, 80)));
 
+    const bool isFileDownload = m_sink && dynamic_cast<FileSink*>(m_sink.get()) != nullptr;
+
     if (Net::DownloadSource::isMirror(m_url)) {
         // 镜像走直连：启动器的代理设置对 BMCLAPI 的 302 节点通常是帮倒忙
         m_network = Net::DownloadSource::directNetwork();
+#ifdef LAUNCHER_APPLICATION
+    } else if (auto* app = APPLICATION_DYN; app && isFileDownload) {
+        // 文件下载**总是**走连接池，哪怕 NetJob 已经塞了一个 QNAM 进来。
+        // 这里曾经只在 m_network == nullptr 时才挑池子，而 NetJob::addNetAction()
+        // 对每个请求都 setNetwork(APPLICATION->network()) —— 于是池子永远用不上，
+        // 所有下载仍然挤在一个 QNAM 的 6 条连接里（06 §35）。
+        m_network = app->downloadNetwork();
+#endif
     } else if (m_network == nullptr) {
 #ifdef LAUNCHER_APPLICATION
         // 用 dynamic_cast 而不是 APPLICATION（static_cast）：单测里 qApp 是个普通
@@ -155,7 +165,7 @@ void Request::executeTask()
             // 文件下载轮转用 QNAM 池：一个 QNAM 每主机只有 6 条连接，
             // 池子才能把"并发文件数"真正变成"并发连接数"（见 Application::downloadNetwork）。
             // JSON/API 请求留在主 QNAM，避免把会话/cookie 打散。
-            m_network = dynamic_cast<FileSink*>(m_sink.get()) != nullptr ? app->downloadNetwork() : app->network();
+            m_network = isFileDownload ? app->downloadNetwork() : app->network();
         } else {
             qCCritical(m_logCat) << getUid().toString() << "No network manager set for request:" << m_url.toString();
             emitFailed("No network manager set for request");
@@ -183,7 +193,7 @@ void Request::executeTask()
     // 零字节那条被传输超时掐掉，任务就整体失败。
     // h1.1 下每个文件一条独立连接，一个连接被掐不会连累其他文件。
     // 只对"写文件"的请求生效：JSON / API 请求继续用 h2，多路复用对它们是赚的。
-    if (m_sink && dynamic_cast<FileSink*>(m_sink.get()) != nullptr)
+    if (isFileDownload)
         request.setAttribute(QNetworkRequest::Http2AllowedAttribute, false);
 
     auto result = m_sink->init(request);
@@ -716,6 +726,18 @@ void Request::retryChunk(int index)
         qCWarning(m_logCat) << getUid().toString() << "Range" << index << "gave up after" << chunk.attempts << "attempts";
         m_chunkFailed = true;
         maybeFinishParallel();
+        return;
+    }
+
+    // 一点进展都没有的尝试：同一偏移再来一次几乎注定还是空手而归，早点改走单连接。
+    if (chunk.received == chunk.lastAttemptReceived)
+        chunk.zeroProgress++;
+    chunk.lastAttemptReceived = chunk.received;
+
+    if (chunk.zeroProgress >= MAX_ZERO_PROGRESS_ATTEMPTS) {
+        qCWarning(m_logCat) << getUid().toString() << "Range" << index << "made no progress in" << chunk.zeroProgress
+                            << "attempts, giving up on chunking";
+        failParallelAndFallBack();
         return;
     }
 

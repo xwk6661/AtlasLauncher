@@ -100,6 +100,9 @@
 #include "ui/dialogs/CopyInstanceDialog.h"
 #include "ui/dialogs/CreateShortcutDialog.h"
 #include "ui/dialogs/CustomMessageBox.h"
+#ifndef NDEBUG
+#include "ui/dialogs/DownloadAllVersionsDialog.h"
+#endif
 
 #include "maps/HallAPI.h"
 #include "maps/HallCache.h"
@@ -488,6 +491,16 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
     view->setFocus();
 
     retranslateUi();
+
+#ifndef NDEBUG
+    // 调试用（后续删除）：PRISM_DEBUG_DOWNLOAD_ALL=1 启动即打开"下载全部正式版资源"并开始，
+    // 免得在没有鼠标的环境里点不到设置页里那个按钮。
+    if (qEnvironmentVariableIsSet("PRISM_DEBUG_DOWNLOAD_ALL")) {
+        auto* dialog = new DownloadAllVersionsDialog(this);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        dialog->show();
+    }
+#endif
 }
 
 // macOS always has a native menu bar, so these fixes are not applicable

@@ -58,6 +58,12 @@
 #include <QApplication>
 #include <QProcess>
 
+#ifndef NDEBUG
+#include <QGridLayout>
+#include <QPushButton>
+#include "ui/dialogs/DownloadAllVersionsDialog.h"
+#endif
+
 // FIXME: possibly move elsewhere
 enum InstSortMode {
     // Sort alphabetically by name.
@@ -79,6 +85,22 @@ LauncherPage::LauncherPage(QWidget* parent) : QWidget(parent), ui(new Ui::Launch
     loadSettings();
 
     ui->updateSettingsBox->setHidden(!APPLICATION->updater());
+
+#ifndef NDEBUG
+    // 调试用（后续删除）：把所有正式版的公共资源下载到当前数据目录，
+    // 拿真实流量压一下下载栈（去重、重试、连接池、分片都在这条路上）。
+    {
+        auto* button = new QPushButton(tr("下载全部正式版资源（调试）"), this);
+        button->setToolTip(tr("调试功能：遍历版本清单里所有正式版，下载客户端 / 库 / 素材。已存在的会自动跳过。"));
+        if (auto* grid = qobject_cast<QGridLayout*>(ui->tasksBox->layout()))
+            grid->addWidget(button, 5, 0, 1, 2);
+        connect(button, &QPushButton::clicked, this, [this] {
+            auto* dialog = new DownloadAllVersionsDialog(window());
+            dialog->setAttribute(Qt::WA_DeleteOnClose);
+            dialog->show();
+        });
+    }
+#endif
 }
 
 LauncherPage::~LauncherPage()

@@ -1140,6 +1140,8 @@ SET(LAUNCHER_SOURCES
     ui/dialogs/MSALoginDialog.h
     ui/dialogs/DownloadSourceTestDialog.cpp
     ui/dialogs/DownloadSourceTestDialog.h
+    ui/dialogs/DownloadAllVersionsDialog.cpp
+    ui/dialogs/DownloadAllVersionsDialog.h
     ui/dialogs/NetworkJobFailedDialog.cpp
     ui/dialogs/NetworkJobFailedDialog.h
     ui/dialogs/NewComponentDialog.cpp
