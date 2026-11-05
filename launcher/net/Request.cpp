@@ -103,6 +103,17 @@ Request::Request(const Spec& spec) : m_options(spec.options), m_url(spec.url), m
     connect(&m_retryTimer, &QTimer::timeout, this, &Request::executeTask);
     connect(&m_networkRetryTimer, &QTimer::timeout, this, &Request::executeTask);
 
+    // 连响应头都没见到就干等着，是官方域最常见的失败形态：不报错、不断开、也不回包。
+    // 传输超时要等满 RequestTimeout（60 秒），对这种"死连接"太慢（06 §37）。
+    connect(&m_noResponseTimer, &QTimer::timeout, this, [this] {
+        if (m_gotAnyResponse || m_reply == nullptr || m_state != State::Running)
+            return;
+        qCWarning(m_logCat) << getUid().toString() << "No response in" << NO_RESPONSE_TIMEOUT_MS / 1000
+                            << "seconds, aborting this attempt:" << m_url.toString();
+        m_stalled = true;
+        m_reply->abort();
+    });
+
     if (spec.name.isEmpty()) {
         setObjectName(QString("BYTES:") + m_url.toString());
     } else {
@@ -272,6 +283,11 @@ void Request::executeTask()
     connect(rep, &QNetworkReply::readyRead, this, &Request::downloadReadyRead);
     // 头一到就知道文件多大，够大就切成分段并发（见 tryStartParallel）
     connect(rep, &QNetworkReply::metaDataChanged, this, &Request::tryStartParallel);
+    connect(rep, &QNetworkReply::metaDataChanged, this, &Request::onFirstResponse);
+
+    m_gotAnyResponse = false;
+    if (m_transferTimeoutMs > 0)
+        m_noResponseTimer.start(qMin(m_transferTimeoutMs, NO_RESPONSE_TIMEOUT_MS));
 }
 
 void Request::onProgress(qint64 bytesReceived, qint64 bytesTotal)
@@ -322,6 +338,13 @@ void Request::downloadError(QNetworkReply::NetworkError error)
         // 否则弱网/被限速时每个大文件都会在 60 秒整点被杀，任务整体失败（见 06 §30）。
         m_stalled = true;
         qCWarning(m_logCat) << getUid().toString() << "Network stalled (no data for the transfer timeout):" << m_url.toString();
+        m_state = State::Failed;
+    } else if (replyStatusCode() == 416 && m_sink->supportsResume()) {
+        // Range 越界：说明 .part 已经不小于文件长度（常见于"下完了但没来得及收尾"）。
+        // 丢掉半截重来，否则每次重试都 416，永远卡死（06 §37）。
+        qCWarning(m_logCat) << getUid().toString() << "Range not satisfiable, discarding the partial file:" << m_url.toString();
+        m_sink->restartFromZero();
+        m_rangeOutOfBounds = true;
         m_state = State::Failed;
     } else if (replyStatusCode() == 429 /* HTTP Too Many Requests*/ && m_options.testFlag(Option::AutoRetry)) {
         qCDebug(m_logCat) << getUid().toString() << "Rate Limited!";
@@ -496,24 +519,38 @@ auto Request::tryNetworkRetry(QNetworkReply::NetworkError error) -> bool
     if (m_options.testFlag(Option::NoAutoRetry))
         return false;
 
-    const bool retryable = m_stalled || isRetryableNetworkError(error, replyStatusCode());
+    const bool retryable = m_stalled || m_rangeOutOfBounds || isRetryableNetworkError(error, replyStatusCode());
     if (!retryable)
         return false;
 
     const bool budgetLeft = m_networkRetryCount < MAX_NETWORK_RETRIES;
-    const bool canFallBack = !budgetLeft && shouldFallBackToOfficial(m_retryBaseUrl, m_officialUrl, m_fellBackToOfficial);
 
-    if (!budgetLeft && !canFallBack)
+    // 两个方向各只走一次，不会绕圈：镜像用满 → 官方；官方用满 → 镜像。
+    // 后者是 2026-11-05 加的：官方 piston-meta 会"不回包也不断开"，
+    // 用户选了官方源时等于毫无退路（06 §37）。
+    const QUrl mirrorCandidate = Net::DownloadSource::mapToMirror(m_officialUrl);
+    const bool canFallBackToMirror = !budgetLeft && !m_fellBackToMirror && !m_fellBackToOfficial &&
+                                     !Net::DownloadSource::isMirror(m_retryBaseUrl) && !mirrorCandidate.isEmpty() &&
+                                     mirrorCandidate != m_officialUrl;
+    const bool canFallBackToOfficial =
+        !budgetLeft && !m_fellBackToMirror && shouldFallBackToOfficial(m_retryBaseUrl, m_officialUrl, m_fellBackToOfficial);
+
+    if (!budgetLeft && !canFallBackToOfficial && !canFallBackToMirror)
         return false;
 
-    m_networkRetryCount++;
-
-    if (!budgetLeft && canFallBack) {
+    if (!budgetLeft && canFallBackToOfficial) {
         m_fellBackToOfficial = true;
         m_retryBaseUrl = m_officialUrl;
         qCWarning(m_logCat) << getUid().toString() << "Mirror gave up after" << MAX_NETWORK_RETRIES
                             << "attempts - falling back to the official source:" << m_retryBaseUrl.toString();
+    } else if (!budgetLeft && canFallBackToMirror) {
+        m_fellBackToMirror = true;
+        m_networkRetryCount = 0;  // 给镜像一整轮预算
+        m_retryBaseUrl = mirrorCandidate;
+        qCWarning(m_logCat) << getUid().toString() << "Official source failed" << MAX_NETWORK_RETRIES
+                            << "times - falling back to the mirror:" << m_retryBaseUrl.toString();
     } else {
+        m_networkRetryCount++;
         qCWarning(m_logCat) << getUid().toString() << "Request failed:" << m_url.toString() << "(" << errorString() << ")"
                             << (m_stalled ? "- network stalled, retrying" : "- retrying") << "from" << m_retryBaseUrl.toString()
                             << QString("(%1/%2)").arg(m_networkRetryCount).arg(MAX_NETWORK_RETRIES);
@@ -529,9 +566,12 @@ auto Request::tryNetworkRetry(QNetworkReply::NetworkError error) -> bool
     m_redirectCount = 0;
     m_errorResponse.clear();
     m_stalled = false;
+    m_rangeOutOfBounds = false;
     setProgress(0, 0);
     if (m_fellBackToOfficial)
         setStatus(tr("下载源不可用，已改用官方源重试"));
+    else if (m_fellBackToMirror)
+        setStatus(tr("官方源长时间无响应，已改用镜像重试"));
     else if (m_stalled)
         setStatus(tr("网络停滞，正在重试（%1/%2）").arg(m_networkRetryCount).arg(MAX_NETWORK_RETRIES));
     else
@@ -907,6 +947,7 @@ auto Request::isParallel() const -> bool
 
 void Request::downloadFinished()
 {
+    m_noResponseTimer.stop();
     // currently waiting for retry
     if (m_retryTimer.isActive()) {
         return;
@@ -983,9 +1024,19 @@ void Request::downloadFinished()
     emitSucceeded();
 }
 
+void Request::onFirstResponse()
+{
+    // 服务器至少回了响应头：后面收不到数据由传输超时负责，看门狗可以收了。
+    m_gotAnyResponse = true;
+    m_noResponseTimer.stop();
+}
+
 void Request::downloadReadyRead()
 {
     if (m_state == State::Running) {
+        m_gotAnyResponse = true;
+        m_noResponseTimer.stop();
+
         // 带了 Range 却收到 200：服务器把整份内容塞回来了，继续往后 append 会得到一个
         // 前面重复、长度翻倍的文件。丢掉半截、从 0 重写（06 §36）。
         if (!m_resumeChecked) {
@@ -1017,6 +1068,7 @@ auto Request::abort() -> bool
 {
     m_retryTimer.stop();
     m_networkRetryTimer.stop();
+    m_noResponseTimer.stop();
     abortParallel();
     m_state = State::AbortedByUser;
     if (m_reply && !m_reply->isFinished()) {

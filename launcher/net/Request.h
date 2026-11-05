@@ -297,6 +297,23 @@ class Request : public Task {
 
     /// 这一轮从第几个字节开始写（断点续传时的前缀长度，用来把进度补回去）
     qint64 m_resumeOffset = 0;
+
+    /**
+     * "一个字节都没收到"的看门狗。
+     *
+     * 官方域（尤其 piston-meta）有时既不回包、也不断开：传输超时要等满
+     * `RequestTimeout`（默认 60 秒）才触发，一个 20 KB 的版本 json 也要干等一分钟。
+     * 这里给"连响应头都没见到"的情况单独设一个更短的闸门（06 §37）。
+     */
+    static constexpr int NO_RESPONSE_TIMEOUT_MS = 20000;
+    QTimer m_noResponseTimer;
+    bool m_gotAnyResponse = false;
+
+    /// 服务端回了 416（Range 越界）：说明 .part 已经不小于文件长度，必须丢掉重来
+    bool m_rangeOutOfBounds = false;
+    /// 已经因为"官方不行"回落到镜像了（防止在官方/镜像之间来回绕）
+    bool m_fellBackToMirror = false;
+    void onFirstResponse();
     /// 只检查一次"服务器到底认不认 Range"
     bool m_resumeChecked = false;
 

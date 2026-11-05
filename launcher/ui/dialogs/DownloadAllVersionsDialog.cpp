@@ -170,6 +170,22 @@ void DownloadAllVersionsDialog::stepManifest()
                 return;
             }
 
+            // 只跑指定版本（排查单个版本的下载问题时很有用），例如 PRISM_DEBUG_DOWNLOAD_ONLY=1.16.5
+            const QString only = qEnvironmentVariable("PRISM_DEBUG_DOWNLOAD_ONLY");
+            if (!only.isEmpty()) {
+                QList<VersionEntry> picked;
+                for (const auto& entry : m_versions) {
+                    if (entry.id == only)
+                        picked.append(entry);
+                }
+                if (picked.isEmpty()) {
+                    appendLog(tr("清单里没有版本 %1").arg(only));
+                    finishRun(false);
+                    return;
+                }
+                m_versions = picked;
+            }
+
             // 压测时可以用 PRISM_DEBUG_DOWNLOAD_LIMIT 只跑前 N 个，省得每次都全量。
             const int limit = qEnvironmentVariableIntValue("PRISM_DEBUG_DOWNLOAD_LIMIT");
             if (limit > 0 && limit < m_versions.size())

@@ -469,7 +469,9 @@ class RequestRetryTest : public QObject {
     /// 一直停滞：重试预算用完要给出人话，而不是 "Operation canceled"
     void stallFailureIsReadable()
     {
-        const QUrl official("https://libraries.minecraft.net/org/apache/logging/log4j/log4j-api/2.25.2/log4j-api-2.25.2.jar");
+        // textures 域没有镜像映射：这里要验证的是"重试预算用尽后的文案"，
+        // 不能让官方→镜像回落把它变成"还有一轮"（那条链路由 fallsBackToMirror 覆盖）
+        const QUrl official("https://textures.minecraft.net/texture/stall.png");
         ScriptedRequest request(official, { { FakeReply::Mode::Stall, {} } });
 
         QSignalSpy failed(&request, &Task::failed);
@@ -559,6 +561,28 @@ class RequestRetryTest : public QObject {
                 QVERIFY2(!QFile::exists(path), "校验失败时不能把坏文件落到目标位置");
             }
         }
+    }
+
+    /// 反方向也要有退路：官方源连续失败 → 回落到镜像（只走一次，不来回绕）
+    void fallsBackToMirrorWhenOfficialKeepsFailing()
+    {
+        const QUrl official("https://libraries.minecraft.net/io/netty/x.jar");
+        const QUrl mirrored("https://bmclapi2.bangbang93.com/maven/io/netty/x.jar");
+
+        ScriptedRequest request(official, { { FakeReply::Mode::Fail, {} },
+                                            { FakeReply::Mode::Fail, {} },
+                                            { FakeReply::Mode::Fail, {} },
+                                            { FakeReply::Mode::Fail, {} },
+                                            { FakeReply::Mode::Ok, QByteArray("PAYLOAD") } });
+
+        QSignalSpy succeeded(&request, &Task::succeeded);
+        request.start();
+        QVERIFY(succeeded.wait(15000));
+
+        QCOMPARE(request.requestedUrls.size(), 5);
+        for (int i = 0; i < 4; ++i)
+            QCOMPARE(request.requestedUrls.at(i), official);
+        QCOMPARE(request.requestedUrls.at(4), mirrored);
     }
 
     /// 回落只允许"镜像 → 官方"单向，且只回一次：不能来回绕圈
