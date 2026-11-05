@@ -4,9 +4,9 @@
 把 [`Minecraft-AIO`](E:/llmUsage/Minecraft-AIO)（mcml v0.33.0，Electron + TypeScript）的
 「以地图为中心」搬到了原生 Qt 上 —— **点地图卡片直接进图，版本由程序推断**。
 
-> **状态（2026-11-05 10:40）**：构建通过 · 测试 `55 passed / 0 failed / 2 skipped` ·
-> M0 完成，M1–M4 代码落地 · 真机已过「1.20+ 进图」与「连开两次都自动关游戏」·
-> **代码无阻塞项**，现实阻碍是网络（官方资源域在部分线路被断连，见 05 §8；镜像侧已有换节点重试）·
+> **状态（2026-11-05 10:45）**：构建通过 · 测试 `55 passed / 0 failed / 2 skipped` ·
+> M0 完成，M1–M4 代码落地 · 真机已过「1.20+ 进图」「连开两次都自动关游戏」「大文件分片下载」·
+> **代码无阻塞项**，现实阻碍是网络（官方域被断连、镜像 302 节点多被重置，见 05 §6 8）·
 > 分支 `feature/map-launcher`
 
 ---
@@ -49,11 +49,9 @@
   后关闭游戏窗口，回写 `map.json` 统计（真机连开两次均通过）。
 - 大厅：CTM Maps **整库本地化**（1000 张地图 / 2243 条详情 / 1000 条评论），搜索、排序、翻页、
   详情、评论全部本地算；封面走直连 → 浏览器通道，命中后磁盘缓存；
-- 下载源：设置 → API 顶部可切 BMCLAPI 镜像（资源 / 库 / 版本 json / 运行时清单），镜像直连不走代理，
-  旁边有连通性测试；**连接失败 / 网络停滞自动回到起点重试（最多 3 次），镜像彻底不可用则回落官方一次**；
-  下载走 4 个 QNAM 的连接池（并发 24），绕开 Qt"每主机 6 条连接"的上限；
-  大文件还可分片并发（设置 → 启动器 → 任务，默认 8 段）；
-  默认仍是官方源；
+- 下载：官方源默认不变，可在 设置 → API 切 BMCLAPI 镜像（镜像直连不走代理，旁边有连通性测试）；
+  **失败/停滞自动回到起点重试（3 次）→ 镜像用满后回落官方一次 → 4 个 QNAM 的连接池（并发 24）→
+  大文件 8 段并发**（设置 → 启动器 → 任务可调，0 = 关闭）；实测 `client.jar` 368 KB/s → 2998 KB/s；
 - 模组预设：内置性能/实用三套 + 可自建，按实例的 MC 版本与加载器现查 Modrinth / CurseForge，
   逐条带说明、可勾选，required 依赖自动补齐；缺加载器先引导安装；编辑器里能直接搜索添加；
 - 实例「信息」页三页签：简介（封面 + 基本信息卡）、评论（卡片流）、我的（三张卡片）；
@@ -71,8 +69,9 @@
 ## 代码地图
 
 新代码在 `launcher/maps/`（**36 个 .cpp + 40 个 .h，18,019 行**）、`launcher/ResourcePaths`
-与 `launcher/net/DownloadSource`（下载源），
-对既有文件只做加法：
+与 `launcher/net/DownloadSource`（换源）；
+`launcher/net/{Request,FileSink}` 与 `Application` 为下载能力有较大改动（重试 / 连接池 / 分片），
+对既有源码其余部分只做加法：
 
 | 分组 | 文件 |
 | --- | --- |
@@ -85,6 +84,7 @@
 | **模组** | `ModPresets`（预设数据 + 双平台解析 + 依赖）· `ModPresetDialog`（安装 / 编辑）· `ModSearchDialog`（搜索添加） |
 | **设置** | `MapSettingsWidget`（内容体）· `MapPage`（全局「地图」）· `MapResourcePage`（全局「资源」）· `ResourceStore`（迁移）· `launcher/ResourcePaths`（路径解析） |
 | **退出** | `MapQuitWatcher`（1.20+ 读日志关游戏） |
+| **下载** | `net/DownloadSource`（换源）· `net/Request`（失败/停滞重试、QNAM 连接池、Range 分片）· `net/FileSink`（`.part` 分段写 + 收尾重算校验）· `Application::downloadNetwork()`（4 个 QNAM 的池） |
 
 资源：`launcher/resources/maps/dataversion.json`（483 个版本）、`launcher/resources/agents/`
 （`quickboot.jar` + 6 个符号表）。测试：`MapArchiveScan`（13 + 2 项联网）、`ModPresets`（14）、
