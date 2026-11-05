@@ -295,6 +295,11 @@ class Request : public Task {
     /// 这不是用户取消，必须和"用户点了中止"区分开，否则慢盘上的大文件永远装不完。
     bool m_stalled = false;
 
+    /// 这一轮从第几个字节开始写（断点续传时的前缀长度，用来把进度补回去）
+    qint64 m_resumeOffset = 0;
+    /// 只检查一次"服务器到底认不认 Range"
+    bool m_resumeChecked = false;
+
     // ---- 分段并发下载 ----
     bool m_parallel = false;
     bool m_parallelTried = false;

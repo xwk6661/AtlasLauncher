@@ -242,8 +242,13 @@ void Request::executeTask()
     m_transferTimeoutMs = 0;
 #endif
 
+    // 断点续传：sink 里可能已经有上一轮留下的半截数据，init() 会给请求加上 Range 头
+    // 并把这些字节先喂给校验器。这里记下前缀长度，进度条才不会从 0 重跳。
+    m_resumeOffset = m_sink->bytesWritten();
+    m_resumeChecked = false;
+
     m_lastProgressTime = std::chrono::steady_clock::now();
-    m_lastProgressBytes = 0;
+    m_lastProgressBytes = m_resumeOffset;
 
     // 新一轮尝试：清掉上一轮的分片状态（m_parallelDisabled 保留——降级过就一直单连接）
     m_parallel = false;
@@ -271,6 +276,13 @@ void Request::executeTask()
 
 void Request::onProgress(qint64 bytesReceived, qint64 bytesTotal)
 {
+    // 续传时 Qt 只报"这一段"的进度，把前缀加回去才是文件整体进度
+    if (m_resumeOffset > 0) {
+        bytesReceived += m_resumeOffset;
+        if (bytesTotal > 0)
+            bytesTotal += m_resumeOffset;
+    }
+
     auto now = std::chrono::steady_clock::now();
     auto elapsed = now - m_lastProgressTime;
 
@@ -507,10 +519,10 @@ auto Request::tryNetworkRetry(QNetworkReply::NetworkError error) -> bool
                             << QString("(%1/%2)").arg(m_networkRetryCount).arg(MAX_NETWORK_RETRIES);
     }
 
-    // 上一轮可能写了半截文件。abort() 会 cancelWriting() 掉临时文件、作废校验器；
-    // 下一轮 init() 重新建 QSaveFile（先写临时文件，commit 才落盘），所以是截断重写，
-    // 既不会 append 出坏文件，也不会碰目标位置上原有的好文件。
-    m_sink->abort();
+    // 能续传的 sink（写文件的）：**别动**半截数据，下一轮 init() 会带着 Range 从断点续。
+    // 不能续传的（ByteArraySink 之类）：只能清掉重来，否则会拼出重复内容。
+    if (!m_sink->supportsResume())
+        m_sink->abort();
 
     m_state = State::Running;
     m_url = m_retryBaseUrl;
@@ -923,7 +935,9 @@ void Request::downloadFinished()
         if (tryNetworkRetry(m_reply->error()))
             return;
         qCDebug(m_logCat) << getUid().toString() << "Request failed in previous step:" << m_url.toString();
-        m_sink->abort();
+        // 半截文件留着：NetJob 还会重试这个 Request，下一轮能接着下（06 §36）
+        if (!m_sink->supportsResume())
+            m_sink->abort();
         // 给用户一句能行动的话：Qt 把传输超时报成 "Operation canceled"，
         // 和"用户点了中止"长得一模一样，直接抛出去没人看得懂（06 §30）。
         if (m_stalled) {
@@ -972,6 +986,17 @@ void Request::downloadFinished()
 void Request::downloadReadyRead()
 {
     if (m_state == State::Running) {
+        // 带了 Range 却收到 200：服务器把整份内容塞回来了，继续往后 append 会得到一个
+        // 前面重复、长度翻倍的文件。丢掉半截、从 0 重写（06 §36）。
+        if (!m_resumeChecked) {
+            m_resumeChecked = true;
+            if (m_sink->requestedRange() && replyStatusCode() == 200) {
+                qCWarning(m_logCat) << getUid().toString() << "Server ignored the Range header, restarting from zero:" << m_url.toString();
+                m_sink->restartFromZero();
+                m_resumeOffset = 0;
+            }
+        }
+
         auto data = m_reply->readAll();
         auto result = m_sink->write(data);
         if (replyStatusCode() >= 400) {

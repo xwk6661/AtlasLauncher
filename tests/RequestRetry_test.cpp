@@ -53,6 +53,9 @@ class StubReply : public QNetworkReply {
 
     void abort() override {}
     auto readData(char*, qint64) -> qint64 override { return -1; }
+
+    /// 206 的长度校验要靠它：FileSink 用 Content-Length 判断"这一段收全了没"
+    void setContentLength(qint64 length) { setHeader(QNetworkRequest::ContentLengthHeader, length); }
 };
 
 auto readAll(const QString& path) -> QByteArray
@@ -201,30 +204,131 @@ class RequestRetryTest : public QObject {
     }
 
     /// 重入 init() 是"从零写"，不是 append —— 这是重试能不能上线的前提
-    void fileSinkRestartsFromZero()
+    /// 重试必须**续传**，不是重来：CDN 会在传到一半时关连接，从头下永远下不完（06 §36）
+    void fileSinkResumesFromPartialFile()
     {
         QTemporaryDir dir;
         QVERIFY(dir.isValid());
         const QString path = dir.filePath("lib.jar");
 
         Net::FileSink sink(path);
-        QNetworkRequest request{ QUrl("https://bmclapi2.bangbang93.com/maven/x.jar") };
+        QNetworkRequest first{ QUrl("https://libraries.minecraft.net/maven/x.jar") };
 
-        auto first = sink.init(request);
-        QVERIFY(first.has_value());
-        QVERIFY(*first == Net::Sink::InitType::Ok);
+        auto result = sink.init(first);
+        QVERIFY(result.has_value());
+        QVERIFY(*result == Net::Sink::InitType::Ok);
+        QVERIFY(!sink.requestedRange());
         QVERIFY(sink.write(QByteArray("HALF-A-FILE")).has_value());
 
-        // 不 abort、直接重来：模拟"换节点重试"最坏的那种时序
-        auto second = sink.init(request);
-        QVERIFY(second.has_value());
-        QVERIFY(*second == Net::Sink::InitType::Ok);
-        QVERIFY(sink.write(QByteArray("GOOD")).has_value());
+        // 不 abort、直接再来一轮 —— 这正是 Request 重试的时序
+        QNetworkRequest second{ QUrl("https://libraries.minecraft.net/maven/x.jar") };
+        QVERIFY(sink.init(second).has_value());
+        QVERIFY(sink.requestedRange());
+        QCOMPARE(second.rawHeader("Range"), QByteArray("bytes=11-"));
+        QCOMPARE(sink.bytesWritten(), qint64(11));
+
+        QVERIFY(sink.write(QByteArray("-GOOD")).has_value());
 
         StubReply reply(200);
         QVERIFY(sink.finalize(reply).has_value());
+        QCOMPARE(readAll(path), QByteArray("HALF-A-FILE-GOOD"));
+        QVERIFY2(!QFile::exists(path + ".part"), "收尾后不该留下 .part");
+    }
 
-        QCOMPARE(readAll(path), QByteArray("GOOD"));
+    /// 分片模式的预分配文件（满尺寸 + 空洞）绝不能被顺序下载当成断点
+    void parallelScratchIsNotUsedAsResumePrefix()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("big.jar");
+
+        Net::FileSink sink(path);
+        QNetworkRequest request{ QUrl("https://libraries.minecraft.net/maven/big.jar") };
+        QVERIFY(sink.init(request).has_value());
+        QVERIFY(sink.beginParallel(4096).has_value());
+        QVERIFY(sink.writeAt(0, QByteArray("abc")).has_value());
+
+        // 模拟分片失败后回到顺序下载（Request 会重入 init）
+        QNetworkRequest again{ QUrl("https://libraries.minecraft.net/maven/big.jar") };
+        QVERIFY(sink.init(again).has_value());
+        QVERIFY2(!sink.requestedRange(), "预分配的空洞文件不能当断点，否则会 Range 到文件末尾");
+        QCOMPARE(again.rawHeader("Range"), QByteArray());
+        QVERIFY(sink.write(QByteArray("fresh")).has_value());
+
+        StubReply reply(200);
+        QVERIFY(sink.finalize(reply).has_value());
+        QCOMPARE(readAll(path), QByteArray("fresh"));
+        QVERIFY(!QFile::exists(path + ".part.parallel"));
+    }
+
+    /// 服务器无视 Range（回了 200 全量）时必须丢掉半截重写，否则文件会重复一倍
+    void restartFromZeroAfterServerIgnoresRange()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("asset.bin");
+
+        Net::FileSink sink(path);
+        QNetworkRequest request{ QUrl("https://resources.download.minecraft.net/xx/hash") };
+        QVERIFY(sink.init(request).has_value());
+        QVERIFY(sink.write(QByteArray("OLD-HALF")).has_value());
+
+        QNetworkRequest again{ request };
+        QVERIFY(sink.init(again).has_value());
+        QVERIFY(sink.requestedRange());
+
+        // Request 在 downloadReadyRead 里做的就是这一下
+        sink.restartFromZero();
+        QVERIFY(sink.write(QByteArray("WHOLE")).has_value());
+
+        StubReply reply(200);
+        QVERIFY(sink.finalize(reply).has_value());
+        QCOMPARE(readAll(path), QByteArray("WHOLE"));
+    }
+
+    /// 续传前必须把已有字节补喂给校验器，否则 sha1 永远对不上
+    void resumeFeedsValidatorsWithExistingBytes()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("checked.jar");
+        const QByteArray payload("HELLO-WORLD");
+
+        Net::FileSink sink(path);
+        auto* checksum = new Net::ChecksumValidator(QCryptographicHash::Sha1);
+        checksum->setExpected(QCryptographicHash::hash(payload, QCryptographicHash::Sha1));
+        sink.addValidator(checksum);
+
+        QNetworkRequest request{ QUrl("https://libraries.minecraft.net/maven/checked.jar") };
+        QVERIFY(sink.init(request).has_value());
+        QVERIFY(sink.write(payload.left(6)).has_value());
+
+        QNetworkRequest again{ request };
+        QVERIFY(sink.init(again).has_value());
+        QVERIFY(sink.write(payload.mid(6)).has_value());
+
+        StubReply reply(200);
+        QVERIFY(sink.finalize(reply).has_value());
+        QCOMPARE(readAll(path), payload);
+    }
+
+    /// 206 只收到一段、长度不够：保留 .part 等下一轮续，不能落到目标路径
+    void incompleteResumeKeepsPartFile()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath("partial.jar");
+
+        Net::FileSink sink(path);
+        QNetworkRequest request{ QUrl("https://libraries.minecraft.net/maven/partial.jar") };
+        QVERIFY(sink.init(request).has_value());
+        QVERIFY(sink.write(QByteArray("ABC")).has_value());
+
+        StubReply reply(206);
+        reply.setContentLength(10);  // 说好还有 10 字节，实际只写了 3
+        QVERIFY(!sink.finalize(reply).has_value());
+        QVERIFY2(!QFile::exists(path), "不完整的数据不能落到目标路径");
+        QVERIFY2(QFile::exists(path + ".part"), "半截文件要留着给下一轮续传");
     }
 
     /// Request 里真实走的那条路：abort() 掉上一轮，再 init()

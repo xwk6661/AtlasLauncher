@@ -37,7 +37,6 @@
 
 #include <QFile>
 
-#include "PSaveFile.h"
 #include "Sink.h"
 
 #include <utility>
@@ -55,6 +54,12 @@ class FileSink : public Sink {
     void abort() override;
 
     auto hasLocalData() -> bool override;
+
+    // 断点续传：失败不删 `<目标>.part`，下一次 init() 带 Range 从断点续
+    auto supportsResume() const -> bool override { return true; }
+    auto bytesWritten() const -> qint64 override;
+    auto requestedRange() const -> bool override { return m_rangeRequested; }
+    void restartFromZero() override;
 
     /**
      * 切到"分段并发"模式：把目标文件当成一块可直接定位写入的空间。
@@ -79,11 +84,19 @@ class FileSink : public Sink {
 
     /// 分段模式下把整个 part 文件按顺序喂给校验器，再问它们认不认
     Result<> validateSequential(bool commit);
+    /// 续传前把已有的半截数据补喂给校验器（否则 sha1/md5 对不上）
+    auto feedValidatorsFromDisk() -> bool;
+    /// 这次响应对应的完整文件应该是多少字节（-1 = 说不准）
+    auto expectedTotalBytes(QNetworkReply& reply) const -> qint64;
 
    protected:
     QString m_filename;
     bool m_wroteAnyData = false;
-    std::unique_ptr<PSaveFile> m_outputFile;
+
+    /// 这一轮是从第几个字节开始写的（0 = 全新）
+    qint64 m_resumeFrom = 0;
+    /// 本轮请求是否带了 Range 头
+    bool m_rangeRequested = false;
 
     bool m_parallel = false;
     qint64 m_parallelSize = 0;

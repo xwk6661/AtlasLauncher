@@ -55,6 +55,20 @@ class Sink {
 
     virtual auto hasLocalData() -> bool = 0;
 
+    /**
+     * 这个 sink 支不支持"断点续传"。
+     *
+     * 返回 true 表示：失败时**不要把半截数据删掉**，下一轮 init() 会带着 `Range` 头
+     * 从断点继续。只有写文件的 sink 能这么干（ByteArraySink 一删就全没了）。
+     */
+    virtual auto supportsResume() const -> bool { return false; }
+    /// 已经落盘的字节数（顺序模式 = 当前文件长度；否则 0）
+    virtual auto bytesWritten() const -> qint64 { return 0; }
+    /// 这次请求有没有带 Range（服务端返回 200 就说明它没理这个头）
+    virtual auto requestedRange() const -> bool { return false; }
+    /// 服务端无视 Range 时，把半截数据丢掉、从头写
+    virtual void restartFromZero() {}
+
     void addValidator(Validator* validator)
     {
         if (validator) {
