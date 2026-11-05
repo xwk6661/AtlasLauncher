@@ -217,8 +217,8 @@ class Request : public Task {
         int attempts = 0;
         bool done = false;
     };
-    /// 单个分片最多试几次（网络抖一下不该拖垮整个文件）
-    static constexpr int MAX_CHUNK_ATTEMPTS = 3;
+    /// 单个分片最多试几次（网络抖一下不该拖垮整个文件；分片会从断点续，所以多试几次很便宜）
+    static constexpr int MAX_CHUNK_ATTEMPTS = 6;
     qint64 chunkExpected() const { return m_totalBytes; }
     void tryStartParallel();
     /// 按偏移写（分段模式）。sink 不是 FileSink 时退回顺序写。

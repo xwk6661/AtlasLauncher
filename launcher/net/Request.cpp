@@ -604,9 +604,13 @@ void Request::tryStartParallel()
     // 关键：这条连接没有 Range 头，留着它会把整个文件拉下来，而且写进第 0 段时
     // 会覆盖掉别的分片已经写好的数据。直接丢掉，N 条带 Range 的连接全部重开。
     // （代价只是已经收到的几 KB 响应头）
-    m_reply->disconnect(this);
-    m_reply->abort();
-    m_reply.reset();
+    //
+    // 注意不能在这里直接 delete：我们现在正处在它自己的 metaDataChanged 信号里，
+    // 当场析构会把 QNAM 的连接池搞坏（后续请求全部挂死、一个信号都不回）。
+    auto* stale = m_reply.release();
+    stale->disconnect(this);
+    stale->abort();
+    stale->deleteLater();
 
     auto* fileSink = static_cast<FileSink*>(m_sink.get());
     auto begun = fileSink->beginParallel(total);
@@ -633,7 +637,16 @@ void Request::startChunk(int index)
 {
     if (index < 0 || index >= m_chunks.size() || m_network == nullptr)
         return;
-    auto request = makeRangeRequest(m_chunks[index].start, m_chunks[index].end);
+
+    auto& chunk = m_chunks[index];
+    // 从已收到的位置续（分片级断点续传）：弱网下一条连接断了，不必把这一片从头再拉
+    const qint64 from = chunk.start + chunk.received;
+    if (from > chunk.end) {
+        chunk.done = true;
+        maybeFinishParallel();
+        return;
+    }
+    auto request = makeRangeRequest(from, chunk.end);
 
     // 每个分片换一个池内 QNAM：一个 QNAM 每主机只有 6 条连接，8 个分片挤在一个 QNAM 上
     // 等于还是 6 条。轮转取池子里的，才能让 8 段真的是 8 条连接。
@@ -686,10 +699,10 @@ void Request::onChunkError(int index, QNetworkReply* reply, QNetworkReply::Netwo
 {
     if (!m_parallel || index < 0 || index >= m_chunks.size())
         return;
-    // 我们自己 abort 掉的分片：abortParallel() 先把 m_parallel 置 false，进不到这里。
-    // 能走到这里的是真失败，包括 Qt 传输超时（也报 OperationCanceledError）—— 都要重试。
+    // 只记录，不在这里重试：errorOccurred 之后紧跟着就是 finished，
+    // 两处都调 retryChunk 会把一次失败记成两次（曾经因此 1.5 次就放弃）。
+    // 我们自己 abort 的分片进不到这里（abortParallel 先置 m_parallel=false）。
     qCWarning(m_logCat) << getUid().toString() << "Range" << index << "failed:" << reply->url().toString() << error;
-    retryChunk(index);
 }
 
 void Request::retryChunk(int index)
@@ -706,12 +719,12 @@ void Request::retryChunk(int index)
         return;
     }
 
-    chunk.received = 0;
     chunk.done = false;
-    qCDebug(m_logCat) << getUid().toString() << "Retrying range" << index << "attempt" << chunk.attempts << m_url.toString();
+    qCDebug(m_logCat) << getUid().toString() << "Retrying range" << index << "attempt" << chunk.attempts << "from offset"
+                      << (chunk.start + chunk.received) << m_url.toString();
 
     // 现在还在旧 reply 的信号里，下一轮事件循环再重开（startChunk 会替换并析构旧 reply）
-    QTimer::singleShot(200, this, [this, index] {
+    QTimer::singleShot(300 * chunk.attempts, this, [this, index] {
         if (m_parallel && index < m_chunks.size() && !m_chunks[index].done)
             startChunk(index);
     });
