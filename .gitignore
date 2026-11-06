@@ -62,3 +62,7 @@ flatbuild
 
 # Snap
 *.snap
+
+# Local asset backups
+asset/
+*.zip

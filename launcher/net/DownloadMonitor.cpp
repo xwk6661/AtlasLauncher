@@ -88,14 +88,10 @@ auto DownloadMonitor::snapshot() -> DownloadSnapshot
             item.speed = 0;
         }
     } else if (const qint64 dt = now - m_lastSampleMs; dt >= kMinSampleMs) {
-        const double instant = double(out.bytesDone - m_lastBytes) * 1000.0 / double(dt);
-        // 指数平滑，避免数字跳得看不清
-        m_speed = kSmoothing * instant + (1.0 - kSmoothing) * m_speed;
-        m_lastBytes = out.bytesDone;
-        m_lastSampleMs = now;
-
         QHash<QString, QPair<qint64, qint64>> next;
         QSet<QString> alive;
+        qint64 totalIntervalBytes = 0;
+
         for (auto& item : out.items) {
             alive.insert(item.key);
             const auto prev = m_itemSamples.constFind(item.key);
@@ -103,16 +99,31 @@ auto DownloadMonitor::snapshot() -> DownloadSnapshot
                 const qint64 prevBytes = prev->first;
                 const qint64 prevMs = prev->second;
                 const qint64 itemDt = now - prevMs;
+                const qint64 delta = item.done - prevBytes;
+                if (delta > 0)
+                    totalIntervalBytes += delta;
                 if (itemDt >= kMinSampleMs) {
-                    const double inst = double(item.done - prevBytes) * 1000.0 / double(itemDt);
+                    const double inst = double(delta) * 1000.0 / double(itemDt);
                     const double old = m_itemSpeed.value(item.key, std::max(0.0, inst));
                     m_itemSpeed[item.key] = kSmoothing * std::max(0.0, inst) + (1.0 - kSmoothing) * old;
                 }
+            } else {
+                if (item.done > 0)
+                    totalIntervalBytes += item.done;
             }
             next.insert(item.key, { item.done, now });
             item.speed = m_itemSpeed.value(item.key, 0.0);
         }
         m_itemSamples = next;
+
+        // 全局瞬时速率按活跃文件在窗口内的正向净增字节计算，
+        // 绝不直接做 (out.bytesDone - m_lastBytes) 相减：一旦某个文件完成移出活跃列表，
+        // bytesDone 会瞬间下跌几 MB 到几十 MB，直接算出巨大负速度将仪表盘清零（06 §141）。
+        const double instant = double(totalIntervalBytes) * 1000.0 / double(dt);
+        m_speed = kSmoothing * instant + (1.0 - kSmoothing) * m_speed;
+        m_lastBytes = out.bytesDone;
+        m_lastSampleMs = now;
+
         // 已经不在下载的条目丢掉，避免越积越多
         for (auto it = m_itemSpeed.begin(); it != m_itemSpeed.end();) {
             if (!alive.contains(it.key()))

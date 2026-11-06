@@ -1138,6 +1138,8 @@ SET(LAUNCHER_SOURCES
     ui/dialogs/ExportToModListDialog.h
     ui/dialogs/IconPickerDialog.cpp
     ui/dialogs/IconPickerDialog.h
+    ui/dialogs/ImportChoiceDialog.cpp
+    ui/dialogs/ImportChoiceDialog.h
     ui/dialogs/ImportResourceDialog.cpp
     ui/dialogs/ImportResourceDialog.h
     ui/dialogs/MSALoginDialog.cpp

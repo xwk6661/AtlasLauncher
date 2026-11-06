@@ -277,10 +277,12 @@ Result<MapScanResult> MapArchiveScanner::scan(const QString& archivePath, const 
     const auto parsed = reader.parse([&](MMCZip::ArchiveReader::File* file) -> Result<bool> {
         Entry entry;
         entry.path = file->filename();
-        // 有些打包工具会给每条加 "./" 前缀（zip -r . / 7-Zip 的某些设置）。
-        // 不剥掉的话世界根会变成 "."，界面显示一坨点，解压前缀也对不上。
+        // 有些打包工具会给每条加 "./" 或 "/" / "\" 前缀（zip -r . / 7-Zip 的某些设置）。
+        // 不剥掉的话世界根会变成 "." 或绝对前缀，界面显示异常，解压前缀也对不上。
         while (entry.path.startsWith(QLatin1String("./")))
             entry.path.remove(0, 2);
+        while (entry.path.startsWith(QLatin1Char('/')) || entry.path.startsWith(QLatin1Char('\\')))
+            entry.path.remove(0, 1);
         entry.isDir = !file->isFile();
         entry.size = file->size();
         if (entry.path.isEmpty())

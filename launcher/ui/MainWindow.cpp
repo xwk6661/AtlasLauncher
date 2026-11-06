@@ -119,6 +119,7 @@
 #include "ui/dialogs/ExportInstanceDialog.h"
 #include "ui/dialogs/ExportPackDialog.h"
 #include "ui/dialogs/IconPickerDialog.h"
+#include "ui/dialogs/ImportChoiceDialog.h"
 #include "ui/dialogs/ImportResourceDialog.h"
 #include "ui/dialogs/NewInstanceDialog.h"
 #include "ui/dialogs/ProgressDialog.h"
@@ -973,12 +974,11 @@ void MainWindow::on_actionAddInstance_triggered()
 
 void MainWindow::processURLs(QList<QUrl> urls)
 {
-    // 拖进来的压缩包先快速判定是不是地图（有 level.dat 的世界包）：
-    // 是 → 走地图导入；不是 → 走原来的整合包导入流程。
-    // 反向误判的代价更高（会直接建一个错版本的实例），所以宁可多扫一次。
+    // 用户拖入压缩包文件时，弹出选择 UI，由用户自主决定是走 Atlas 地图导入还是 Prism 默认整合包导入，
+    // 杜绝程序私自武断决策。
     static const QStringList archiveSuffixes{ QStringLiteral("zip"), QStringLiteral("rar"), QStringLiteral("7z"),
                                               QStringLiteral("tar"), QStringLiteral("gz"),
-                                              QStringLiteral("mcworld") };
+                                              QStringLiteral("mcworld"), QStringLiteral("mrpack") };
     for (const auto& url : urls) {
         if (!url.isLocalFile())
             continue;
@@ -986,14 +986,17 @@ void MainWindow::processURLs(QList<QUrl> urls)
         if (!archiveSuffixes.contains(QFileInfo(localPath).suffix().toLower()))
             continue;
 
-        QApplication::setOverrideCursor(Qt::WaitCursor);
-        const auto scanned = maps::MapArchiveScanner::scan(localPath);
-        QApplication::restoreOverrideCursor();
-        if (scanned && !scanned->worlds.isEmpty()) {
+        const auto choice = ImportChoiceDialog::ask(localPath, this);
+        if (choice == ImportChoiceDialog::Choice::Map) {
             importMapArchive(localPath);
             return;
+        } else if (choice == ImportChoiceDialog::Choice::Modpack) {
+            addInstance(localPath);
+            return;
+        } else {
+            // 用户取消导入
+            return;
         }
-        break;  // 第一个压缩包不是地图：全部走整合包导入
     }
 
     // NOTE: This loop only processes one dropped file!

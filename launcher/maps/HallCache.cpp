@@ -37,7 +37,9 @@ constexpr const char* CACHE_FILE = "hall-cache.json";
 
 QString HallCache::path()
 {
-    return FS::PathCombine(APPLICATION->dataRoot(), "maps", QString::fromLatin1(CACHE_FILE));
+    auto* app = APPLICATION_DYN;
+    const QString root = app != nullptr ? app->dataRoot() : QDir::currentPath();
+    return FS::PathCombine(root, "maps", QString::fromLatin1(CACHE_FILE));
 }
 
 HallSnapshot HallCache::load()

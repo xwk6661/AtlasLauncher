@@ -27,7 +27,11 @@ namespace resource {
 
 QString sharedRoot()
 {
-    QString path = APPLICATION->settings()->get("SharedResourceDir").toString().trimmed();
+    auto* app = APPLICATION_DYN;
+    if (app == nullptr || app->settings() == nullptr)
+        return {};
+
+    QString path = app->settings()->get("SharedResourceDir").toString().trimmed();
     if (path.isEmpty())
         return {};
 
@@ -40,7 +44,7 @@ QString sharedRoot()
         path.chop(1);
 
     // 指到数据目录本身 = 没改
-    if (path == QDir::cleanPath(APPLICATION->dataRoot()))
+    if (path == QDir::cleanPath(app->dataRoot()))
         return {};
     return path;
 }
@@ -70,7 +74,10 @@ QString javaDir()
     if (!root.isEmpty())
         return FS::PathCombine(root, "java");
     // JavaDir 是既有设置项（默认相对路径 "java"），没设共享目录时照旧用它
-    const QString configured = APPLICATION->settings()->get("JavaDir").toString();
+    auto* app = APPLICATION_DYN;
+    const QString configured = (app != nullptr && app->settings() != nullptr)
+                                   ? app->settings()->get("JavaDir").toString()
+                                   : QStringLiteral("java");
     if (QDir::isAbsolutePath(configured))
         return QDir::cleanPath(configured);
     return QDir::current().absoluteFilePath(configured);

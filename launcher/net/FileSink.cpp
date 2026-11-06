@@ -414,17 +414,20 @@ auto FileSink::finalize(QNetworkReply& reply) -> Result<>
         // 内容确实坏了：留着只会让下一轮"续"出更坏的文件
         QFile::remove(m_partPath);
         m_partPath.clear();
+        releasePart();
         return valid;
     }
 
     if (!QFile::remove(m_filename) && QFile::exists(m_filename)) {
         const auto error = QString("Could not replace %1").arg(m_filename);
         qCCritical(taskNetLogC) << error;
+        abort();
         return std::unexpected(error);
     }
     if (!QFile::rename(m_partPath, m_filename)) {
         const auto error = QString("Could not move %1 to %2").arg(m_partPath, m_filename);
         qCCritical(taskNetLogC) << error;
+        abort();
         return std::unexpected(error);
     }
 

@@ -137,7 +137,8 @@ QStringList ResourceStore::apply(const QString& sharedRoot, bool move, const Pro
         shared = shared.mid(1, shared.size() - 2);
     shared = QDir::cleanPath(shared);
 
-    const QString data = QDir::cleanPath(APPLICATION->dataRoot());
+    auto* app = APPLICATION_DYN;
+    const QString data = QDir::cleanPath(app != nullptr ? app->dataRoot() : QDir::currentPath());
     if (shared.isEmpty() || shared == data)
         return errors;  // 空 = 用数据目录，什么都不用做
 
@@ -169,7 +170,11 @@ QList<ResourceStore::Candidate> ResourceStore::scanCandidates()
     };
 
     // 当前这个启动器的数据目录（便携时就是程序目录）
-    add(APPLICATION->dataRoot());
+    auto* app = APPLICATION_DYN;
+    if (app != nullptr)
+        add(app->dataRoot());
+    else
+        add(QDir::currentPath());
     // 非便携模式的默认位置（升级前的旧数据、另一个 Prism 副本都可能在这儿）
     add(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation));
 

@@ -6,97 +6,443 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>546</width>
-    <height>405</height>
+    <width>560</width>
+    <height>460</height>
    </rect>
   </property>
-  <layout class="QGridLayout" name="gridLayout">
-   <item row="2" column="0">
-    <widget class="QLineEdit" name="modpackEdit">
-     <property name="placeholderText">
-      <string notr="true">http://</string>
+  <layout class="QVBoxLayout" name="mainVerticalLayout">
+   <property name="spacing">
+    <number>12</number>
+   </property>
+   <property name="leftMargin">
+    <number>12</number>
+   </property>
+   <property name="topMargin">
+    <number>12</number>
+   </property>
+   <property name="rightMargin">
+    <number>12</number>
+   </property>
+   <property name="bottomMargin">
+    <number>12</number>
+   </property>
+   <item>
+    <widget class="QGroupBox" name="modeGroupBox">
+     <property name="title">
+      <string>导入类型选择</string>
      </property>
+     <layout class="QHBoxLayout" name="modeLayout">
+      <property name="spacing">
+       <number>20</number>
+      </property>
+      <item>
+       <widget class="QRadioButton" name="radioModpack">
+        <property name="text">
+         <string>整合导入（Prism 原生）</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QRadioButton" name="radioMap">
+        <property name="text">
+         <string>地图存档导入（Atlas 地图）</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="modeSpacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+     </layout>
     </widget>
    </item>
-   <item row="2" column="1">
-    <widget class="QPushButton" name="modpackBtn">
-     <property name="text">
-      <string>Browse</string>
+   <item>
+    <widget class="QStackedWidget" name="stackedWidget">
+     <property name="currentIndex">
+      <number>0</number>
      </property>
-    </widget>
-   </item>
-   <item row="3" column="0" rowspan="2" colspan="2">
-    <layout class="QVBoxLayout" name="verticalLayout">
-     <item>
-      <widget class="QLabel" name="label">
-       <property name="text">
-        <string>The following file types are implemented (both for local files and URLs):</string>
+     <widget class="QWidget" name="pageModpack">
+      <layout class="QVBoxLayout" name="modpackLayout">
+       <property name="spacing">
+        <number>10</number>
        </property>
-       <property name="alignment">
-        <set>Qt::AlignCenter</set>
+       <property name="leftMargin">
+        <number>0</number>
        </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QLabel" name="label_5">
-       <property name="text">
-        <string>- CurseForge modpacks (ZIP / curseforge:// URL)</string>
+       <property name="topMargin">
+        <number>0</number>
        </property>
-       <property name="alignment">
-        <set>Qt::AlignCenter</set>
+       <property name="rightMargin">
+        <number>0</number>
        </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QLabel" name="label_3">
-       <property name="text">
-        <string>- Modrinth modpacks (ZIP and mrpack)</string>
+       <property name="bottomMargin">
+        <number>0</number>
        </property>
-       <property name="alignment">
-        <set>Qt::AlignCenter</set>
+       <item>
+        <widget class="QLabel" name="modpackLabel">
+         <property name="text">
+          <string>本地文件路径或直接下载链接 (CurseForge / Modrinth / MultiMC 等):</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="modpackInputLayout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLineEdit" name="modpackEdit">
+           <property name="placeholderText">
+            <string notr="true">http://</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="modpackBtn">
+           <property name="text">
+            <string>Browse</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QWidget" name="modpackHintWidget">
+         <property name="visible">
+          <bool>false</bool>
+         </property>
+         <layout class="QHBoxLayout" name="modpackHintLayout">
+          <property name="leftMargin">
+           <number>8</number>
+          </property>
+          <property name="topMargin">
+           <number>4</number>
+          </property>
+          <property name="rightMargin">
+           <number>8</number>
+          </property>
+          <property name="bottomMargin">
+           <number>4</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="modpackHintLabel">
+            <property name="text">
+             <string>检测到该文件包含 Minecraft 地图存档。</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnSwitchToMap">
+            <property name="text">
+             <string>切换到地图导入</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <layout class="QVBoxLayout" name="verticalLayout">
+         <property name="spacing">
+          <number>6</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="label">
+           <property name="text">
+            <string>The following file types are implemented (both for local files and URLs):</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="label_5">
+           <property name="text">
+            <string>- CurseForge modpacks (ZIP / curseforge:// URL)</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="label_3">
+           <property name="text">
+            <string>- Modrinth modpacks (ZIP and mrpack)</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="label_2">
+           <property name="text">
+            <string>- Atlas, Prism Launcher, PolyMC or MultiMC exported instances (ZIP)</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="label_4">
+           <property name="text">
+            <string>- Technic modpacks (ZIP)</string>
+           </property>
+           <property name="alignment">
+            <set>Qt::AlignCenter</set>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <spacer name="modpackSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="pageMap">
+      <layout class="QVBoxLayout" name="mapLayout">
+       <property name="spacing">
+        <number>10</number>
        </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QLabel" name="label_2">
-       <property name="text">
-        <string>- Atlas, Prism Launcher, PolyMC or MultiMC exported instances (ZIP)</string>
+       <property name="leftMargin">
+        <number>0</number>
        </property>
-       <property name="alignment">
-        <set>Qt::AlignCenter</set>
+       <property name="topMargin">
+        <number>0</number>
        </property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QLabel" name="label_4">
-       <property name="text">
-        <string>- Technic modpacks (ZIP)</string>
+       <property name="rightMargin">
+        <number>0</number>
        </property>
-       <property name="alignment">
-        <set>Qt::AlignCenter</set>
+       <property name="bottomMargin">
+        <number>0</number>
        </property>
-      </widget>
-     </item>
-    </layout>
-   </item>
-   <item row="5" column="0" colspan="2">
-    <spacer name="verticalSpacer">
-     <property name="orientation">
-      <enum>Qt::Vertical</enum>
-     </property>
-     <property name="sizeHint" stdset="0">
-      <size>
-       <width>20</width>
-       <height>40</height>
-      </size>
-     </property>
-    </spacer>
-   </item>
-   <item row="0" column="0" colspan="2">
-    <widget class="QLabel" name="modpackLabel">
-     <property name="text">
-      <string>Local file or link to a direct download:</string>
-     </property>
+       <item>
+        <widget class="QLabel" name="mapLabel">
+         <property name="text">
+          <string>选择本地 Minecraft 地图压缩包 (*.zip, *.rar, *.7z, *.tar, *.gz, *.mcworld):</string>
+         </property>
+        </widget>
+       </item>
+       <item>
+        <layout class="QHBoxLayout" name="mapInputLayout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLineEdit" name="mapEdit">
+           <property name="placeholderText">
+            <string>选择或拖入地图压缩包文件...</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="mapBtn">
+           <property name="text">
+            <string>Browse</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </item>
+       <item>
+        <widget class="QWidget" name="mapHintWidget">
+         <property name="visible">
+          <bool>false</bool>
+         </property>
+         <layout class="QHBoxLayout" name="mapHintLayout">
+          <property name="leftMargin">
+           <number>8</number>
+          </property>
+          <property name="topMargin">
+           <number>4</number>
+          </property>
+          <property name="rightMargin">
+           <number>8</number>
+          </property>
+          <property name="bottomMargin">
+           <number>4</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="mapHintLabel">
+            <property name="text">
+             <string>检测到该文件包含整合配置文件。</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPushButton" name="btnSwitchToModpack">
+            <property name="text">
+             <string>切换到整合导入</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <widget class="QFrame" name="mapCardFrame">
+         <property name="frameShape">
+          <enum>QFrame::StyledPanel</enum>
+         </property>
+         <property name="frameShadow">
+          <enum>QFrame::Raised</enum>
+         </property>
+         <layout class="QVBoxLayout" name="mapCardLayout">
+          <property name="spacing">
+           <number>8</number>
+          </property>
+          <item>
+           <widget class="QLabel" name="mapTitleLabel">
+            <property name="font">
+             <font>
+              <bold>true</bold>
+             </font>
+            </property>
+            <property name="text">
+             <string>已就绪的地图信息</string>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <layout class="QFormLayout" name="mapFormLayout">
+            <property name="horizontalSpacing">
+             <number>12</number>
+            </property>
+            <property name="verticalSpacing">
+             <number>6</number>
+            </property>
+            <item row="0" column="0">
+             <widget class="QLabel" name="label_wName">
+              <property name="text">
+               <string>地图名称:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="0" column="1">
+             <widget class="QLabel" name="mapNameLabel">
+              <property name="text">
+               <string>-</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="0">
+             <widget class="QLabel" name="label_wFolder">
+              <property name="text">
+               <string>世界目录:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="1" column="1">
+             <widget class="QLabel" name="mapFolderLabel">
+              <property name="text">
+               <string>-</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="0">
+             <widget class="QLabel" name="label_wVer">
+              <property name="text">
+               <string>推荐版本:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="2" column="1">
+             <widget class="QLabel" name="mapVersionLabel">
+              <property name="text">
+               <string>-</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="0">
+             <widget class="QLabel" name="label_wRes">
+              <property name="text">
+               <string>内置资源:</string>
+              </property>
+             </widget>
+            </item>
+            <item row="3" column="1">
+             <widget class="QLabel" name="mapResourcesLabel">
+              <property name="text">
+               <string>-</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+          <item>
+           <layout class="QHBoxLayout" name="mapOptionsButtonLayout">
+            <item>
+             <spacer name="optionsSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>40</width>
+                <height>20</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="btnMapOptions">
+              <property name="text">
+               <string>⚙️ 调整地图导入选项...</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </item>
+         </layout>
+        </widget>
+       </item>
+       <item>
+        <spacer name="mapSpacer">
+         <property name="orientation">
+          <enum>Qt::Vertical</enum>
+         </property>
+         <property name="sizeHint" stdset="0">
+          <size>
+           <width>20</width>
+           <height>40</height>
+          </size>
+         </property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
     </widget>
    </item>
   </layout>

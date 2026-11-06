@@ -172,7 +172,9 @@ QString textOr(const QJsonValue& value, const QString& fallback = {})
 
 QString ModPresets::path()
 {
-    return FS::PathCombine(APPLICATION->dataRoot(), QStringLiteral("mod-presets.json"));
+    auto* app = APPLICATION_DYN;
+    const QString root = app != nullptr ? app->dataRoot() : QDir::currentPath();
+    return FS::PathCombine(root, QStringLiteral("mod-presets.json"));
 }
 
 QString ModPresets::providerLabel(const QString& provider)

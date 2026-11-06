@@ -36,7 +36,10 @@
 #pragma once
 
 #include <QWidget>
+#include <optional>
 
+#include "maps/MapArchiveScanner.h"
+#include "maps/MapImportTask.h"
 #include "tasks/Task.h"
 #include "ui/pages/BasePage.h"
 
@@ -45,32 +48,59 @@ class ImportPage;
 }
 
 class NewInstanceDialog;
+class QDragEnterEvent;
+class QDropEvent;
 
 class ImportPage : public QWidget, public BasePage {
     Q_OBJECT
 
    public:
-    explicit ImportPage(NewInstanceDialog* dialog, QWidget* parent = 0);
-    virtual ~ImportPage();
-    virtual QString displayName() const override { return tr("Import"); }
-    virtual QIcon icon() const override { return QIcon::fromTheme("viewfolder"); }
-    virtual QString id() const override { return "import"; }
-    virtual QString helpPage() const override { return "Zip-import"; }
-    virtual bool shouldDisplay() const override;
+    enum class Mode {
+        Modpack,
+        Map
+    };
+
+    explicit ImportPage(NewInstanceDialog* dialog, QWidget* parent = nullptr);
+    ~ImportPage() override;
+
+    QString displayName() const override { return tr("Import"); }
+    QIcon icon() const override { return QIcon::fromTheme("viewfolder"); }
+    QString id() const override { return "import"; }
+    QString helpPage() const override { return "Zip-import"; }
+    bool shouldDisplay() const override;
     void retranslate() override;
 
     void setUrl(const QString& url);
+    void setMapFile(const QString& path);
+    void setMode(Mode mode);
     void openedImpl() override;
     void setExtraInfo(const QMap<QString, QString>& extra_info);
+
+   protected:
+    void dragEnterEvent(QDragEnterEvent* event) override;
+    void dropEvent(QDropEvent* event) override;
+
    private slots:
+    void on_radioModpack_toggled(bool checked);
+    void on_radioMap_toggled(bool checked);
     void on_modpackBtn_clicked();
+    void on_mapBtn_clicked();
+    void on_btnMapOptions_clicked();
+    void on_btnSwitchToMap_clicked();
+    void on_btnSwitchToModpack_clicked();
     void updateState();
 
    private:
+    void updateModpackState();
+    void updateMapState();
     QUrl modpackUrl() const;
 
    private:
     Ui::ImportPage* ui = nullptr;
     NewInstanceDialog* dialog = nullptr;
     QMap<QString, QString> m_extra_info = {};
+
+    std::optional<maps::MapScanResult> m_currentMapScan;
+    maps::MapImportOptions m_currentMapOptions;
+    bool m_hasCustomMapOptions = false;
 };
