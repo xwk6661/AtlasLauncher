@@ -76,6 +76,7 @@ class DownloadAllVersionsDialog : public QDialog {
     QPlainTextEdit* m_logView = nullptr;
     QPushButton* m_startButton = nullptr;
     QPushButton* m_stopButton = nullptr;
+    QPushButton* m_closeButton = nullptr;
 
     QList<VersionEntry> m_versions;
     QSet<QString> m_seenIndexes;

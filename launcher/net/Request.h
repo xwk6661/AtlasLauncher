@@ -122,6 +122,13 @@ class Request : public Task {
     /// 连接失败 / 网络停滞时的重试上限（总尝试次数 = 1 + MAX_NETWORK_RETRIES）
     static constexpr int MAX_NETWORK_RETRIES = 3;
 
+    /**
+     * 空闲看门狗的时间窗：**整个传输**上这么久没有一个字节就放弃这次尝试。
+     *
+     * 默认 20 秒；`PRISM_NET_IDLE_TIMEOUT_MS` 可以改（单测用它压到几百毫秒）。
+     */
+    static constexpr int IDLE_TIMEOUT_MS = 20000;
+
     /// 小于这个大小的文件不值得拆段（拆段的收益来自"每条连接被限速"，小文件本来就快）
     /// 超过这个大小才值得拆段。1 MB 的库拆成 8 条连接纯粹是浪费：
     /// 每条都要 TLS 握手，还把一个本来 1 秒的文件摊成 8 个请求（实测 60 个小库
@@ -196,6 +203,11 @@ class Request : public Task {
     QNetworkReply::NetworkError error() const;
     QString errorString() const;
 
+    /// 当前这次尝试是不是走的分段并发（给下载面板显示"N 段"用）
+    auto isParallel() const -> bool { return m_parallel; }
+    /// 分了几段（非分段时为 0）
+    auto chunkCount() const -> int { return m_chunks.size(); }
+
    private:
     auto handleRedirect() -> bool;
     void handleAutoRetry(int64_t delay);
@@ -209,8 +221,6 @@ class Request : public Task {
      * 把上一轮写了半截的数据丢掉 —— 安全性见 FileSink::init() 的注释与单测。
      */
     auto tryNetworkRetry(QNetworkReply::NetworkError error) -> bool;
-    /// 当前这次尝试是不是走的分段并发（供单测/日志判断）
-    auto isParallel() const -> bool;
 
     // ---- 分段并发下载（大文件） ----
     struct Chunk {
@@ -222,6 +232,12 @@ class Request : public Task {
         qint64 lastAttemptReceived = 0;
         int zeroProgress = 0;
         bool done = false;
+        /// 上一个吞吐窗口结束时的 received：分片版的"龟速"判定（见 checkChunkSpeed）
+        qint64 lastSpeedBytes = 0;
+        int slowTicks = 0;
+        /// 已经因为"太慢"换过几次连接。上限 2 次：换来换去还是慢，说明整条线就慢，
+        /// 再掐下去只会把 attempts 耗光、被整体降级成单连接（那要从 0 重下，更亏）。
+        int slowReconnects = 0;
     };
     /// 单个分片最多试几次（网络抖一下不该拖垮整个文件；分片会从断点续，所以多试几次很便宜）
     static constexpr int MAX_CHUNK_ATTEMPTS = 6;
@@ -229,7 +245,21 @@ class Request : public Task {
     ///
     /// 有的主机（实测 piston-data 的 client.jar）会对某一段持续不理人：每 60 秒传输超时一次、
     /// 重试还是同一个偏移、依旧零字节。硬试满 6 次就是 6 分钟白等，所以要早点认输。
-    static constexpr int MAX_ZERO_PROGRESS_ATTEMPTS = 2;
+    ///
+    /// 2 → 3（2026-11-06）：`libraries.minecraft.net` 在并发连接多时会**随机关掉**一两条，
+    /// 被掐的那一片两次都从头开始就是"零进展"，整个文件于是被降级成单连接 ——
+    /// 一个 23 MB 的 jar 从 12 条连接退回 1 条、爬了十几分钟（06 §43）。多给一次机会。
+    static constexpr int MAX_ZERO_PROGRESS_ATTEMPTS = 3;
+    /**
+     * 分片失败后先用更少的段数再试一次，才退回单连接。
+     *
+     * 对面按 IP 限并发是常态（同一个文件 12 条连接能被掐掉两条），但这不代表它不支持
+     * Range —— 降到一半往往就稳了，而单连接在这条线路上只有 10–25 KB/s。
+     */
+    static constexpr int MAX_PARALLEL_RETRIES = 1;
+    /// 本轮实际使用的段数（0 = 用设置里的 DownloadChunks）
+    int m_chunkCountOverride = 0;
+    int m_parallelRetries = 0;
     qint64 chunkExpected() const { return m_totalBytes; }
     void tryStartParallel();
     /// 按偏移写（分段模式）。sink 不是 FileSink 时退回顺序写。
@@ -299,15 +329,24 @@ class Request : public Task {
     qint64 m_resumeOffset = 0;
 
     /**
-     * "一个字节都没收到"的看门狗。
+     * "一个字节都没进来"的看门狗 —— **覆盖整个传输过程，不只看响应头**。
      *
      * 官方域（尤其 piston-meta）有时既不回包、也不断开：传输超时要等满
-     * `RequestTimeout`（默认 60 秒）才触发，一个 20 KB 的版本 json 也要干等一分钟。
-     * 这里给"连响应头都没见到"的情况单独设一个更短的闸门（06 §37）。
+     * `RequestTimeout`（默认 60 秒）才触发，一个 20 KB 的版本 json 也要干等一分钟（06 §37）。
+     *
+     * 但只盯"响应头"是不够的：2026-11-05 那份日志里，1.10.2 的 client.jar 在**收到 200 之后**
+     * 整整 3542 秒没有任何字节日志，Qt 的传输超时没有触发、我们的看门狗早在 `onFirstResponse`
+     * 里停了 —— 请求就这么永久挂着（06 §39）。所以改成：
+     * 建好 reply 就起表，**每收到一次数据就重新起表**，20 秒一个字节都没有就放弃这次尝试。
+     * 分片模式下由任一分片的数据续命，整条传输都死了才会触发（随后各片各自续传重连）。
      */
-    static constexpr int NO_RESPONSE_TIMEOUT_MS = 20000;
-    QTimer m_noResponseTimer;
+    QTimer m_idleTimer;
+    /// 当前生效的空闲窗口（可能被 RequestTimeout 或环境变量压低，日志里要打真实值）
+    int m_idleTimeoutMs = IDLE_TIMEOUT_MS;
+    /// 收到过响应头（只影响日志措辞：区分"连响应都没有"与"有响应但不动了"）
     bool m_gotAnyResponse = false;
+    /// 起/重置空闲看门狗（数据一到就调用）
+    void armIdleTimer();
 
     /**
      * "在爬"的看门狗：服务器回包了、也一直在给数据，但只有 20 KB/s。
@@ -317,7 +356,9 @@ class Request : public Task {
      * 这里按"每 10 秒收了多少字节"判定，连续两个窗口低于阈值就放弃这次尝试
      * （有断点续传，换一条连接重试几乎不亏）。
      *
-     * 只在"还没换过源"时启用：两个源都试过了就不再打断，宁可慢也让它下完。
+     * 2026-11-05 补：**分片模式以前完全没被这层覆盖**（`m_parallel` 直接 return），而这恰恰是
+     * 症状最重的地方 —— 12 条连接每条 13 KB/s，25 MB 的文件爬了 152 秒、日志里一行都没有，
+     * 既不算失败也没人管（06 §39）。现在分片按片统计，慢片直接 abort 后**从断点续**。
      */
     static constexpr int SPEED_WINDOW_MS = 10000;
     static constexpr qint64 MIN_SPEED_BYTES_PER_WINDOW = 150 * 1024;  // ≈15 KB/s
@@ -328,6 +369,10 @@ class Request : public Task {
     qint64 m_lastSpeedBytes = 0;
     int m_slowTicks = 0;
     int m_slowAborts = 0;
+    /// 分片模式的吞吐检查：慢到离谱的片换连接（从断点续，不丢已下载的字节）
+    void checkChunkSpeed();
+    /// 同一片最多因"慢"换几次连接（超过就认了，让它慢慢下完）
+    static constexpr int MAX_SLOW_RECONNECTS = 2;
 
     /// 服务端回了 416（Range 越界）：说明 .part 已经不小于文件长度，必须丢掉重来
     bool m_rangeOutOfBounds = false;

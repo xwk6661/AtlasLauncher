@@ -37,6 +37,7 @@
 
 #include "NetJob.h"
 #include <QNetworkReply>
+#include "net/DownloadMonitor.h"
 #include "net/Request.h"
 #include "tasks/ConcurrentTask.h"
 
@@ -59,6 +60,12 @@ NetJob::NetJob(const QString& jobName, QNetworkAccessManager* network, int maxCo
     if (maxConcurrent > 0) {
         setMaxConcurrent(maxConcurrent);
     }
+    Net::DownloadMonitor::instance()->registerJob(this);
+}
+
+NetJob::~NetJob()
+{
+    Net::DownloadMonitor::instance()->unregisterJob(this);
 }
 
 auto NetJob::addNetAction(const Net::Request::Ptr& action) -> bool
@@ -91,6 +98,33 @@ void NetJob::executeNextSubTask()
 auto NetJob::size() const -> int
 {
     return m_queue.size() + m_doing.size() + m_done.size();
+}
+
+auto NetJob::doneCount() const -> int
+{
+    return m_done.size();
+}
+
+auto NetJob::activeDownloads() const -> QList<ActiveDownload>
+{
+    QList<ActiveDownload> out;
+    out.reserve(m_doing.size());
+    for (const auto& task : m_doing) {
+        auto* request = dynamic_cast<Net::Request*>(task.get());
+        if (request == nullptr)
+            continue;
+        ActiveDownload item;
+        item.key = request->url().toString();
+        item.name = request->url().fileName();
+        if (item.name.isEmpty())
+            item.name = item.key;
+        item.done = request->getProgress();
+        item.total = request->getTotalProgress();
+        item.parallel = request->isParallel();
+        item.chunks = request->chunkCount();
+        out.append(item);
+    }
+    return out;
 }
 
 auto NetJob::canAbort() const -> bool

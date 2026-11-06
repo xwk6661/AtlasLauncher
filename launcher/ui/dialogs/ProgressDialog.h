@@ -90,6 +90,9 @@ class ProgressDialog : public QDialog {
    private:
     bool handleImmediateResult(QDialog::DialogCode& result);
     void addTaskProgress(TaskStepProgress const& progress);
+    /// 轮询下载监控并把结果画到面板上（没有下载在跑时面板自动隐藏）
+    void tickDownloadPanel();
+    void stopDownloadPanel();
 
    private:
     Ui::ProgressDialog* ui;
@@ -100,4 +103,9 @@ class ProgressDialog : public QDialog {
 
     bool m_is_multi_step = false;
     QHash<QUuid, SubTaskProgressBar*> taskProgress;
+
+    QWidget* m_downloadPanel = nullptr;
+    QTimer* m_downloadTimer = nullptr;
+    /// 下载面板正在显示：右上角改为显示**总速度**，不再显示单个请求的 details
+    bool m_downloadActive = false;
 };

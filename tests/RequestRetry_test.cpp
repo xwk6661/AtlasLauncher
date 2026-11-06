@@ -26,9 +26,13 @@
  */
 
 #include <QFile>
+#include <QHostAddress>
+#include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QSignalSpy>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -174,6 +178,32 @@ class ScriptedRequest : public Net::Request {
     QList<QPair<FakeReply::Mode, QByteArray>> m_script;
     QByteArray* m_output = nullptr;
     QNetworkAccessManager m_network;
+};
+
+/// 走真实 QNAM 的 Request：本地"黑洞服务"要的是真实 HTTP 栈，不能像 ScriptedRequest 那样覆写 getReply
+class RealNetworkRequest : public Net::Request {
+   public:
+    RealNetworkRequest(const QUrl& url, Options options) : Net::Request(url, options)
+    {
+        auto sink = std::make_unique<Net::ByteArraySink>();
+        m_output = sink->output();
+        setSink(std::move(sink));
+        // QNAM 必须是 Request 的子对象（不是成员）：真实的 reply 以 QNAM 为 parent，
+        // 如果 QNAM 先于 m_reply 析构，reply 会被删两次（成员析构顺序会踩到这一点）。
+        setNetwork(new QNetworkAccessManager(this));
+    }
+
+    QByteArray* output() { return m_output; }
+
+   private:
+    QByteArray* m_output = nullptr;
+};
+
+/// 临时改环境变量（用例结束后一定要还原，否则会污染后面的用例）
+struct ScopedEnv {
+    ScopedEnv(const char* key, const QByteArray& value) : m_key(key) { qputenv(key, value); }
+    ~ScopedEnv() { qunsetenv(m_key); }
+    QByteArray m_key;
 };
 
 }  // namespace
@@ -561,6 +591,91 @@ class RequestRetryTest : public QObject {
                 QVERIFY2(!QFile::exists(path), "校验失败时不能把坏文件落到目标位置");
             }
         }
+    }
+
+    /**
+     * 响应头到了、body 再也不来 —— 2026-11-05「卡 59 分钟」的形态。
+     *
+     * 现场（logs/Atlas-0.log）：1.10.2 的 client.jar 收到 200 之后整整 3542 秒没有任何字节日志，
+     * Qt 的传输超时没有触发，而我们的看门狗在 `onFirstResponse` 里已经停了 —— 请求就永久挂着，
+     * 界面上是"进度条不动、也不报错"（06 §39）。
+     *
+     * 这里用本地黑洞服务复现：先回 200 + Content-Length，然后一个字节都不发、也不断开。
+     * 期望：空闲看门狗掐掉每次尝试并重试，预算用尽后给出可读的失败，而不是永远等下去。
+     */
+    void idleConnectionIsAbortedAfterHeaders()
+    {
+        QTcpServer server;
+        QVERIFY(server.listen(QHostAddress::LocalHost));
+
+        QList<QTcpSocket*> sockets;
+        connect(&server, &QTcpServer::newConnection, this, [&server, &sockets] {
+            while (auto* socket = server.nextPendingConnection()) {
+                connect(socket, &QTcpSocket::readyRead, socket, [socket] {
+                    socket->readAll();
+                    if (socket->property("answered").toBool())
+                        return;  // 之后就装死：不回 body、也不断开
+                    socket->setProperty("answered", true);
+                    socket->write("HTTP/1.1 200 OK\r\nContent-Length: 1000000\r\n\r\n");
+                    socket->flush();
+                });
+                sockets.append(socket);
+            }
+        });
+
+        // 真实的 20 秒窗口在这里没意义：压到 300ms，四条尝试加起来仍然只有几秒
+        ScopedEnv idleWindow("PRISM_NET_IDLE_TIMEOUT_MS", "300");
+
+        RealNetworkRequest request(QUrl(QStringLiteral("http://127.0.0.1:%1/blackhole.jar").arg(server.serverPort())),
+                                   Net::Request::Option::NoSourceRewrite);
+        QSignalSpy failed(&request, &Task::failed);
+        request.start();
+
+        QVERIFY(failed.wait(15000));
+        QCOMPARE(failed.at(0).at(0).toString().contains("网络停滞"), true);
+
+        // 每次尝试都重新连了一条（看门狗确实在掐，而不是一直等）
+        QCOMPARE(sockets.size(), 1 + Net::Request::MAX_NETWORK_RETRIES);
+
+        qDeleteAll(sockets);
+    }
+
+    /**
+     * 两个请求同时下同一个目标文件：绝不能共用 `.part`。
+     *
+     * 现场（06 §41）：`meta/index.json` 会被两个组件各拉一次，两个 NetJob 并行跑。
+     * 共用 `.part` 时一个在续传、另一个从头覆盖，互相把对方字节冲掉；416 之后
+     * `restartFromZero()` 又因为文件被对方打开而删不掉 → Range 越界 → 重试 → 还是越界，
+     * 三次预算耗尽，整个安装失败。第二个 sink 必须退到自己的临时文件。
+     */
+    void concurrentSinksOnTheSameTargetUsePrivatePartFiles()
+    {
+        QTemporaryDir dir;
+        const QString path = dir.filePath("index.json");
+
+        Net::FileSink first(path);
+        Net::FileSink second(path);
+        QNetworkRequest firstRequest{ QUrl("https://meta.prismlauncher.org/v1/index.json") };
+        QNetworkRequest secondRequest{ QUrl("https://meta.prismlauncher.org/v1/index.json") };
+
+        QVERIFY(first.init(firstRequest).has_value());
+        QVERIFY(second.init(secondRequest).has_value());
+
+        // 都是全新文件：谁都不该带 Range（带了就会 416）
+        QVERIFY(!firstRequest.hasRawHeader("Range"));
+        QVERIFY(!secondRequest.hasRawHeader("Range"));
+
+        QVERIFY(first.write("FIRST").has_value());
+        QVERIFY(second.write("SECOND").has_value());
+
+        StubReply firstReply(200);
+        StubReply secondReply(200);
+        QVERIFY(first.finalize(firstReply).has_value());
+        QVERIFY(second.finalize(secondReply).has_value());
+
+        // 真实场景里两个 URL 相同、内容也一样；这里只验"都写成功、目标文件不残缺"
+        const auto data = readAll(path);
+        QVERIFY2(data == QByteArray("FIRST") || data == QByteArray("SECOND"), data.constData());
     }
 
     /// 反方向也要有退路：官方源连续失败 → 回落到镜像（只走一次，不来回绕）

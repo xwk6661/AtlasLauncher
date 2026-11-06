@@ -51,10 +51,29 @@ class NetJob : public ConcurrentTask {
     // TODO: delete
     using Ptr = shared_qobject_ptr<NetJob>;
 
+    /**
+     * 正在下的一个文件（给下载面板看）。
+     *
+     * 注意 `done/total` 是**字节**，不是"第几个文件"：`Task::progress` 的语义由子任务自己定，
+     * `Net::Request` 报的是字节，所以这里直接拿来用。
+     */
+    struct ActiveDownload {
+        QString key;      ///< 稳定键（URL），面板用它算速度
+        QString name;     ///< 显示名（文件名）
+        qint64 done = 0;
+        qint64 total = -1;  ///< 还没拿到 Content-Length 时是 -1
+        bool parallel = false;
+        int chunks = 0;
+    };
+
     explicit NetJob(const QString& jobName, QNetworkAccessManager* network, int maxConcurrent = -1);
-    ~NetJob() override = default;
+    ~NetJob() override;
 
     auto size() const -> int;
+    /// 已经完成的子任务数（并发任务按"文件"计数）
+    auto doneCount() const -> int;
+    /// 当前正在下的文件快照（顺序不保证；面板自己排序）
+    auto activeDownloads() const -> QList<ActiveDownload>;
 
     auto canAbort() const -> bool override;
     auto addNetAction(const Net::Request::Ptr& action) -> bool;

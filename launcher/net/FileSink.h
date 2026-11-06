@@ -45,7 +45,7 @@ namespace Net {
 class FileSink : public Sink {
    public:
     explicit FileSink(QString filename) : m_filename(std::move(filename)) {};
-    ~FileSink() override = default;
+    ~FileSink() override;
 
    public:
     InitResult init(QNetworkRequest& request) override;
@@ -102,5 +102,20 @@ class FileSink : public Sink {
     qint64 m_parallelSize = 0;
     QFile m_partFile;
     QString m_partPath;
+
+    /**
+     * 同一个目标文件同时被两个请求写的时候，只有一个能占住 `<目标>.part`。
+     *
+     * 真实案例（06 §41）：`meta/index.json` 会被两个组件各自拉一次，两个 NetJob 并行跑，
+     * 于是两个 sink 往同一个 `.part` 里写 —— 一个在续传、另一个从头覆盖，互相把对方的
+     * 字节冲掉；416 之后 `restartFromZero()` 又因为文件被对方打开而删不掉，
+     * 于是 Range 越界 → 重试 → 还是越界，三次预算耗尽，整个安装失败。
+     *
+     * 所以第二个 sink 改用独享的临时文件（`<目标>.part-<id>`），谁也别碰谁的半截数据。
+     */
+    QString m_canonicalPart;  ///< 规范路径（`<目标>.part`），用来登记归属
+    bool m_ownsPart = false;  ///< 是否占着 m_canonicalPart
+    void claimPart();
+    void releasePart();
 };
 }  // namespace Net

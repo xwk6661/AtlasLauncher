@@ -754,7 +754,7 @@
              </sizepolicy>
             </property>
             <property name="toolTip">
-             <string>每个大文件拆成几段并发下载（0 = 关闭，1 = 等同关闭）。8 段在弱网下通常能快 3–6 倍；段数越多越吃 CPU 和磁盘，也更容易触发服务器的连接数限制。</string>
+             <string>每个大文件拆成几段并发下载（0 = 关闭，1 = 等同关闭）。默认 16 段：这条线路上单条连接常被限速到 10–25 KB/s，段数基本就是带宽倍数（16 段实测能快 3–10 倍）。段数越多越吃 CPU 和磁盘，也更容易触发服务器的连接数限制。</string>
             </property>
             <property name="minimumSize">
              <size>

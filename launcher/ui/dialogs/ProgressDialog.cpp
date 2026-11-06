@@ -39,10 +39,15 @@
 
 #include <QDebug>
 #include <QKeyEvent>
+#include <QTimer>
+#include <QVBoxLayout>
 #include <limits>
 
+#include "StringUtils.h"
 #include "tasks/Task.h"
 
+#include "net/DownloadMonitor.h"
+#include "ui/widgets/DownloadPanel.h"
 #include "ui/widgets/SubTaskProgressBar.h"
 
 // map a value in a numeric range of an arbitrary type to between 0 and INT_MAX
@@ -72,6 +77,72 @@ ProgressDialog::ProgressDialog(QWidget* parent) : QDialog(parent), ui(new Ui::Pr
     changeProgress(0, 100);
     updateSize(true);
     hideSkipButton();
+
+    // 下载面板插在总进度条和步骤列表之间：网络阶段它最有用，其它任务整块隐藏。
+    auto* panel = new DownloadPanel(this);
+    m_downloadPanel = panel;
+    if (auto* box = qobject_cast<QVBoxLayout*>(ui->verticalLayout)) {
+        const int barIndex = box->indexOf(ui->globalProgressBar);
+        box->insertWidget(barIndex + 1, panel);
+    }
+
+    m_downloadTimer = new QTimer(this);
+    m_downloadTimer->setInterval(500);
+    connect(m_downloadTimer, &QTimer::timeout, this, &ProgressDialog::tickDownloadPanel);
+}
+
+void ProgressDialog::tickDownloadPanel()
+{
+    auto* panel = static_cast<DownloadPanel*>(m_downloadPanel);
+    if (panel == nullptr)
+        return;
+
+    const bool wasActive = panel->isActive();
+    const int beforeHeight = wasActive ? panel->sizeHint().height() : 0;
+
+    panel->refresh();
+
+    const bool active = panel->isActive();
+    const int afterHeight = active ? panel->sizeHint().height() : 0;
+
+    // 右上角：下载中显示"整体速度"（所有并行文件加起来），没在下载就还给任务自己的 details
+    const bool activeChanged = (active != m_downloadActive);
+    m_downloadActive = active;
+    if (active) {
+        const double speed = panel->lastSpeed();
+        ui->globalStatusDetailsLabel->setText(
+            speed >= 1 ? tr("↓ %1/s").arg(StringUtils::humanReadableFileSize(speed)) : QString());
+    } else if (activeChanged) {
+        ui->globalStatusDetailsLabel->setText(m_task != nullptr ? m_task->getDetails() : QString());
+    }
+    ui->globalStatusDetailsLabel->adjustSize();
+
+    // 下载面板在的时候让"步骤条"让位：两者说的是同一件事（当前阶段 + 进度），
+    // 而步骤条会占掉一大块高度，把真正要看的文件列表挤扁（2026-11-06 的截图）。
+    ui->taskProgressScrollArea->setHidden(active || !m_is_multi_step);
+
+    // 需要重算尺寸的两种时机：面板出现/消失，或者行数变了（面板变高）
+    if (activeChanged || afterHeight > beforeHeight) {
+        updateSize();
+        changeProgress(ui->globalProgressBar->value(), ui->globalProgressBar->maximum());
+    }
+}
+
+void ProgressDialog::stopDownloadPanel()
+{
+    if (m_downloadTimer)
+        m_downloadTimer->stop();
+    if (auto* panel = static_cast<DownloadPanel*>(m_downloadPanel)) {
+        if (!panel->isHidden()) {
+            panel->hide();
+            ui->taskProgressScrollArea->setHidden(!m_is_multi_step);
+            updateSize();
+        }
+    }
+    // 右上角还给任务自己的 details
+    m_downloadActive = false;
+    ui->globalStatusDetailsLabel->setText(m_task != nullptr ? m_task->getDetails() : QString());
+    ui->globalProgressBar->setFormat(QString());
 }
 
 void ProgressDialog::hideSkipButton()
@@ -115,10 +186,13 @@ void ProgressDialog::updateSize(bool recenterParent)
     minHeight += ui->globalProgressBar->minimumSize().height() + ui->verticalLayout->spacing();
     if (!ui->taskProgressScrollArea->isHidden())
         minHeight += ui->taskProgressScrollArea->minimumSizeHint().height() + ui->verticalLayout->spacing();
+    if (m_downloadPanel != nullptr && !m_downloadPanel->isHidden())
+        minHeight += m_downloadPanel->sizeHint().height() + ui->verticalLayout->spacing();
     if (ui->skipButton->isVisible())
         minHeight += ui->skipButton->height() + ui->verticalLayout->spacing();
     minHeight = std::max(minHeight, 60);
-    QSize minSize = QSize(480, minHeight);
+    const int minWidth = (m_downloadPanel != nullptr && !m_downloadPanel->isHidden()) ? 620 : 480;
+    QSize minSize = QSize(minWidth, minHeight);
 
     setMinimumSize(minSize);
     adjustSize();
@@ -164,10 +238,15 @@ int ProgressDialog::execWithTask(Task* task)
     this->m_taskConnections.push_back(connect(task, &Task::aborted, this, &ProgressDialog::hide));
     this->m_taskConnections.push_back(connect(task, &Task::abortStatusChanged, ui->skipButton, &QPushButton::setEnabled));
     this->m_taskConnections.push_back(connect(task, &Task::abortButtonTextChanged, ui->skipButton, &QPushButton::setText));
+    this->m_taskConnections.push_back(connect(task, &Task::finished, this, [this] { stopDownloadPanel(); }));
 
     m_is_multi_step = task->isMultiStep();
     ui->taskProgressScrollArea->setHidden(!m_is_multi_step);
     updateSize();
+
+    // 下载观测是旁路：任务链里有没有 NetJob、在第几层，这里都不用管
+    if (m_downloadTimer != nullptr)
+        m_downloadTimer->start();
 
     // It's a good idea to start the task after we entered the dialog's event loop :^)
     if (!task->isRunning()) {
@@ -228,7 +307,10 @@ void ProgressDialog::changeStatus([[maybe_unused]] const QString& status)
 {
     ui->globalStatusLabel->setText(m_task->getStatus());
     ui->globalStatusLabel->adjustSize();
-    ui->globalStatusDetailsLabel->setText(m_task->getDetails());
+    // 下载中右上角显示的是总速度（由下载面板每 500ms 刷新），
+    // 单个请求的 details（"78.16 KiB / 78.16 KiB 63.39 KiB/s"）和面板重复，不再覆盖它
+    if (!m_downloadActive)
+        ui->globalStatusDetailsLabel->setText(m_task->getDetails());
     ui->globalStatusDetailsLabel->adjustSize();
 
     updateSize();
@@ -244,7 +326,10 @@ void ProgressDialog::addTaskProgress(const TaskStepProgress& progress)
 void ProgressDialog::changeStepProgress(const TaskStepProgress& task_progress)
 {
     m_is_multi_step = true;
-    if (ui->taskProgressScrollArea->isHidden()) {
+    // 下载面板正在显示时不展开步骤条：面板已经把"在做什么、多快"说清楚了，
+    // 再放一条步骤条只会把窗口撑高、把文件列表挤扁。
+    const bool panelActive = m_downloadPanel != nullptr && !m_downloadPanel->isHidden();
+    if (!panelActive && ui->taskProgressScrollArea->isHidden()) {
         ui->taskProgressScrollArea->setHidden(false);
         updateSize();
     }
@@ -270,6 +355,12 @@ void ProgressDialog::changeProgress(qint64 current, qint64 total)
 {
     ui->globalProgressBar->setMaximum(total);
     ui->globalProgressBar->setValue(current);
+
+    // 下载阶段把"第几个文件"直接写进条上：原生只显示百分比，看不出还剩多少项
+    if (m_downloadPanel != nullptr && !m_downloadPanel->isHidden())
+        ui->globalProgressBar->setFormat(tr("%v / %m 个文件（%p%）"));
+    else
+        ui->globalProgressBar->setFormat(QString());
 }
 
 void ProgressDialog::keyPressEvent(QKeyEvent* e)

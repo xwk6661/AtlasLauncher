@@ -668,13 +668,14 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
 
         m_settings->registerSetting("NumberOfConcurrentTasks", 10);
         // 6 是上游默认值，但一个 QNAM 每主机也只有 6 条连接（见 downloadNetwork()）；
-        // 配合 4 个 QNAM 的池，24 个并发文件才真的能开出 24 条连接。
+        // 配合 8 个 QNAM 的池，48 个并发文件才真的能开出 48 条连接。
         m_settings->registerSetting("NumberOfConcurrentDownloads", 24);
         // 单个大文件拆成几个并发 Range 请求（0/1 = 关闭）。见 net/Request::parallelChunks()：
-        // 弱网下"每条连接被限速"，8 条能拿到约 8 倍带宽（实测 60 KB/s → 487 KB/s）。
+        // 弱网下"每条连接被限速"，段数几乎直接等于带宽倍数（实测 60 KB/s → 487 KB/s）。
         // 单文件拆成几段并发（0/1 = 关闭）。实测同一文件：1 条连接 98 KB/s，
         // 8 段 3324 KB/s，sha1 一致（见 06 §32）。服务器不认 Range 时自动退回单连接。
-        m_settings->registerSetting("DownloadChunks", 8);
+        // 2026-11-06 默认 8 → 16：这条线路上单连接只有 10–25 KB/s，16 段才吃得住（06 §41）。
+        m_settings->registerSetting("DownloadChunks", 16);
         m_settings->registerSetting("NetworkRetryLimit", 2);
         m_settings->registerSetting("RequestTimeout", 15);
 

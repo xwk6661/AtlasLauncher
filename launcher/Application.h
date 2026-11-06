@@ -159,7 +159,8 @@ class Application : public QApplication {
      */
     QNetworkAccessManager* downloadNetwork();
     /// 池里有几个 QNAM（每个最多 6 条/主机连接）
-    static constexpr int DownloadNetworkPoolSize = 4;
+    /// 4 → 8：这条线路是"每条连接 10–25 KB/s"，池子越大越能把带宽吃满（06 §41）
+    static constexpr int DownloadNetworkPoolSize = 8;
 
     HttpMetaCache* metacache();
 

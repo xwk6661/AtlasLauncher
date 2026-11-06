@@ -10,6 +10,7 @@
 
 #include "DownloadAllVersionsDialog.h"
 
+#include <QApplication>
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
@@ -84,11 +85,12 @@ DownloadAllVersionsDialog::DownloadAllVersionsDialog(QWidget* parent) : QDialog(
     m_startButton = new QPushButton(tr("开始下载"), this);
     m_stopButton = new QPushButton(tr("停止"), this);
     m_stopButton->setEnabled(false);
-    auto* closeButton = new QPushButton(tr("关闭"), this);
+    m_closeButton = new QPushButton(tr("关闭"), this);
+    m_closeButton->setDefault(true);
     buttons->addWidget(m_startButton);
     buttons->addWidget(m_stopButton);
     buttons->addStretch(1);
-    buttons->addWidget(closeButton);
+    buttons->addWidget(m_closeButton);
     root->addLayout(buttons);
 
     connect(m_startButton, &QPushButton::clicked, this, &DownloadAllVersionsDialog::start);
@@ -99,7 +101,7 @@ DownloadAllVersionsDialog::DownloadAllVersionsDialog(QWidget* parent) : QDialog(
         if (m_job)
             m_job->abort();
     });
-    connect(closeButton, &QPushButton::clicked, this, &QDialog::close);
+    connect(m_closeButton, &QPushButton::clicked, this, &QDialog::close);
 
     // 无人值守入口：PRISM_DEBUG_DOWNLOAD_ALL=1 打开窗口即自动开始。
     // 只是为了在没有鼠标的环境里压测，正常调试（点按钮）不受影响。
@@ -126,7 +128,10 @@ void DownloadAllVersionsDialog::start()
 
     m_logView->clear();
     m_startButton->setEnabled(false);
+    m_startButton->setText(tr("开始下载"));
     m_stopButton->setEnabled(true);
+    setWindowTitle(tr("下载全部正式版资源（调试）"));
+    m_step->setFormat(tr("当前步骤 %v / %m"));
     m_overall->setRange(0, 0);
     m_step->setRange(0, 0);
 
@@ -505,6 +510,24 @@ void DownloadAllVersionsDialog::finishRun(bool cancelled)
                                 .arg(seconds, 0, 'f', 1);
     appendLog(summary);
     m_currentLabel->setText(summary);
+
+    // ---- 收尾：把界面切到"真的结束了"的样子 ----
+    //
+    // 以前这里只改了上面那行文字，两个进度条原样留着：`clearJob()` 把「当前步骤」设成
+    // `setRange(0, 0)`（不确定模式），跑完再没人复位，于是窗口上永远是一条**空进度条** ——
+    // 加上这个窗口会一直开着，用户看到的就是"停在 103/103、像卡死"（2026-11-05 反馈）。
+    // 进程其实一直是活的（Responding=True、CPU 空闲），只是没有任何"完成"的视觉信号。
+    m_step->setRange(0, 1);
+    m_step->setValue(1);
+    m_step->setFormat(cancelled ? tr("已停止") : tr("已完成"));
+    m_startButton->setText(tr("再跑一次"));
+    m_closeButton->setFocus();
+    setWindowTitle(cancelled ? tr("下载全部正式版资源（调试）· 已停止") : tr("下载全部正式版资源（调试）· 已完成"));
+
+    // 跑完把窗口提到前面并闪一下任务栏：这场下载要几分钟，用户多半已经切走了
+    raise();
+    activateWindow();
+    QApplication::alert(this);
 
     // 落一份报告，方便事后对日志（qInfo 也会进 logs/Atlas-*.log）
     QDir().mkpath(QStringLiteral("logs"));

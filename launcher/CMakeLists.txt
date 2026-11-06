@@ -136,6 +136,8 @@ set(NET_SOURCES
     net/ApiRequest.h
     net/Request.cpp
     net/Request.h
+    net/DownloadMonitor.cpp
+    net/DownloadMonitor.h
     net/RPCSink.h
 )
 
@@ -644,6 +646,8 @@ set(ATLASUPDATER_SOURCES
 
     ui/dialogs/ProgressDialog.cpp
     ui/dialogs/ProgressDialog.h
+    ui/widgets/DownloadPanel.cpp
+    ui/widgets/DownloadPanel.h
     ui/widgets/SubTaskProgressBar.h
     ui/widgets/SubTaskProgressBar.cpp
 )
@@ -1217,6 +1221,8 @@ SET(LAUNCHER_SOURCES
     ui/widgets/ProjectItem.cpp
     ui/widgets/SubTaskProgressBar.h
     ui/widgets/SubTaskProgressBar.cpp
+    ui/widgets/DownloadPanel.h
+    ui/widgets/DownloadPanel.cpp
     ui/widgets/VersionListView.cpp
     ui/widgets/VersionListView.h
     ui/widgets/VersionSelectWidget.cpp

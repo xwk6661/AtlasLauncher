@@ -86,6 +86,18 @@ auto logCatForMethod(HttpMethod method) -> Request::LogCatFunc
     return taskNetLogC;
 }
 
+/**
+ * 空闲看门狗的时间窗（毫秒）。
+ *
+ * 默认 20 秒；`PRISM_NET_IDLE_TIMEOUT_MS` 可以改小，给单测和现场排查用
+ * （和 `PRISM_DOWNLOAD_CHUNKS` 同一套思路：没有 Application 的上下文里读不到设置）。
+ */
+auto idleTimeoutMs() -> int
+{
+    const int fromEnv = qEnvironmentVariableIntValue("PRISM_NET_IDLE_TIMEOUT_MS");
+    return fromEnv > 0 ? fromEnv : Request::IDLE_TIMEOUT_MS;
+}
+
 }  // namespace
 
 Request::Request() : Request(Spec{}) {}
@@ -103,14 +115,21 @@ Request::Request(const Spec& spec) : m_options(spec.options), m_url(spec.url), m
     connect(&m_retryTimer, &QTimer::timeout, this, &Request::executeTask);
     connect(&m_networkRetryTimer, &QTimer::timeout, this, &Request::executeTask);
 
-    // 连响应头都没见到就干等着，是官方域最常见的失败形态：不报错、不断开、也不回包。
-    // 传输超时要等满 RequestTimeout（60 秒），对这种"死连接"太慢（06 §37）。
     // 吞吐看门狗：连续两个 10 秒窗口都低于 15 KB/s 就换一条连接重试。
-    // 换过源（官方↔镜像）之后不再打断，避免在慢速网络上反复放弃。
+    // （"完全不回包"由下面的空闲看门狗负责；这一层管的是"有数据但在爬"。）
     connect(&m_speedTimer, &QTimer::timeout, this, [this] {
-        if (m_parallel || m_reply == nullptr || m_state != State::Running)
+        if (m_reply == nullptr && !m_parallel)
             return;
-        if (m_slowAborts >= MAX_SLOW_ABORTS || m_fellBackToOfficial || m_fellBackToMirror)
+        if (m_state != State::Running)
+            return;
+
+        // 分片模式：按片统计，慢片换连接（从断点续，代价很小）—— 06 §39
+        if (m_parallel) {
+            checkChunkSpeed();
+            return;
+        }
+
+        if (m_slowAborts >= MAX_SLOW_ABORTS)
             return;
 
         const qint64 received = m_bytesThisAttempt;
@@ -134,13 +153,31 @@ Request::Request(const Spec& spec) : m_options(spec.options), m_url(spec.url), m
         m_reply->abort();
     });
 
-    connect(&m_noResponseTimer, &QTimer::timeout, this, [this] {
-        if (m_gotAnyResponse || m_reply == nullptr || m_state != State::Running)
+    // 空闲看门狗：**整条传输**上一个字节都没有就放弃这次尝试。
+    // 以前它只盯"响应头之前"，收到 200 就停表 —— 于是"有响应但之后再无数据"的连接
+    // 只能指望 Qt 的传输超时，而它在这种情况下不一定触发（实测挂了 3542 秒，见 06 §39）。
+    connect(&m_idleTimer, &QTimer::timeout, this, [this] {
+        if (m_state != State::Running)
             return;
-        qCWarning(m_logCat) << getUid().toString() << "No response in" << NO_RESPONSE_TIMEOUT_MS / 1000
-                            << "seconds, aborting this attempt:" << m_url.toString();
+        if (!m_parallel && m_reply == nullptr)
+            return;
+
+        // 窗口按"秒"打印（保持 05 §7 里 `No response in 20 seconds` 这个排查关键字），
+        // 被 PRISM_NET_IDLE_TIMEOUT_MS 压到 1 秒以下时退化成毫秒
+        const bool inSeconds = m_idleTimeoutMs >= 1000;
+        qCWarning(m_logCat) << getUid().toString() << (m_gotAnyResponse ? "Transfer idle for" : "No response in")
+                            << (inSeconds ? m_idleTimeoutMs / 1000 : m_idleTimeoutMs)
+                            << (inSeconds ? "seconds, aborting this attempt:" : "ms, aborting this attempt:") << m_url.toString();
         m_stalled = true;
-        m_reply->abort();
+        if (m_parallel) {
+            // 分片模式：各片 abort 后由 onChunkFinished → retryChunk 从断点续
+            for (auto& reply : m_chunkReplies) {
+                if (reply && !reply->isFinished())
+                    reply->abort();
+            }
+        } else {
+            m_reply->abort();
+        }
     });
 
     if (spec.name.isEmpty()) {
@@ -315,13 +352,24 @@ void Request::executeTask()
     connect(rep, &QNetworkReply::metaDataChanged, this, &Request::onFirstResponse);
 
     m_gotAnyResponse = false;
-    if (m_transferTimeoutMs > 0)
-        m_noResponseTimer.start(qMin(m_transferTimeoutMs, NO_RESPONSE_TIMEOUT_MS));
+    armIdleTimer();
 
     m_bytesThisAttempt = 0;
     m_lastSpeedBytes = 0;
     m_slowTicks = 0;
     m_speedTimer.start(SPEED_WINDOW_MS);
+}
+
+void Request::armIdleTimer()
+{
+    // 没有 Application（单测）时拿不到 RequestTimeout，但仍要有一个上界，
+    // 否则"响应头之后永远没数据"这种形态在测试里根本复现不出来。
+    int timeout = idleTimeoutMs();
+    if (m_transferTimeoutMs > 0)
+        timeout = qMin(timeout, m_transferTimeoutMs);
+    m_idleTimeoutMs = timeout;
+    m_idleTimer.setSingleShot(true);
+    m_idleTimer.start(timeout);
 }
 
 void Request::onProgress(qint64 bytesReceived, qint64 bytesTotal)
@@ -605,7 +653,7 @@ auto Request::tryNetworkRetry(QNetworkReply::NetworkError error) -> bool
     m_rangeOutOfBounds = false;
     // 这一轮结束了：两个看门狗都停掉，等 executeTask 重新起表，
     // 否则计时器会把上一轮的"慢"算到下一轮头上。
-    m_noResponseTimer.stop();
+    m_idleTimer.stop();
     m_speedTimer.stop();
     m_slowTicks = 0;
     m_lastSpeedBytes = 0;
@@ -691,7 +739,7 @@ void Request::tryStartParallel()
     if (getState() != State::Running)
         return;
 
-    const int chunks = parallelChunks();
+    const int chunks = m_chunkCountOverride > 0 ? m_chunkCountOverride : parallelChunks();
     if (chunks < 2)
         return;
     // 只有干净的 200 才拆：206/304 是别人已经处理过的场景
@@ -768,6 +816,11 @@ void Request::startChunk(int index)
     m_chunkReplies.resize(static_cast<size_t>(m_chunks.size()));
     m_chunkReplies[static_cast<size_t>(index)].reset(reply);
 
+    // 新连接刚建好：吞吐窗口从这一刻的已收字节算起，别把上一轮的进度当成这一轮的速度
+    chunk.lastSpeedBytes = chunk.received;
+    chunk.slowTicks = 0;
+    armIdleTimer();
+
     connect(reply, &QNetworkReply::readyRead, this, [this, index, reply] { onChunkReadyRead(index, reply); });
     connect(reply, &QNetworkReply::finished, this, [this, index, reply] { onChunkFinished(index, reply); });
     connect(reply, &QNetworkReply::errorOccurred, this,
@@ -797,6 +850,9 @@ void Request::onChunkReadyRead(int index, QNetworkReply* reply)
         return;
     }
     chunk.received += data.size();
+    // 任一分片有数据就算整条传输还活着：空闲看门狗重新起表
+    m_gotAnyResponse = true;
+    armIdleTimer();
     updateParallelProgress();
 }
 
@@ -888,6 +944,52 @@ void Request::onChunkFinished(int index, QNetworkReply* reply)
     maybeFinishParallel();
 }
 
+void Request::checkChunkSpeed()
+{
+    // 分片版的"龟速"判定：每片按自己的收包量算，连续两个 10 秒窗口都低于阈值就换一条连接。
+    // 换连接是**从断点续**（retryChunk 用 chunk.start + received），不丢已下载的字节，
+    // 所以这里可以比单连接版更果断 —— 单连接换一次要重开整份，这里只重开一片。
+    QList<int> toReconnect;
+    for (int i = 0; i < m_chunks.size(); ++i) {
+        auto& chunk = m_chunks[i];
+        if (chunk.done)
+            continue;
+        // 已经换过两次还是这个速度：别再掐了，让它慢慢下完 —— 继续掐只会把 6 次
+        // attempts 全花在"慢"上，最后整体降级成单连接、从头重下
+        if (chunk.slowReconnects >= MAX_SLOW_RECONNECTS)
+            continue;
+
+        const qint64 delta = chunk.received - chunk.lastSpeedBytes;
+        chunk.lastSpeedBytes = chunk.received;
+
+        if (delta >= MIN_SPEED_BYTES_PER_WINDOW) {
+            chunk.slowTicks = 0;
+            continue;
+        }
+        if (++chunk.slowTicks < 2)
+            continue;
+
+        chunk.slowTicks = 0;
+        chunk.slowReconnects++;
+        const double kbps = double(delta) / (SPEED_WINDOW_MS / 1000.0) / 1024.0;
+        qCWarning(m_logCat) << getUid().toString() << "Range" << i << "is crawling at" << QString::number(kbps, 'f', 1)
+                            << "KB/s, reconnecting from offset" << (chunk.start + chunk.received) << m_url.toString();
+        toReconnect.append(i);
+    }
+
+    // abort 会同步触发 onChunkFinished → retryChunk（从断点续，占 attempts 计数）。
+    // 不在上面的循环里直接 abort：那条链路可能让 m_chunks / m_chunkReplies 重新分配。
+    for (int i : toReconnect) {
+        if (!m_parallel)
+            break;
+        if (i < 0 || i >= m_chunkReplies.size() || !m_chunkReplies[static_cast<size_t>(i)])
+            continue;
+        auto& reply = m_chunkReplies[static_cast<size_t>(i)];
+        if (!reply->isFinished())
+            reply->abort();
+    }
+}
+
 void Request::updateParallelProgress()
 {
     qint64 received = 0;
@@ -941,19 +1043,46 @@ auto Request::maybeFinishParallel() -> bool
 
     qCDebug(m_logCat) << getUid().toString() << "Request succeeded (parallel," << m_chunks.size() << "ranges):" << m_url.toString();
     m_parallel = false;
+    m_idleTimer.stop();
+    m_speedTimer.stop();
     emitSucceeded();
     return true;
 }
 
 void Request::failParallelAndFallBack()
 {
-    qCWarning(m_logCat) << getUid().toString() << "Parallel download failed, falling back to a single connection:" << m_url.toString();
-
     // 先把这个标志关掉再 abort：abort 会同步触发各分片的 finished，
     // 那时若还认为自己在并行，会再次走进这个函数（曾经的递归崩溃点）。
     m_parallel = false;
     m_chunkFailed = false;
+    m_idleTimer.stop();
+    m_speedTimer.stop();
+    m_slowTicks = 0;
+    m_lastSpeedBytes = 0;
     abortParallel();
+
+    // 第一站：段数减半再试一次。对面的"掐连接"多是按 IP 限并发（12 条里被掐掉一两条），
+    // 并不代表不支持 Range；直接退回单连接等于把 12 倍带宽丢成 1 倍（06 §43）。
+    if (m_parallelRetries < MAX_PARALLEL_RETRIES) {
+        m_parallelRetries++;
+        const int base = m_chunkCountOverride > 0 ? m_chunkCountOverride : parallelChunks();
+        m_chunkCountOverride = qMax(4, base / 2);
+        qCWarning(m_logCat) << getUid().toString() << "Parallel download failed, retrying with" << m_chunkCountOverride
+                            << "ranges:" << m_url.toString();
+        m_state = State::Running;
+        m_stalled = false;
+        m_url = m_retryBaseUrl;
+        m_redirectCount = 0;
+        m_errorResponse.clear();
+        setProgress(0, 0);
+        setStatus(tr("分段下载失败，改用 %1 段重试").arg(m_chunkCountOverride));
+        m_networkRetryTimer.setSingleShot(true);
+        m_networkRetryTimer.start(300);
+        return;
+    }
+
+    qCWarning(m_logCat) << getUid().toString() << "Parallel download failed, falling back to a single connection:" << m_url.toString();
+
     // 只降级一次：之后这个 Request 全程走单连接，不会在两条路之间来回跳
     m_parallelDisabled = true;
     m_parallelTried = true;
@@ -983,14 +1112,9 @@ void Request::abortParallel()
         m_sink->abort();
 }
 
-auto Request::isParallel() const -> bool
-{
-    return m_parallel;
-}
-
 void Request::downloadFinished()
 {
-    m_noResponseTimer.stop();
+    m_idleTimer.stop();
     m_speedTimer.stop();
     // currently waiting for retry
     if (m_retryTimer.isActive()) {
@@ -1070,16 +1194,17 @@ void Request::downloadFinished()
 
 void Request::onFirstResponse()
 {
-    // 服务器至少回了响应头：后面收不到数据由传输超时负责，看门狗可以收了。
+    // 服务器至少回了响应头 —— 空闲看门狗**不撤**，只重新起表：
+    // "有响应头、但 body 一直不来" 是最容易挂死的形态（06 §39）。
     m_gotAnyResponse = true;
-    m_noResponseTimer.stop();
+    armIdleTimer();
 }
 
 void Request::downloadReadyRead()
 {
     if (m_state == State::Running) {
         m_gotAnyResponse = true;
-        m_noResponseTimer.stop();
+        armIdleTimer();
 
         // 带了 Range 却收到 200：服务器把整份内容塞回来了，继续往后 append 会得到一个
         // 前面重复、长度翻倍的文件。丢掉半截、从 0 重写（06 §36）。
@@ -1112,7 +1237,7 @@ auto Request::abort() -> bool
 {
     m_retryTimer.stop();
     m_networkRetryTimer.stop();
-    m_noResponseTimer.stop();
+    m_idleTimer.stop();
     m_speedTimer.stop();
     abortParallel();
     m_state = State::AbortedByUser;

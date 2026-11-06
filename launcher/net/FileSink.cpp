@@ -37,6 +37,7 @@
 #include <expected>
 
 #include <QFileInfo>
+#include <QHash>
 
 #include "FileSystem.h"
 
@@ -46,6 +47,43 @@ namespace Net {
 
 namespace {
 constexpr qint64 kValidationBlockSize = 1 << 20;
+
+/**
+ * 谁占着某个目标文件的规范 `.part`。
+ *
+ * 只在主线程访问（所有下载都在 UI 线程的网络栈上）。见 FileSink.h 里 `m_ownsPart` 的注释。
+ */
+QHash<QString, const FileSink*> s_partOwners;
+}  // namespace
+
+FileSink::~FileSink()
+{
+    releasePart();
+}
+
+void FileSink::claimPart()
+{
+    m_canonicalPart = m_filename + QStringLiteral(".part");
+    const auto* owner = s_partOwners.value(m_canonicalPart, nullptr);
+    if (owner == nullptr || owner == this) {
+        m_ownsPart = true;
+        s_partOwners.insert(m_canonicalPart, this);
+        m_partPath = m_canonicalPart;
+        return;
+    }
+    // 另一个请求正在写同一个目标：退到独享的临时文件，绝不能共用 .part
+    m_ownsPart = false;
+    m_partPath = m_canonicalPart + QStringLiteral("-") + QString::number(reinterpret_cast<quintptr>(this), 36);
+    qCDebug(taskNetLogC) << "Another request is already writing" << m_filename << "- using a private part file";
+}
+
+void FileSink::releasePart()
+{
+    if (!m_ownsPart)
+        return;
+    if (s_partOwners.value(m_canonicalPart, nullptr) == this)
+        s_partOwners.remove(m_canonicalPart);
+    m_ownsPart = false;
 }
 
 auto FileSink::init(QNetworkRequest& request) -> InitResult
@@ -69,7 +107,7 @@ auto FileSink::init(QNetworkRequest& request) -> InitResult
         m_parallelSize = 0;
     }
 
-    m_partPath = m_filename + QStringLiteral(".part");
+    claimPart();
     m_partFile.setFileName(m_partPath);
 
     // 分片模式的临时文件是**预分配**的（先 resize 到总长度），失败时留下的是"满尺寸但有空洞"
@@ -146,6 +184,7 @@ void FileSink::abort()
     if (!m_partPath.isEmpty())
         QFile::remove(m_partPath);
     m_partPath.clear();
+    releasePart();
     m_parallel = false;
     m_parallelSize = 0;
     m_resumeFrom = 0;
@@ -225,8 +264,10 @@ auto FileSink::beginParallel(qint64 totalSize) -> Result<>
 
     // 分片用独立文件：预分配 + 空洞的语义和"顺序下载的前缀"完全不同，
     // 混用会让下一次顺序重试把空洞当成已下载的数据（06 §36.5）。
-    QFile::remove(m_filename + QStringLiteral(".part"));
-    m_partPath = m_filename + QStringLiteral(".part.parallel");
+    // m_partPath 这一刻还是顺序模式的那个（规范 .part 或独享临时文件），在它后面加后缀，
+    // 保证"两个请求下同一个目标"时连分片 scratch 也是各用各的。
+    QFile::remove(m_partPath);
+    m_partPath += QStringLiteral(".parallel");
     QFile::remove(m_partPath);
     m_partFile.setFileName(m_partPath);
     if (!m_partFile.open(QIODevice::ReadWrite)) {
@@ -336,6 +377,7 @@ auto FileSink::finalize(QNetworkReply& reply) -> Result<>
             return std::unexpected(error);
         }
         m_partPath.clear();
+        releasePart();
         m_parallel = false;
         m_wroteAnyData = true;
         return finalizeCache(reply);
@@ -356,6 +398,8 @@ auto FileSink::finalize(QNetworkReply& reply) -> Result<>
     // 服务器答了 304 / 什么都没写：目标位置上原有的文件就是最新版，别动它。
     if (have == 0 && !m_wroteAnyData && !gotFile) {
         QFile::remove(m_partPath);
+        releasePart();
+        m_partPath.clear();
         return finalizeCache(reply);
     }
 
@@ -385,6 +429,7 @@ auto FileSink::finalize(QNetworkReply& reply) -> Result<>
     }
 
     m_partPath.clear();
+    releasePart();
     m_resumeFrom = 0;
     m_rangeRequested = false;
     m_wroteAnyData = true;
