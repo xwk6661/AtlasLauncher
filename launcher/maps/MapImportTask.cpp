@@ -23,7 +23,10 @@
 #include <QEventLoop>
 #include <QFile>
 #include <QFileInfo>
+#include <QMetaObject>
 #include <QRegularExpression>
+#include <QThreadPool>
+#include <QtConcurrent>
 
 #include "FileSystem.h"
 #include "MMCZip.h"
@@ -122,6 +125,8 @@ void MapImportTask::executeTask()
         m_loader = QStringLiteral("vanilla");
     }
 
+    setAbortable(true);
+    setAbortButtonText(tr("取消"));
     setProgress(0, 5);
 
     setStatus(tr("正在创建实例…"));
@@ -130,25 +135,76 @@ void MapImportTask::executeTask()
         return;
     }
 
-    setProgress(1, 5);
-    setStatus(tr("正在解压存档…"));
-    if (const auto result = extractWorlds(); !result) {
+    m_extractWatcher.disconnect();
+    connect(&m_extractWatcher, &QFutureWatcher<Result<>>::finished, this, &MapImportTask::onExtractionFinished);
+
+    // 将重度解压与文件写入流程放入全局线程池，解放 UI 线程，彻底消除界面卡顿并支持随时取消
+    auto future = QtConcurrent::run(QThreadPool::globalInstance(), [this]() -> Result<> {
+        if (m_abortRequested.load())
+            return std::unexpected{ tr("导入已被取消") };
+
+        QMetaObject::invokeMethod(this, [this]() {
+            setProgress(1, 5);
+            setStatus(tr("正在解压存档…"));
+        }, Qt::QueuedConnection);
+
+        if (const auto result = extractWorlds(); !result)
+            return result;
+
+        if (m_abortRequested.load())
+            return std::unexpected{ tr("导入已被取消") };
+
+        QMetaObject::invokeMethod(this, [this]() {
+            setProgress(2, 5);
+            setStatus(tr("正在部署随包资源…"));
+        }, Qt::QueuedConnection);
+
+        if (const auto result = deployResources(); !result)
+            return result;
+
+        if (m_abortRequested.load())
+            return std::unexpected{ tr("导入已被取消") };
+
+        QMetaObject::invokeMethod(this, [this]() {
+            setProgress(3, 5);
+            setStatus(tr("正在写入地图元数据…"));
+        }, Qt::QueuedConnection);
+
+        if (const auto result = writeMetadata(); !result)
+            return result;
+
+        return {};
+    });
+
+    m_extractWatcher.setFuture(future);
+}
+
+bool MapImportTask::abort()
+{
+    if (!canAbort() || !isRunning())
+        return false;
+
+    if (m_gameFilesTask) {
+        return InstanceTask::abort();
+    }
+
+    m_abortRequested.store(true);
+    return true;
+}
+
+void MapImportTask::onExtractionFinished()
+{
+    if (m_abortRequested.load()) {
         for (const auto& dir : m_extractedWorldDirs)
             FS::deletePath(dir);
-        emitFailed(result.error());
+        emitAborted();
         return;
     }
 
-    setProgress(2, 5);
-    setStatus(tr("正在部署随包资源…"));
-    if (const auto result = deployResources(); !result) {
-        emitFailed(result.error());
-        return;
-    }
-
-    setProgress(3, 5);
-    setStatus(tr("正在写入地图元数据…"));
-    if (const auto result = writeMetadata(); !result) {
+    const auto result = m_extractWatcher.result();
+    if (!result) {
+        for (const auto& dir : m_extractedWorldDirs)
+            FS::deletePath(dir);
         emitFailed(result.error());
         return;
     }
@@ -215,16 +271,23 @@ Result<> MapImportTask::extractWorlds()
             return std::unexpected{ tr("无法创建临时目录：%1").arg(tempDir) };
 
         const QString subDir = world.rootPath.isEmpty() ? QString() : world.rootPath + QLatin1Char('/');
-        // 解压是同步的：每解一个文件让事件循环跑一圈，否则几百 MB 的包会把窗口冻成「未响应」。
-        // 排除用户输入是故意的 —— 让对话框在这段里无法被关掉，避免任务执行到一半对象被销毁。
+        // 解压在后台线程池执行；progress 回调检测取消并向主线程发送进度信号
         const auto progress = [this](qint64 done, qint64 total) {
-            setStatus(tr("正在解压存档… %1 / %2").arg(done).arg(total));
-            setProgress(done, total);
-            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
-            return isRunning();
+            if (m_abortRequested.load()) {
+                return false;
+            }
+            QMetaObject::invokeMethod(this, [this, done, total]() {
+                setStatus(tr("正在解压存档… %1 / %2").arg(done).arg(total));
+                setProgress(done, total);
+            }, Qt::QueuedConnection);
+            return true;
         };
+
         if (const auto extracted = MMCZip::extractSubDir(&reader, subDir, tempDir, progress); !extracted) {
             FS::deletePath(tempDir);
+            if (m_abortRequested.load()) {
+                return std::unexpected{ tr("解压已被取消") };
+            }
             return std::unexpected{ tr("解压世界 %1 失败：%2").arg(world.folderLabel, extracted.error()) };
         }
 
@@ -393,7 +456,8 @@ Result<> MapImportTask::writeMetadata()
     return {};
 }
 
-Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMeta& meta)
+Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMeta& meta,
+                                        std::function<bool(qint64, qint64)> progress)
 {
     if (meta.worlds.isEmpty())
         return std::unexpected{ tr("map.json 里没有记录世界目录，无法重装。") };
@@ -435,9 +499,10 @@ Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMe
             return std::unexpected{ tr("无法创建临时目录：%1").arg(tempDir) };
 
         const QString subDir = world.sourceRoot.isEmpty() ? QString() : world.sourceRoot + QLatin1Char('/');
-        // 重装走的是实例页的同步调用，同样要避免大包冻住界面
-        const auto keepAlive = [](qint64, qint64) {
-            QCoreApplication::processEvents(QEventLoop::ExcludeUserInputEvents);
+        const auto keepAlive = [&progress](qint64 done, qint64 total) {
+            if (progress) {
+                return progress(done, total);
+            }
             return true;
         };
         if (const auto extracted = MMCZip::extractSubDir(&reader, subDir, tempDir, keepAlive); !extracted) {
@@ -455,6 +520,61 @@ Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMe
     }
 
     return {};
+}
+
+// ----------------------------------------------------------------------------
+// MapReinstallTask
+// ----------------------------------------------------------------------------
+
+MapReinstallTask::MapReinstallTask(QString instanceRoot, MapMeta meta)
+    : m_instanceRoot(std::move(instanceRoot)), m_meta(std::move(meta))
+{
+}
+
+void MapReinstallTask::executeTask()
+{
+    setAbortable(true);
+    setAbortButtonText(tr("取消"));
+    setStatus(tr("正在重装地图存档…"));
+
+    connect(&m_watcher, &QFutureWatcher<Result<>>::finished, this, &MapReinstallTask::onReinstallFinished);
+
+    auto future = QtConcurrent::run(QThreadPool::globalInstance(), [this]() -> Result<> {
+        return MapImportTask::reinstallWorlds(m_instanceRoot, m_meta, [this](qint64 done, qint64 total) {
+            if (m_abortRequested.load()) {
+                return false;
+            }
+            QMetaObject::invokeMethod(this, [this, done, total]() {
+                setStatus(tr("正在解压存档… %1 / %2").arg(done).arg(total));
+                setProgress(done, total);
+            }, Qt::QueuedConnection);
+            return true;
+        });
+    });
+
+    m_watcher.setFuture(future);
+}
+
+bool MapReinstallTask::abort()
+{
+    if (!canAbort() || !isRunning())
+        return false;
+    m_abortRequested.store(true);
+    return true;
+}
+
+void MapReinstallTask::onReinstallFinished()
+{
+    if (m_abortRequested.load()) {
+        emitAborted();
+        return;
+    }
+    const auto result = m_watcher.result();
+    if (!result) {
+        emitFailed(result.error());
+    } else {
+        emitSucceeded();
+    }
 }
 
 }  // namespace maps

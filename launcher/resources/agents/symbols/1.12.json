@@ -1,0 +1,129 @@
+{
+  "mcVersion": "1.12",
+  "strategy": "fingerprint",
+  "hasMappings": false,
+  "generatedAt": "2026-10-28T11:25:21.251Z",
+  "classes": {
+    "menuClass": {
+      "obf": "blp",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "menuClass"
+    },
+    "guiScreen": {
+      "obf": "bli",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "guiScreen"
+    },
+    "minecraft": {
+      "obf": "bhz",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "minecraft"
+    },
+    "worldClient": {
+      "obf": "brz",
+      "source": "dictionary",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "worldClient"
+    },
+    "minecraftServer": {
+      "obf": "net/minecraft/server/MinecraftServer",
+      "source": "fingerprint",
+      "confidence": "MEDIUM",
+      "verified": true,
+      "slot": "minecraftServer"
+    }
+  },
+  "methods": {
+    "menuInit": {
+      "owner": "blp",
+      "name": "b",
+      "descriptor": "()V",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "menuInit"
+    },
+    "getInstance": {
+      "owner": "bhz",
+      "name": "z",
+      "descriptor": "()Lbhz;",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": true,
+      "slot": "getInstance"
+    },
+    "enterWorld": {
+      "owner": "bhz",
+      "name": "a",
+      "descriptor": "(Ljava/lang/String;Ljava/lang/String;Lamv;)V",
+      "source": "fingerprint",
+      "confidence": "MEDIUM",
+      "verified": true,
+      "isStatic": false,
+      "slot": "enterWorld"
+    },
+    "setLevel": {
+      "owner": "bhz",
+      "name": "a",
+      "descriptor": "(Lbrz;)V",
+      "source": "dictionary",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "setLevel"
+    },
+    "setScreen": {
+      "owner": "bhz",
+      "name": "a",
+      "descriptor": "(Lbli;)V",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "setScreen"
+    },
+    "saveAllWorlds": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "a",
+      "descriptor": "(Z)V",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "saveAllWorlds"
+    },
+    "stopServer": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "u",
+      "descriptor": "()V",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "stopServer"
+    }
+  },
+  "unresolved": [],
+  "warnings": [],
+  "inputs": {
+    "clientJar": "E:\\llmUsage\\Minecraft-AIO\\launcher\\shared\\versions\\1.12\\1.12.jar",
+    "jarBytes": 10177098,
+    "versionJson": "E:\\llmUsage\\Minecraft-AIO\\launcher\\shared\\versions\\1.12\\1.12.json"
+  },
+  "timings": {
+    "jarMs": 673,
+    "fingerprintMs": 5,
+    "totalMs": 682
+  },
+  "cacheVersion": 2,
+  "cacheHit": false
+}

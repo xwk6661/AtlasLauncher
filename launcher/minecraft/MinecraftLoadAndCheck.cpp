@@ -17,9 +17,26 @@ void MinecraftLoadAndCheck::executeTask()
             m_inst->settings()->set("JavaPath", "");
         }
     }
-    if (auto result = components->reload(m_netmode); !result) {
-        emitFailed(result.error());
-        return;
+    // 启动时的组件加载：对于已配置好版本的实例，默认优先以本地离线模式（Offline）加载，
+    // 避免每次启动都向境外服务器重复拉取 index.json 导致阻塞卡死。
+    // 只有在开启自动更新或本地元数据确实缺失时才向远端拉取。
+    auto preferredMode = Net::Mode::Offline;
+    if (m_netmode == Net::Mode::Online &&
+        (m_inst->settings()->get("UseLatestMinecraftVersion").toBool() ||
+         APPLICATION->settings()->get("MetaRefreshOnLaunch").toBool())) {
+        preferredMode = Net::Mode::Online;
+    }
+
+    if (auto result = components->reload(preferredMode); !result) {
+        if (preferredMode == Net::Mode::Offline && m_netmode == Net::Mode::Online) {
+            if (auto retry = components->reload(Net::Mode::Online); !retry) {
+                emitFailed(retry.error());
+                return;
+            }
+        } else {
+            emitFailed(result.error());
+            return;
+        }
     }
     m_task = components->getCurrentTask();
 
@@ -28,7 +45,24 @@ void MinecraftLoadAndCheck::executeTask()
         return;
     }
     connect(m_task.get(), &Task::succeeded, this, &MinecraftLoadAndCheck::emitSucceeded);
-    connect(m_task.get(), &Task::failed, this, &MinecraftLoadAndCheck::emitFailed);
+    connect(m_task.get(), &Task::failed, this, [this](const QString& err) {
+        if (m_netmode == Net::Mode::Online) {
+            auto* comps = m_inst->getPackProfile();
+            if (auto retry = comps->reload(Net::Mode::Online); retry) {
+                m_task = comps->getCurrentTask();
+                if (m_task) {
+                    connect(m_task.get(), &Task::succeeded, this, &MinecraftLoadAndCheck::emitSucceeded);
+                    connect(m_task.get(), &Task::failed, this, &MinecraftLoadAndCheck::emitFailed);
+                    connect(m_task.get(), &Task::aborted, this, &MinecraftLoadAndCheck::emitAborted);
+                    propagateFromOther(m_task.get());
+                    return;
+                }
+                emitSucceeded();
+                return;
+            }
+        }
+        emitFailed(err);
+    });
     connect(m_task.get(), &Task::aborted, this, &MinecraftLoadAndCheck::emitAborted);
     propagateFromOther(m_task.get());
 }

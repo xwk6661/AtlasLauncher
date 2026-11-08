@@ -33,6 +33,8 @@
 #include <maps/DataVersionTable.h>
 #include <maps/MapArchiveScanner.h>
 #include <maps/MapCoverLoader.h>
+#include <maps/MapDiskCleanup.h>
+#include <maps/MapImportTask.h>
 #include <maps/MapLaunchPrep.h>
 #include <maps/MapMeta.h>
 #include <maps/MapNotes.h>
@@ -97,13 +99,17 @@ class MapArchiveScanTest : public QObject {
         QCOMPARE(Detector::normalizeVersion(QStringLiteral("23w14a")).kind, QStringLiteral("snapshot"));
     }
 
-    /// M2 前置：Agent jar 与 6 个版本的离线符号表必须在资源里，且能拼出合法参数
+    /// M2 前置：Agent jar 与主流版本的离线符号表必须在资源里，且能拼出合法参数
     void test_agentAssets()
     {
         QVERIFY2(AgentBootstrap::hasAgentJar(), "resources/agents/quickboot.jar 没打进资源");
 
-        const QStringList versions{ QStringLiteral("1.7.10"),  QStringLiteral("1.8.9"), QStringLiteral("1.12.2"),
-                                    QStringLiteral("1.16.5"),  QStringLiteral("1.19.2"), QStringLiteral("1.21.1") };
+        const QStringList versions{ QStringLiteral("1.7.10"),  QStringLiteral("1.8.9"),
+                                    QStringLiteral("1.12"),    QStringLiteral("1.12.2"),
+                                    QStringLiteral("1.14.4"),  QStringLiteral("1.15.2"),
+                                    QStringLiteral("1.16.5"),  QStringLiteral("1.17.1"),
+                                    QStringLiteral("1.18.2"),  QStringLiteral("1.19.2"),
+                                    QStringLiteral("1.19.4"),  QStringLiteral("1.21.1") };
         for (const auto& version : versions) {
             QVERIFY2(AgentBootstrap::hasSymbols(version), qPrintable(QStringLiteral("缺 %1 的符号表").arg(version)));
 
@@ -123,10 +129,55 @@ class MapArchiveScanTest : public QObject {
             QVERIFY(args.args.contains(QStringLiteral("mc=")));
             QVERIFY(args.args.contains(QStringLiteral("launch=")));
             QVERIFY(args.args.contains(QStringLiteral("haltOnSafe=1")));
-            // 1.7.10 / 1.21.1 解析不出 setLevel，这时不能传 loadWorld，也不能声称能请求退出
+            // 某些版本解析不出 setLevel，这时不能传 loadWorld，也不能声称能请求退出
             if (!args.canRequestQuit)
                 QVERIFY(!args.args.contains(QStringLiteral("loadWorld=")));
         }
+    }
+
+    /// 启动期磁盘碎片清理：清理 *.part.parallel、私有 .part-* 以及超过过期天数的 *.part 文件
+    void test_diskCleanup()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        const QString p1 = FS::PathCombine(dir.path(), "client.jar.part.parallel");
+        const QString p2 = FS::PathCombine(dir.path(), "meta.json.part-4f2a");
+        const QString p3 = FS::PathCombine(dir.path(), "active.part");
+        const QString p4 = FS::PathCombine(dir.path(), "stale.part");
+
+        QFile f1(p1);
+        QVERIFY(f1.open(QIODevice::WriteOnly));
+        f1.write("parallel");
+        f1.close();
+
+        QFile f2(p2);
+        QVERIFY(f2.open(QIODevice::WriteOnly));
+        f2.write("private");
+        f2.close();
+
+        QFile f3(p3);
+        QVERIFY(f3.open(QIODevice::WriteOnly));
+        f3.write("active");
+        f3.close();
+
+        QFile f4(p4);
+        QVERIFY(f4.open(QIODevice::WriteOnly));
+        f4.write("stale");
+        f4.close();
+
+        // 重新打开并设 stale.part 的修改时间为 5 天前
+        QVERIFY(f4.open(QIODevice::ReadWrite));
+        QVERIFY(f4.setFileTime(QDateTime::currentDateTime().addDays(-5), QFileDevice::FileModificationTime));
+        f4.close();
+
+        const auto stats = MapDiskCleanup::cleanDirectoryTree(dir.path(), 3);
+        QCOMPARE(stats.removedParallelPartFiles, 2);  // p1 and p2
+        QCOMPARE(stats.removedStalePartFiles, 1);     // p4
+        QVERIFY(!QFile::exists(p1));
+        QVERIFY(!QFile::exists(p2));
+        QVERIFY(!QFile::exists(p4));
+        QVERIFY(QFile::exists(p3));  // active.part 未过期被保留
     }
 
     /// Agent 参数：三个设置项必须真的落到参数上（关掉自动进图也要注入，落盘判定要用）

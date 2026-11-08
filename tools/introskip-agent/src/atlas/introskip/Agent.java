@@ -62,6 +62,7 @@ public final class Agent {
     private static String targetMethod;
     private static String targetDesc;
     private static int targetIndex = 3;
+    private static boolean targetDefer = false;
     private static String logPath;
 
     private Agent() {}
@@ -79,19 +80,60 @@ public final class Agent {
                 targetIndex = 3;
             }
         }
+        if (config.containsKey("defer")) {
+            targetDefer = "1".equals(config.get("defer")) || "true".equalsIgnoreCase(config.get("defer"));
+        }
 
         if (isBlank(targetClass) || isBlank(targetMethod) || isBlank(targetDesc)) {
             log("缺少 cls/method/desc，本次不注入补丁");
             return;
         }
 
-        log("待命：" + targetClass + "." + targetMethod + targetDesc + " loadLevel=local" + targetIndex);
+        log("待命：" + targetClass + "." + targetMethod + targetDesc + " loadLevel=local" + targetIndex
+                + (targetDefer ? " (defer=true)" : ""));
         instrumentation.addTransformer(new Patcher());
     }
 
-    /** 供离线自检使用：把一段 class 字节里的目标方法换成「直接 loadLevel」。 */
+    /**
+     * 针对部分旧版本（如 1.16.5）：
+     * 确认页所在的 doLoadLevel 此时还持有存档文件锁（cyg$a / LevelStorageAccess）。
+     * 若在确认页方法内同步执行 runnable.run()，重入的 doLoadLevel 会因 session.lock 未释放而抛出
+     * java.io.IOException（文件已被另一个程序锁定）。
+     * 因此在此异步等 150ms，让外层 doLoadLevel 关闭旧锁并退出，再把任务派发回主渲染线程执行。
+     */
+    public static void defer(final Object mc, final Runnable r) {
+        if (r == null) {
+            return;
+        }
+        log("捕获确认页弹窗，延迟派发以释放存档锁...");
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Thread.sleep(150);
+                } catch (InterruptedException ignored) {}
+                try {
+                    if (mc instanceof java.util.concurrent.Executor) {
+                        ((java.util.concurrent.Executor) mc).execute(r);
+                    } else {
+                        r.run();
+                    }
+                    log("已异步派发 loadLevel 任务");
+                } catch (Throwable t) {
+                    log("派发 loadLevel 任务异常: " + t);
+                }
+            }
+        }, "atlas-introskip-defer").start();
+    }
+
     public static byte[] patch(byte[] original, String className, String method, String descriptor, int loadLevelSlot) {
+        return patch(original, className, method, descriptor, loadLevelSlot, false);
+    }
+
+    /** 供离线自检使用：把一段 class 字节里的目标方法换成「直接 loadLevel」或「延迟派发 loadLevel」。 */
+    public static byte[] patch(byte[] original, String className, String method, String descriptor, int loadLevelSlot, boolean defer) {
         final int slot = loadLevelSlot;
+        final boolean deferExec = defer;
         final boolean[] found = new boolean[1];
         ClassReader reader = new ClassReader(original);
         final ClassWriter writer = new ClassWriter(reader, 0);
@@ -104,8 +146,14 @@ public final class Agent {
                 found[0] = true;
                 MethodVisitor mv = super.visitMethod(access, name, desc, signature, exceptions);
                 mv.visitCode();
-                mv.visitVarInsn(Opcodes.ALOAD, slot);
-                mv.visitMethodInsn(Opcodes.INVOKEINTERFACE, "java/lang/Runnable", "run", "()V", true);
+                if (deferExec) {
+                    mv.visitVarInsn(Opcodes.ALOAD, 0);
+                    mv.visitVarInsn(Opcodes.ALOAD, slot);
+                    mv.visitMethodInsn(Opcodes.INVOKESTATIC, "atlas/introskip/Agent", "defer", "(Ljava/lang/Object;Ljava/lang/Runnable;)V", false);
+                } else {
+                    mv.visitVarInsn(Opcodes.ALOAD, slot);
+                    mv.visitMethodInsn(Opcodes.INVOKEINTERFACE, "java/lang/Runnable", "run", "()V", true);
+                }
                 mv.visitInsn(Opcodes.RETURN);
                 // maxLocals 必须覆盖「所有参数」，哪怕我们只用到了其中一个：
                 // 只按 ALOAD 的槽位算会被 JVM 拒（ClassFormatError: Arguments can't fit into locals）
@@ -113,7 +161,7 @@ public final class Agent {
                 for (Type type : Type.getArgumentTypes(descriptor)) {
                     argumentSlots += type.getSize();
                 }
-                mv.visitMaxs(1, Math.max(slot + 1, argumentSlots));
+                mv.visitMaxs(deferExec ? 2 : 1, Math.max(slot + 1, argumentSlots));
                 mv.visitEnd();
                 // 原方法体（含确认页的构造）整个丢掉
                 return null;
@@ -126,7 +174,7 @@ public final class Agent {
         return writer.toByteArray();
     }
 
-    private static final class Patcher implements ClassFileTransformer {
+    public static final class Patcher implements ClassFileTransformer {
         @Override
         public byte[] transform(ClassLoader loader, String className, Class<?> redefined,
                                 ProtectionDomain domain, byte[] classfileBuffer) {
@@ -134,12 +182,12 @@ public final class Agent {
                 return null;
             }
             try {
-                byte[] patched = patch(classfileBuffer, className, targetMethod, targetDesc, targetIndex);
+                byte[] patched = patch(classfileBuffer, className, targetMethod, targetDesc, targetIndex, targetDefer);
                 if (patched == null) {
                     log("类已加载，但没有匹配的方法：" + className + "." + targetMethod + targetDesc);
                     return null;
                 }
-                log("已跳过确认页：" + className + "." + targetMethod + targetDesc);
+                log("已跳过确认页：" + className + "." + targetMethod + targetDesc + (targetDefer ? " (deferred)" : ""));
                 return patched;
             } catch (Throwable error) {
                 // 补丁失败绝不能让游戏起不来：原样返回，游戏自己会弹那一页

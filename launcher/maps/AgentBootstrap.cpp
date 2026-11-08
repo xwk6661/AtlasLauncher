@@ -75,20 +75,22 @@ bool copyBundledJar(const QString& resource, const QString& target)
     if (!bundled.exists())
         return false;
 
-    // 启动器升级后随包的 jar 会变。只比大小不够严谨，但足以区分「没变」与「换了」，
-    // 且不需要每次启动都做一次 SHA 校验。
-    if (QFile::exists(target) && QFileInfo(target).size() == bundled.size())
-        return true;
-
     if (!FS::ensureFolderPathExists(dataRoot()))
         return false;
     if (!bundled.open(QIODevice::ReadOnly))
         return false;
 
+    const QByteArray bundledBytes = bundled.readAll();
+    if (QFile::exists(target)) {
+        QFile existing(target);
+        if (existing.open(QIODevice::ReadOnly) && existing.readAll() == bundledBytes)
+            return true;
+    }
+
     QFile out(target);
     if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
         return false;
-    out.write(bundled.readAll());
+    out.write(bundledBytes);
     return true;
 }
 
@@ -163,6 +165,7 @@ std::optional<IntroSkipRule> AgentBootstrap::introSkipRule(const QString& mcVers
     rule.method = item.value(QStringLiteral("method")).toString();
     rule.descriptor = item.value(QStringLiteral("desc")).toString();
     rule.loadLevelSlot = item.value(QStringLiteral("index")).toInt(3);
+    rule.defer = item.value(QStringLiteral("defer")).toBool(false);
     if (rule.className.isEmpty() || rule.method.isEmpty() || rule.descriptor.isEmpty()) {
         if (error != nullptr)
             *error = QStringLiteral("%1 没有「实验性设置确认页」的签名（只影响少点一次，不影响进图）").arg(mcVersion);
@@ -364,6 +367,8 @@ Result<> AgentBootstrap::injectIntroSkip(MinecraftInstance* instance, const Intr
     QString args = QStringLiteral("cls=%1,method=%2,desc=%3,index=%4")
                        .arg(rule.className, rule.method, rule.descriptor)
                        .arg(rule.loadLevelSlot);
+    if (rule.defer)
+        args += QStringLiteral(",defer=1");
     if (!logPath.isEmpty())
         args += QStringLiteral(",log=%1").arg(QDir::toNativeSeparators(logPath));
 

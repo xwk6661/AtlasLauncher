@@ -132,10 +132,10 @@ static LoadResult loadComponent(ComponentPtr component, Task::Ptr& loadTask, Net
             result = LoadResult::LoadedLocal;
         } else {
             loadTask = APPLICATION->metadataIndex()->loadVersion(component->m_uid, component->m_version, netmode);
-            if (netmode == Net::Mode::Online)
-                result = LoadResult::RequiresRemote;
-            else if (metaVersion->isLoaded())
+            if (metaVersion->isLoaded())
                 result = LoadResult::LoadedLocal;
+            else if (loadTask)
+                result = LoadResult::RequiresRemote;
             else
                 result = LoadResult::Failed;
         }
@@ -755,7 +755,7 @@ void ComponentUpdateTask::remoteLoadSucceeded(size_t taskIndex)
         return;
     }
     qCDebug(instanceProfileResolveC) << "Remote task" << taskIndex << "succeeded";
-    taskSlot.succeeded = false;
+    taskSlot.succeeded = true;
     taskSlot.finished = true;
     d->remoteTasksInProgress--;
     // update the cached data of the component from the downloaded version file.

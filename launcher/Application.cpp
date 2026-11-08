@@ -125,6 +125,7 @@
 #include "translations/TranslationsModel.h"
 
 // 地图启动器：所有启动入口的统一准备点（见 launch()）
+#include "maps/MapDiskCleanup.h"
 #include "maps/MapLaunchPrep.h"
 #include "maps/MapPage.h"
 #include "maps/MapQuitWatcher.h"
@@ -1486,10 +1487,11 @@ void Application::performMainStartupAction()
         qDebug() << "<> Updater started.";
     }
 
-    {  // delete instances tmp dirctory
+    {  // delete instances tmp dirctory and stale part files
         auto instDir = m_settings->get("InstanceDir").toString();
         const QString tempRoot = FS::PathCombine(instDir, ".tmp");
         FS::deletePath(tempRoot);
+        maps::MapDiskCleanup::cleanAsync();
     }
 
     if (!m_urlsToImport.isEmpty()) {
@@ -1645,12 +1647,9 @@ bool Application::launch(MinecraftInstance* instance,
         if (mapPlan.applicable && mapPlan.track == maps::MapLaunchPrep::Track::Plain)
             qDebug() << "Map launch:" << instance->id() << "will not auto-enter world —" << mapPlan.reason;
 
-        // 「退出存档后关游戏」只认日志标记（离开存档 → 全部落盘），没进过存档就永远等不到，
-        // 挂上不会有副作用。所以这里**不按轨道判**：启动瞬间轨道可能还判不出来
-        // （见 MapLaunchPrep 的 traits 兜底），而这条逻辑跟轨道无关。
-        // 只有 Agent 轨道例外 —— 老版本由 Agent 自己 halt。
-        if (mapPlan.applicable && mapPlan.autoEnter && mapPlan.closeOnQuit &&
-            mapPlan.track != maps::MapLaunchPrep::Track::Agent)
+        // 「退出存档后关游戏」：挂上不会有副作用。
+        // 现代版本认离开存档与全部落盘；老版本 / Agent 轨道认 EXIT_SAFE；均在确认落盘后才关闭。
+        if (mapPlan.applicable && mapPlan.autoEnter && mapPlan.closeOnQuit)
             maps::MapQuitWatcher::attach(instance);
 
         // quickPlay 会跳过标题画面直接进图，而游戏窗口是被「创建」出来的、默认不抢前台。

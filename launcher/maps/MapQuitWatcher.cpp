@@ -154,6 +154,14 @@ void MapQuitWatcher::onGameLogLine(const QString& line)
     if (!m_instance->settings()->get("MapSafeExit").toBool())
         return;
 
+    // Agent 轨道安全标记：当看到 Agent 确认安全落盘完成（EXIT_SAFE）时，
+    // 启动器作为双保险外部守护，稍后代为关闭游戏（防止被模组安全管理器拦截）
+    if (line.contains(QLatin1String("EXIT_SAFE"))) {
+        qDebug() << "Map quit watcher: Agent EXIT_SAFE marker seen for" << m_instance->id();
+        fire();
+        return;
+    }
+
     if (!m_armed) {
         if (!line.contains(QLatin1String(LEAVE_WORLD_MARKER)))
             return;

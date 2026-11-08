@@ -78,6 +78,7 @@ struct IntroSkipRule {
     QString method;
     QString descriptor;
     int loadLevelSlot = 3;
+    bool defer = false;
 };
 
 class AgentBootstrap : public QObject {

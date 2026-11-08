@@ -57,6 +57,23 @@
 #include "java/download/SymlinkTask.h"
 #include "tasks/SequentialTask.h"
 #endif
+namespace {
+bool isJavaRuntimeIntact(const QString& javaExecPath)
+{
+    if (javaExecPath.isEmpty() || !QFileInfo::exists(javaExecPath))
+        return false;
+#ifdef Q_OS_WIN
+    QFileInfo fi(javaExecPath);
+    QDir binDir = fi.dir();
+    if (!binDir.exists(QStringLiteral("server/jvm.dll")) &&
+        !binDir.exists(QStringLiteral("client/jvm.dll"))) {
+        return false;
+    }
+#endif
+    return true;
+}
+}  // namespace
+
 AutoInstallJava::AutoInstallJava(LaunchTask* parent)
     : LaunchStep(parent), m_instance(m_parent->instance()), m_supported_arch(SysInfo::getSupportedJavaArchitecture()) {};
 
@@ -128,8 +145,14 @@ void AutoInstallJava::executeTask()
     auto relativeBinary = FS::PathCombine(wantedJavaName, "bin", JavaUtils::javaExecutable);
     auto wantedJavaPath = javaDir.absoluteFilePath(relativeBinary);
     if (QFileInfo::exists(wantedJavaPath)) {
-        setJavaPathFromPartial();
-        return;
+        if (isJavaRuntimeIntact(wantedJavaPath)) {
+            setJavaPathFromPartial();
+            return;
+        } else {
+            emit logLine(tr("Managed Java installation %1 is incomplete or corrupted, removing...").arg(wantedJavaName),
+                         MessageLevel::Warning);
+            FS::deletePath(javaDir.absoluteFilePath(wantedJavaName));
+        }
     }
     auto versionList = APPLICATION->metadataIndex()->get("net.minecraft.java");
     m_current_task = versionList->getLoadTask();
@@ -165,10 +188,10 @@ void AutoInstallJava::setJavaPathFromPartial()
     // and retrieving the path that contains the java name
     auto relativeBinary = FS::PathCombine(javaName, "bin", JavaUtils::javaExecutable);
     auto finalPath = javaDir.absoluteFilePath(relativeBinary);
-    if (QFileInfo::exists(finalPath)) {
+    if (isJavaRuntimeIntact(finalPath)) {
         setJavaPath(finalPath);
     } else {
-        emit logLine(tr("No compatible Java version was found (the binary file does not exist). Using the default one."),
+        emit logLine(tr("No compatible Java version was found (the binary file does not exist or is incomplete). Using the default one."),
                      MessageLevel::Warning);
         emitSucceeded();
     }

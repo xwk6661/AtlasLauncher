@@ -125,7 +125,7 @@ OptiFineDialog::OptiFineDialog(MinecraftInstance* instance, QWidget* parent) : Q
 
 QString OptiFineDialog::modsDir() const
 {
-    return m_instance != nullptr ? FS::PathCombine(m_instance->instanceRoot(), QStringLiteral("mods")) : QString();
+    return m_instance != nullptr ? m_instance->modsRoot() : QString();
 }
 
 void OptiFineDialog::resolveInstance()
@@ -134,6 +134,29 @@ void OptiFineDialog::resolveInstance()
         m_loaderHint->setText(tr("这个实例没有版本信息，装不了 OptiFine。"));
         m_installButton->setEnabled(false);
         return;
+    }
+
+    // 迁移：之前版本曾误把 OptiFine 写入 instanceRoot/mods/（而不是 .minecraft/mods/），
+    // 导致模组列表看不见、游戏运行时 Forge 也无法加载。自动将其迁移到正确位置。
+    const QString legacyMods = FS::PathCombine(m_instance->instanceRoot(), QStringLiteral("mods"));
+    const QString correctMods = modsDir();
+    if (!correctMods.isEmpty() && legacyMods != correctMods && QDir(legacyMods).exists()) {
+        QDir legacyDir(legacyMods);
+        const auto jars = legacyDir.entryInfoList({ QStringLiteral("*.jar") }, QDir::Files);
+        if (!jars.isEmpty()) {
+            QDir().mkpath(correctMods);
+            for (const auto& info : jars) {
+                const QString target = FS::PathCombine(correctMods, info.fileName());
+                if (!QFile::exists(target)) {
+                    QFile::rename(info.absoluteFilePath(), target);
+                } else {
+                    QFile::remove(info.absoluteFilePath());
+                }
+            }
+        }
+        if (legacyDir.entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty()) {
+            legacyDir.rmdir(legacyMods);
+        }
     }
 
     m_mcVersion = m_instance->getPackProfile()->getComponentVersion(QStringLiteral("net.minecraft"));

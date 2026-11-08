@@ -331,7 +331,7 @@ Result<> PackProfile::reload(Net::Mode netmode)
 {
     // Do not reload when the update/resolve task is running. It is in control.
     if (d->m_updateTask) {
-        if (d->m_updateTask->netMode() == netmode) {
+        if (d->m_updateTask->netMode() == netmode || (netmode == Net::Mode::Offline && d->m_updateTask->netMode() == Net::Mode::Online)) {
             return {};
         }
 

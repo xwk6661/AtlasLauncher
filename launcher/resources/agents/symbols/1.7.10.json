@@ -37,7 +37,7 @@
     "menuInit": {
       "owner": "blr",
       "name": "b",
-      "descriptor": "(II)V",
+      "descriptor": "()V",
       "source": "fingerprint",
       "confidence": "MEDIUM",
       "verified": true,

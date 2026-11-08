@@ -1136,8 +1136,10 @@ QString MinecraftInstance::getStatusbarDescription()
     QString mcVersion = m_components->getComponentVersion("net.minecraft");
     if (mcVersion.isEmpty()) {
         // Load component info if needed
-        if (auto res = m_components->reload(Net::Mode::Offline); !res) {
-            qWarning() << "Failed to reload components:" << res.error();
+        if (!m_components->getCurrentTask()) {
+            if (auto res = m_components->reload(Net::Mode::Offline); !res) {
+                qWarning() << "Failed to reload components:" << res.error();
+            }
         }
         mcVersion = m_components->getComponentVersion("net.minecraft");
     }
@@ -1319,6 +1321,27 @@ JavaVersion MinecraftInstance::getJavaVersion()
 ModFolderModel* MinecraftInstance::loaderModList()
 {
     if (!m_loader_mod_list) {
+        // 迁移历史遗留：若实例根目录下存在误放的 mods/（例如旧版 OptiFineDialog 写入），
+        // 且它不是当前实际的 modsRoot()，自动将里面的文件移动到 modsRoot()。
+        const QString legacy = FS::PathCombine(instanceRoot(), QStringLiteral("mods"));
+        const QString target = modsRoot();
+        if (legacy != target && QDir(legacy).exists()) {
+            QDir legDir(legacy);
+            const auto files = legDir.entryInfoList(QDir::Files);
+            if (!files.isEmpty()) {
+                QDir().mkpath(target);
+                for (const auto& fi : files) {
+                    const QString dest = FS::PathCombine(target, fi.fileName());
+                    if (!QFile::exists(dest)) {
+                        QFile::rename(fi.absoluteFilePath(), dest);
+                    }
+                }
+            }
+            if (legDir.entryList(QDir::AllEntries | QDir::NoDotAndDotDot).isEmpty()) {
+                legDir.rmdir(legacy);
+            }
+        }
+
         bool is_indexed = !APPLICATION->settings()->get("ModMetadataDisabled").toBool();
         m_loader_mod_list.reset(new ModFolderModel(modsRoot(), this, is_indexed, true));
     }

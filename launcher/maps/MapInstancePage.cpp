@@ -61,6 +61,7 @@
 #include "MapReviewCard.h"
 #include "StarRatingWidget.h"
 #include "ui/dialogs/CustomMessageBox.h"
+#include "ui/dialogs/ProgressDialog.h"
 #include "minecraft/MinecraftInstance.h"
 
 namespace maps {
@@ -789,19 +790,20 @@ void MapInstancePage::reinstallWorlds()
     if (answer != QMessageBox::Yes)
         return;
 
-    // 大包解压要几十秒；这里同步做，至少给玩家一个等待光标
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    const auto result = MapImportTask::reinstallWorlds(m_instance->instanceRoot(), m_meta);
-    QApplication::restoreOverrideCursor();
+    auto task = std::make_unique<MapReinstallTask>(m_instance->instanceRoot(), m_meta);
+    connect(task.get(), &Task::failed, this, [this](const QString& reason) {
+        CustomMessageBox::selectable(this, tr("重装失败"), reason, QMessageBox::Critical)->show();
+    });
+    connect(task.get(), &Task::succeeded, this, [this]() {
+        CustomMessageBox::selectable(this, tr("重装完成"),
+                                     tr("世界已重新解压。旧存档在 saves/.mcml-backup/ 下。"), QMessageBox::Information)
+            ->show();
+        reload();
+    });
 
-    if (!result) {
-        CustomMessageBox::selectable(this, tr("重装失败"), result.error(), QMessageBox::Critical)->show();
-        return;
-    }
-    CustomMessageBox::selectable(this, tr("重装完成"),
-                                 tr("世界已重新解压。旧存档在 saves/.mcml-backup/ 下。"), QMessageBox::Information)
-        ->show();
-    reload();
+    ProgressDialog loadDialog(this);
+    loadDialog.showSkipButton();
+    loadDialog.execWithTask(task.get());
 }
 
 void MapInstancePage::applyNotesToUi()

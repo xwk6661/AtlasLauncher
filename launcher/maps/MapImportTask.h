@@ -17,15 +17,20 @@
  */
 #pragma once
 
+#include <QFuture>
+#include <QFutureWatcher>
 #include <QString>
 #include <QStringList>
 
+#include <atomic>
+#include <functional>
 #include <memory>
 
 #include "InstanceTask.h"
 #include "MapArchiveScanner.h"
 #include "MapMeta.h"
 #include "MapTypes.h"
+#include "tasks/Task.h"
 
 class MinecraftInstance;
 
@@ -69,9 +74,11 @@ class MapImportTask : public InstanceTask {
      * 旧存档不删，整体挪到 `saves/.mcml-backup/<时间戳>/<目录>/` —— 玩家在里面建过东西，
      * 直接覆盖等于删档（AIO 的 M1 验收也要求这条）。
      */
-    static Result<> reinstallWorlds(const QString& instanceRoot, const MapMeta& meta);
+    static Result<> reinstallWorlds(const QString& instanceRoot, const MapMeta& meta,
+                                    std::function<bool(qint64, qint64)> progress = nullptr);
 
     void executeTask() override;
+    bool abort() override;
 
    protected:
     /// 由 executeTask 按顺序调用，任一步失败即整体失败
@@ -109,6 +116,35 @@ class MapImportTask : public InstanceTask {
     /// 已解出的世界目录（失败回滚用）
     QStringList m_extractedWorldDirs;
     std::unique_ptr<MinecraftInstance> m_instance;
+
+    std::atomic<bool> m_abortRequested{false};
+    QFutureWatcher<Result<>> m_extractWatcher;
+
+   private slots:
+    void onExtractionFinished();
+};
+
+/**
+ * 异步重装地图任务：在线程池中解压，支持进度显示与中途取消
+ */
+class MapReinstallTask : public Task {
+    Q_OBJECT
+
+   public:
+    MapReinstallTask(QString instanceRoot, MapMeta meta);
+    ~MapReinstallTask() override = default;
+
+    void executeTask() override;
+    bool abort() override;
+
+   private slots:
+    void onReinstallFinished();
+
+   private:
+    QString m_instanceRoot;
+    MapMeta m_meta;
+    std::atomic<bool> m_abortRequested{false};
+    QFutureWatcher<Result<>> m_watcher;
 };
 
 }  // namespace maps

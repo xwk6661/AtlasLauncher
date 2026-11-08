@@ -44,7 +44,7 @@
     "menuInit": {
       "owner": "aya",
       "name": "b",
-      "descriptor": "(II)V",
+      "descriptor": "()V",
       "source": "fingerprint",
       "confidence": "HIGH",
       "verified": true,

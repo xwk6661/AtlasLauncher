@@ -1,0 +1,150 @@
+{
+  "mcVersion": "1.15.2",
+  "strategy": "mappings",
+  "hasMappings": true,
+  "generatedAt": "2026-11-07T03:24:23.381Z",
+  "classes": {
+    "menuClass": {
+      "obf": "dgf",
+      "named": "net.minecraft.client.gui.screens.TitleScreen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "menuClass"
+    },
+    "guiScreen": {
+      "obf": "dgb",
+      "named": "net.minecraft.client.gui.screens.Screen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "guiScreen"
+    },
+    "minecraft": {
+      "obf": "dbn",
+      "named": "net.minecraft.client.Minecraft",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "minecraft"
+    },
+    "worldClient": {
+      "obf": "dno",
+      "named": "net.minecraft.client.multiplayer.ClientLevel",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "worldClient"
+    },
+    "integratedServer": {
+      "obf": "edm",
+      "named": "net.minecraft.client.server.IntegratedServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "integratedServer"
+    },
+    "minecraftServer": {
+      "obf": "net/minecraft/server/MinecraftServer",
+      "named": "net.minecraft.server.MinecraftServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "minecraftServer"
+    }
+  },
+  "methods": {
+    "menuInit": {
+      "owner": "dgf",
+      "name": "init",
+      "descriptor": "()V",
+      "named": "net.minecraft.client.gui.screens.TitleScreen.init",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "menuInit"
+    },
+    "getInstance": {
+      "owner": "dbn",
+      "name": "x",
+      "descriptor": "()Ldbn;",
+      "named": "net.minecraft.client.Minecraft.getInstance",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": true,
+      "slot": "getInstance"
+    },
+    "enterWorld": {
+      "owner": "dbn",
+      "name": "a",
+      "descriptor": "(Ljava/lang/String;Ljava/lang/String;Lbka;)V",
+      "source": "fingerprint",
+      "confidence": "MEDIUM",
+      "verified": true,
+      "isStatic": false,
+      "slot": "enterWorld"
+    },
+    "setLevel": {
+      "owner": "dbn",
+      "name": "a",
+      "descriptor": "(Ldno;)V",
+      "named": "net.minecraft.client.Minecraft.setLevel",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "setLevel"
+    },
+    "setScreen": {
+      "owner": "dbn",
+      "name": "a",
+      "descriptor": "(Ldgb;)V",
+      "named": "net.minecraft.client.Minecraft.setScreen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "setScreen"
+    },
+    "saveAllWorlds": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "a",
+      "descriptor": "(ZZZ)Z",
+      "named": "net.minecraft.server.MinecraftServer.saveAllChunks",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "saveAllWorlds"
+    },
+    "stopServer": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "s",
+      "descriptor": "()V",
+      "named": "net.minecraft.server.MinecraftServer.stopServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "stopServer"
+    }
+  },
+  "unresolved": [],
+  "warnings": [],
+  "inputs": {
+    "clientJar": "E:\\llmUsage\\Minecraft-AIO\\launcher\\shared\\versions\\1.15.2\\1.15.2.jar",
+    "jarBytes": 15531492,
+    "mappings": "E:\\llmUsage\\Minecraft-AIO\\launcher\\shared\\versions\\1.15.2\\1.15.2-client_mappings.txt",
+    "versionJson": "E:\\llmUsage\\Minecraft-AIO\\launcher\\shared\\versions\\1.15.2\\1.15.2.json"
+  },
+  "timings": {
+    "jarMs": 1026,
+    "fingerprintMs": 7,
+    "mappingsMs": 155,
+    "totalMs": 14568
+  },
+  "cacheVersion": 2,
+  "cacheHit": true
+}

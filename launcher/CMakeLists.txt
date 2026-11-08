@@ -824,6 +824,8 @@ set(MAPS_SOURCES
     maps/MapResourcePage.cpp
     maps/OptiFineDialog.h
     maps/OptiFineDialog.cpp
+    maps/MapDiskCleanup.h
+    maps/MapDiskCleanup.cpp
 )
 
 set(LOGIC_SOURCES

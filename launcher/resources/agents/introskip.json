@@ -2,6 +2,19 @@
   "note": "WorldOpenFlows.askForBackup 的混淆名；把它改写成 loadLevel.run() 即可跳过实验性设置确认页",
   "schema": 1,
   "versions": {
+    "1.16.5": {
+      "class": "djz",
+      "desc": "(Ldjz$a;Ljava/lang/String;ZLjava/lang/Runnable;)V",
+      "index": 4,
+      "method": "a",
+      "defer": true
+    },
+    "1.19.2": {
+      "class": "ept",
+      "desc": "(Lelm;Ljava/lang/String;ZLjava/lang/Runnable;)V",
+      "index": 4,
+      "method": "a"
+    },
     "1.20": {
       "class": "ezk",
       "desc": "(Leuq;Ljava/lang/String;ZLjava/lang/Runnable;)V",

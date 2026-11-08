@@ -122,7 +122,7 @@ void ProgressDialog::tickDownloadPanel()
     ui->taskProgressScrollArea->setHidden(active || !m_is_multi_step);
 
     // 需要重算尺寸的两种时机：面板出现/消失，或者行数变了（面板变高）
-    if (activeChanged || afterHeight > beforeHeight) {
+    if (activeChanged || afterHeight != beforeHeight) {
         updateSize();
         changeProgress(ui->globalProgressBar->value(), ui->globalProgressBar->maximum());
     }
@@ -182,31 +182,30 @@ void ProgressDialog::updateSize(bool recenterParent)
 {
     QSize lastSize = this->size();
     QPoint lastPos = this->pos();
-    int minHeight = ui->globalStatusDetailsLabel->minimumSize().height() + (ui->verticalLayout->spacing() * 2);
-    minHeight += ui->globalProgressBar->minimumSize().height() + ui->verticalLayout->spacing();
-    if (!ui->taskProgressScrollArea->isHidden())
-        minHeight += ui->taskProgressScrollArea->minimumSizeHint().height() + ui->verticalLayout->spacing();
-    if (m_downloadPanel != nullptr && !m_downloadPanel->isHidden())
-        minHeight += m_downloadPanel->sizeHint().height() + ui->verticalLayout->spacing();
-    if (ui->skipButton->isVisible())
-        minHeight += ui->skipButton->height() + ui->verticalLayout->spacing();
-    minHeight = std::max(minHeight, 60);
+
+    // 让 Qt 布局系统计算真实的推荐尺寸（包含边距、间距与当前可见子控件的 sizeHint）
+    ui->verticalLayout->invalidate();
+    const int layoutHeight = ui->verticalLayout->sizeHint().height();
+    const int minHeight = std::max(layoutHeight, 60);
     const int minWidth = (m_downloadPanel != nullptr && !m_downloadPanel->isHidden()) ? 620 : 480;
     QSize minSize = QSize(minWidth, minHeight);
 
     setMinimumSize(minSize);
-    adjustSize();
+    if (ui->taskProgressScrollArea->isHidden()) {
+        resize(std::max(minWidth, width()), minHeight);
+    } else {
+        adjustSize();
+    }
 
     QSize newSize = this->size();
-    // if the current window is a different size
     auto parent = this->parentWidget();
     if (recenterParent && parent) {
         auto newX = std::max(0, parent->x() + ((parent->width() - newSize.width()) / 2));
         auto newY = std::max(0, parent->y() + ((parent->height() - newSize.height()) / 2));
         this->move(newX, newY);
-    } else if (lastSize != newSize) {
-        // center on old position after resize
-        QSize sizeDiff = lastSize - newSize;  // last size was smaller, the results should be negative
+    } else if (!isVisible() && lastSize != newSize) {
+        // 尚未显示时在旧中心点调整
+        QSize sizeDiff = lastSize - newSize;
         auto newX = std::max(0, lastPos.x() + (sizeDiff.width() / 2));
         auto newY = std::max(0, lastPos.y() + (sizeDiff.height() / 2));
         this->move(newX, newY);
@@ -306,14 +305,10 @@ void ProgressDialog::onTaskSucceeded()
 void ProgressDialog::changeStatus([[maybe_unused]] const QString& status)
 {
     ui->globalStatusLabel->setText(m_task->getStatus());
-    ui->globalStatusLabel->adjustSize();
     // 下载中右上角显示的是总速度（由下载面板每 500ms 刷新），
     // 单个请求的 details（"78.16 KiB / 78.16 KiB 63.39 KiB/s"）和面板重复，不再覆盖它
     if (!m_downloadActive)
         ui->globalStatusDetailsLabel->setText(m_task->getDetails());
-    ui->globalStatusDetailsLabel->adjustSize();
-
-    updateSize();
 }
 
 void ProgressDialog::addTaskProgress(const TaskStepProgress& progress)
