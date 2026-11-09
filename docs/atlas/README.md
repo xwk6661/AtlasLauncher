@@ -4,8 +4,11 @@
 把 [`Minecraft-AIO`](E:/llmUsage/Minecraft-AIO)（mcml v0.33.0，Electron + TypeScript）的
 「以地图为中心」搬到了原生 Qt 上 —— **点地图卡片直接进图，版本由程序推断**。
 
-> **状态（2026-11-08 20:10）**：构建通过 · 测试 `63 passed / 0 failed / 2 skipped` ·
-> M0、M2 完成，M1、M3、M4 代码全部落地 · 真机已过「1.20+ 进图与自动关游戏」「≤1.19.4 Agent 进图与安全落盘退出（1.8.9 / 1.12 Forge / 1.16.5 全通）」「大文件分片下载」「断点续传 / 看门狗」与「本地离线优先启动」· 分支 `feature/map-launcher`
+> **状态（2026-11-09 15:20）**：构建通过 · 测试 `65 passed / 0 failed / 2 skipped` ·
+> M0、M2 完成，M1–M5 代码全部落地 · 真机已过「1.20+ 进图与自动关游戏」「≤1.19.4 Agent 进图与安全落盘退出（1.8.9 / 1.12 Forge / 1.16.5 全通）」「大文件分片下载」「断点续传 / 看门狗」「本地离线优先启动」与「本地地图库（分类 / 已安装 / 拖拽归类）」·
+> Agent 符号表已按**真实 client jar** 全量校正：`1.6.1–1.19.4` 共 **59 张全部逐槽位通过**（覆盖矩阵见 [`agent-matrix.md`](agent-matrix.md)）· 分支 `feature/map-launcher`
+>
+> ⚠️ 地图库还有 3 个用户反馈问题待处理（分类栏过宽、导入页弹网络错误、分类名/归类方式），带截图见 [05 §8](05-进度与遗留.md)。
 
 ---
 
@@ -19,7 +22,8 @@
 | [`03-环境与构建.md`](03-环境与构建.md) | **怎么跑起来**：工具链版本、四个环境坑与配方、构建/测试命令、仓库外动过什么 | 换机器、构建报错 |
 | [`04-踩坑与决策.md`](04-踩坑与决策.md) | **哪些弯路走过、哪些决定不许推翻** | 想改既有行为之前 |
 | [`05-进度与遗留.md`](05-进度与遗留.md) | **现在到哪了**：里程碑状态、文件级清单、还剩什么、哪些没验证 | 接手第一小时 |
-| [`06-变更记录.md`](06-变更记录.md) | **改过什么**：时间线 + 问题总表（#1–#125）+ 专题（§17 起） | 想查某个行为是哪来的 |
+| [`06-变更记录.md`](06-变更记录.md) | **改过什么**：时间线 + 问题总表（#1–#167）+ 专题（§17 起） | 想查某个行为是哪来的 |
+| [`agent-matrix.md`](agent-matrix.md) | **哪些版本能自动进图**：60 张符号表逐张对着真实 client jar 的复核结果 + 覆盖缺口与原因（脚本生成，不要手改） | 怀疑某个版本停在主菜单时 |
 
 阅读顺序：**README → 05 → 03 → 04**；要动设计读 02；要讲清"为什么不做 X"读 01 与 04。
 
@@ -42,7 +46,8 @@
 
 - 导入地图（zip / rar / 7z）→ 免解压嗅探 → 三级版本判定（含置信度与证据）→ 建**物理隔离**的实例；
 - 启动即进图：≥1.20 走 `--quickPlaySingleplayer` + `introskip`（跳过「实验性设置」确认页，不动世界数据）；
-  ≤1.19.4 走 `-javaagent`（12 个主流版本符号表已随包，1.8.9 / 1.12 Forge / 1.16.5 真机全通）；
+  ≤1.19.4 走 `-javaagent`（**1.6.1–1.19.4 共 59 张符号表随包**，每张都对着真实 client jar 逐槽位校验过；
+  1.8.9 / 1.12 Forge / 1.16.5 真机全通）；
 - 退出即关：≤1.19.4 由 Agent 确认落盘后自己退（攻克 Forge 1.12 `TerminalTransformer` 与 `FMLSecurityManager` 退出拦截），启动器 `MapQuitWatcher` 外层监听 `EXIT_SAFE` 双保险兜底；
   **1.20+ 由启动器读游戏日志**（离开存档 → 全部落盘）后关闭游戏窗口，回写 `map.json` 统计（真机连开两次均通过）；
 - 启动优化：组件校验实行「本地离线优先（Offline First）」，已安装实例直接读取本地缓存秒开游戏，彻底杜绝每次启动重复下载 `index.json` / `index_v2.json` 导致的境外网络卡死；
@@ -57,6 +62,8 @@
 - 模组预设：内置性能/实用三套 + 可自建，按实例的 MC 版本与加载器现查 Modrinth / CurseForge，
   逐条带说明、可勾选，required 依赖自动补齐；缺加载器先引导安装；编辑器里能直接搜索添加；
 - 实例「信息」页三页签：简介（封面 + 基本信息卡）、评论（卡片流）、我的（三张卡片）；
+- **本地地图库**：`添加实例 → 导入 → 地图存档导入` 下方。分类（RPG / AAD / CTM / 小游戏 / 其他）、
+  拖行归类、已安装标绿、双击导入；索引 `map-library.json` 以文件名为键，库整体搬走也不失效；
 - 设置页：全局「地图」「资源」两页，实例「设置 → 地图」页签（可覆盖全局）；
   资源页能把 `assets / libraries / java` **真的迁移**到任意盘（同盘瞬间完成），换启动器不用重下。
 
@@ -70,7 +77,7 @@
 
 ## 代码地图
 
-新代码在 `launcher/maps/`（**36 个 .cpp + 40 个 .h，18,019 行**）、`launcher/ResourcePaths`
+新代码在 `launcher/maps/`（**37 个 .cpp + 41 个 .h，18,433 行**）、`launcher/ResourcePaths`
 与 `launcher/net/DownloadSource`（换源）；
 `launcher/net/{Request,FileSink}` 与 `Application` 为下载能力有较大改动（续传 / 看门狗 / 重试 / 连接池 / 分片），
 对既有源码其余部分只做加法：
@@ -79,7 +86,8 @@
 | --- | --- |
 | **识别** | `MapArchiveScanner`（免解压嗅探）· `LevelDatReader`（NBT）· `MapVersionDetector`（三级判定）· `DataVersionTable` · `MapTypes` · `MapTextUtils` |
 | **数据** | `MapMeta`（`map.json`）· `MapNotes`（`notes.json`，玩家数据）· `MapHallLink`（实例 ↔ 大厅关联）· `HallCache`（大厅本地库） |
-| **导入** | `MapImportTask`（建实例 / 解世界 / 落材质包 / 重装）· `MapRepository`（地图库）· `MapImportDialog` |
+| **导入** | `MapImportTask`（建实例 / 解世界 / 落材质包 / 重装）· `MapRepository`（地图库目录与归档）· `MapImportDialog` |
+| **地图库** | `MapLibrary`（`map-library.json`：分类 / 元数据 / 已安装判定）· `MapLibraryPanel`（分类栏 + 列表 + 拖拽归类）。位置：添加实例 → 导入 → 地图存档导入下方 |
 | **启动** | `MapLaunchPrep`（选轨道 / 统一准备点）· `AgentBootstrap`（符号表 → `-javaagent`）· `MapWindowFocus`（把前台交给游戏窗口） |
 | **大厅** | `HallAPI` · `HallTypes` · `HallProxy` · `BrowserFetch` · `HallDialog` · `MapHallPage` |
 | **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（信息页）· `MapGalleryPage/Window` · `MapReviewCard`（评论卡）· `MapInfoCard`（信息卡工厂）· `MapCoverLoader`（封面）· `OptiFineDialog` · `StarRatingWidget` · `MapTheme` |
@@ -89,7 +97,8 @@
 | **下载** | `net/DownloadMonitor`（旁路观测：整体/单文件速度、活跃文件）+ `ui/widgets/DownloadPanel`（速度与并行明细）· `net/DownloadSource`（换源 + 双向回落）· `net/Request`（失败/停滞重试、空闲与吞吐看门狗、QNAM 连接池、Range 分片）· `net/FileSink`（`.part` 续传 / `.part.parallel` 分段 / 收尾重算校验）· `Application::downloadNetwork()`（4 个 QNAM 的池） |
 
 资源：`launcher/resources/maps/dataversion.json`（483 个版本）、`launcher/resources/agents/`
-（`quickboot.jar` + 6 个符号表）。测试：`MapArchiveScan`（13 + 2 项联网）、`ModPresets`（14）、
+（`quickboot.jar` + `introskip.jar` + **60 张符号表**，由 `tools/agent_symbol_audit.py` 对着真实 jar 复核）。
+测试：`MapArchiveScan`（16 + 2 项联网）、`ModPresets`（14）、
 `DownloadSource`（12）、`RequestRetry`（23）。
 
 ---

@@ -1,0 +1,147 @@
+{
+  "mcVersion": "1.15.1",
+  "strategy": "mappings",
+  "hasMappings": true,
+  "generatedAt": "2026-11-08T12:54:09.782Z",
+  "classes": {
+    "menuClass": {
+      "obf": "dgd",
+      "named": "net.minecraft.client.gui.screens.TitleScreen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "menuClass"
+    },
+    "guiScreen": {
+      "obf": "dfz",
+      "named": "net.minecraft.client.gui.screens.Screen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "guiScreen"
+    },
+    "minecraft": {
+      "obf": "dbl",
+      "named": "net.minecraft.client.Minecraft",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "minecraft"
+    },
+    "worldClient": {
+      "obf": "dnl",
+      "named": "net.minecraft.client.multiplayer.ClientLevel",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "worldClient"
+    },
+    "integratedServer": {
+      "obf": "edj",
+      "named": "net.minecraft.client.server.IntegratedServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "integratedServer"
+    },
+    "minecraftServer": {
+      "obf": "net/minecraft/server/MinecraftServer",
+      "named": "net.minecraft.server.MinecraftServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "minecraftServer"
+    }
+  },
+  "methods": {
+    "menuInit": {
+      "owner": "dgd",
+      "name": "init",
+      "descriptor": "()V",
+      "named": "net.minecraft.client.gui.screens.TitleScreen.init",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "menuInit"
+    },
+    "getInstance": {
+      "owner": "dbl",
+      "name": "u",
+      "descriptor": "()Ldbl;",
+      "named": "net.minecraft.client.Minecraft.getInstance",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": true,
+      "slot": "getInstance"
+    },
+    "enterWorld": {
+      "owner": "dbl",
+      "name": "a",
+      "descriptor": "(Ljava/lang/String;Ljava/lang/String;Lbjx;)V",
+      "source": "fingerprint",
+      "confidence": "MEDIUM",
+      "verified": true,
+      "isStatic": false,
+      "slot": "enterWorld"
+    },
+    "setLevel": {
+      "owner": "dbl",
+      "name": "a",
+      "descriptor": "(Ldnl;)V",
+      "named": "net.minecraft.client.Minecraft.setLevel",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "setLevel"
+    },
+    "setScreen": {
+      "owner": "dbl",
+      "name": "a",
+      "descriptor": "(Ldfz;)V",
+      "named": "net.minecraft.client.Minecraft.setScreen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "setScreen"
+    },
+    "saveAllWorlds": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "a",
+      "descriptor": "(ZZZ)Z",
+      "named": "net.minecraft.server.MinecraftServer.saveAllChunks",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "saveAllWorlds"
+    },
+    "stopServer": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "r",
+      "descriptor": "()V",
+      "named": "net.minecraft.server.MinecraftServer.stopServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "stopServer"
+    }
+  },
+  "unresolved": [],
+  "warnings": [],
+  "inputs": {
+    "clientJar": "E:\\llmUsage\\AtlasLauncher\\build\\win-local\\Debug\\libraries\\com\\mojang\\minecraft\\1.15.1\\minecraft-1.15.1-client.jar",
+    "jarBytes": 15518397,
+    "mappings": "E:\\llmUsage\\AtlasLauncher\\build\\agent-mappings\\1.15.1.txt"
+  },
+  "timings": {
+    "jarMs": 1188,
+    "fingerprintMs": 5,
+    "mappingsMs": 173,
+    "totalMs": 1371
+  }
+}

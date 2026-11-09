@@ -1,0 +1,149 @@
+{
+  "mcVersion": "1.19.3",
+  "strategy": "mappings",
+  "hasMappings": true,
+  "generatedAt": "2026-11-08T12:55:18.832Z",
+  "classes": {
+    "menuClass": {
+      "obf": "epg",
+      "named": "net.minecraft.client.gui.screens.TitleScreen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "menuClass"
+    },
+    "guiScreen": {
+      "obf": "epb",
+      "named": "net.minecraft.client.gui.screens.Screen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "guiScreen"
+    },
+    "minecraft": {
+      "obf": "ejf",
+      "named": "net.minecraft.client.Minecraft",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "minecraft"
+    },
+    "worldClient": {
+      "obf": "eyz",
+      "named": "net.minecraft.client.multiplayer.ClientLevel",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "worldClient"
+    },
+    "integratedServer": {
+      "obf": "fse",
+      "named": "net.minecraft.client.server.IntegratedServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "integratedServer"
+    },
+    "minecraftServer": {
+      "obf": "net/minecraft/server/MinecraftServer",
+      "named": "net.minecraft.server.MinecraftServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "minecraftServer"
+    }
+  },
+  "methods": {
+    "menuInit": {
+      "owner": "epg",
+      "name": "b",
+      "descriptor": "()V",
+      "named": "net.minecraft.client.gui.screens.TitleScreen.init",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "menuInit"
+    },
+    "getInstance": {
+      "owner": "ejf",
+      "name": "N",
+      "descriptor": "()Lejf;",
+      "named": "net.minecraft.client.Minecraft.getInstance",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": true,
+      "slot": "getInstance"
+    },
+    "enterWorld": {
+      "owner": "ejf",
+      "name": "a",
+      "descriptor": "(Ljava/lang/String;Ldve$c;Lajp;Lacz;Z)V",
+      "named": "net.minecraft.client.Minecraft.doWorldLoad",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "note": "参数含 LevelStorageAccess / WorldStem，Agent 侧需要先构造再调用",
+      "slot": "enterWorld"
+    },
+    "setLevel": {
+      "owner": "ejf",
+      "name": "a",
+      "descriptor": "(Leyz;)V",
+      "named": "net.minecraft.client.Minecraft.setLevel",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "setLevel"
+    },
+    "setScreen": {
+      "owner": "ejf",
+      "name": "a",
+      "descriptor": "(Lepb;)V",
+      "named": "net.minecraft.client.Minecraft.setScreen",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "setScreen"
+    },
+    "saveAllWorlds": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "a",
+      "descriptor": "(ZZZ)Z",
+      "named": "net.minecraft.server.MinecraftServer.saveAllChunks",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "saveAllWorlds"
+    },
+    "stopServer": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "t",
+      "descriptor": "()V",
+      "named": "net.minecraft.server.MinecraftServer.stopServer",
+      "source": "mappings",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "stopServer"
+    }
+  },
+  "unresolved": [],
+  "warnings": [],
+  "inputs": {
+    "clientJar": "E:\\llmUsage\\AtlasLauncher\\build\\win-local\\Debug\\libraries\\com\\mojang\\minecraft\\1.19.3\\minecraft-1.19.3-client.jar",
+    "jarBytes": 22704188,
+    "mappings": "E:\\llmUsage\\AtlasLauncher\\build\\agent-mappings\\1.19.3.txt"
+  },
+  "timings": {
+    "jarMs": 1648,
+    "fingerprintMs": 7,
+    "mappingsMs": 257,
+    "totalMs": 1919
+  }
+}

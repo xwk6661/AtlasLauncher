@@ -50,6 +50,14 @@ constexpr const char* SOURCE_ARCHIVE_NAME = "压缩包文件名";
 constexpr const char* SOURCE_FOLDER_LABEL = "存档目录名";
 constexpr const char* UNKNOWN = "unknown";
 
+/// 中文常量在源码里是 UTF-8 字节，而 QLatin1String 会逐字节按 Latin-1 解读 ——
+/// 于是「压缩包文件名」落进 map.json 就成了「åç¼©åæä»¶å...」（2026-11-08 实测）。
+/// 凡是中文来源名一律走这里；ASCII 的照旧用 QLatin1String 即可。
+QString sourceText(const char* utf8)
+{
+    return QString::fromUtf8(utf8);
+}
+
 struct Candidate {
     QString source;
     QString value;
@@ -151,8 +159,8 @@ QList<Mention> externalMentions(const MapDetectInput& input)
         }
     };
 
-    push(QLatin1String(SOURCE_ARCHIVE_NAME), input.archiveName);
-    push(QLatin1String(SOURCE_FOLDER_LABEL), input.worldFolderLabel);
+    push(sourceText(SOURCE_ARCHIVE_NAME), input.archiveName);
+    push(sourceText(SOURCE_FOLDER_LABEL), input.worldFolderLabel);
     for (const auto& hint : input.textHints)
         push(hint.source, hint.text);
     return out;
@@ -457,7 +465,8 @@ VersionGuess MapVersionDetector::detect(const MapDetectInput& input)
         QStringList distinct;
         QHash<QString, int> scores;
         for (const auto& mention : pool) {
-            const int weight = mention.source == QLatin1String(SOURCE_ARCHIVE_NAME) ? 3 : 1;
+            // 权重比较必须和 push() 用同一个解码方式，否则「压缩包文件名」这一源的 3 倍权重会失效
+            const int weight = mention.source == sourceText(SOURCE_ARCHIVE_NAME) ? 3 : 1;
             scores[mention.version] = scores.value(mention.version) + weight;
             if (!distinct.contains(mention.version))
                 distinct.append(mention.version);

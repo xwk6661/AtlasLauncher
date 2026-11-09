@@ -2,24 +2,24 @@
   "mcVersion": "1.7.10",
   "strategy": "fingerprint",
   "hasMappings": false,
-  "generatedAt": "2026-10-31T09:37:18.260Z",
+  "generatedAt": "2026-11-08T12:56:48.307Z",
   "classes": {
     "menuClass": {
-      "obf": "blr",
+      "obf": "bee",
       "source": "fingerprint",
       "confidence": "HIGH",
       "verified": true,
       "slot": "menuClass"
     },
     "guiScreen": {
-      "obf": "blk",
+      "obf": "bdw",
       "source": "fingerprint",
       "confidence": "HIGH",
       "verified": true,
       "slot": "guiScreen"
     },
     "minecraft": {
-      "obf": "bib",
+      "obf": "bao",
       "source": "fingerprint",
       "confidence": "HIGH",
       "verified": true,
@@ -35,9 +35,9 @@
   },
   "methods": {
     "menuInit": {
-      "owner": "blr",
+      "owner": "bee",
       "name": "b",
-      "descriptor": "()V",
+      "descriptor": "(II)V",
       "source": "fingerprint",
       "confidence": "MEDIUM",
       "verified": true,
@@ -45,9 +45,9 @@
       "slot": "menuInit"
     },
     "getInstance": {
-      "owner": "bib",
-      "name": "z",
-      "descriptor": "()Lbib;",
+      "owner": "bao",
+      "name": "B",
+      "descriptor": "()Lbao;",
       "source": "fingerprint",
       "confidence": "HIGH",
       "verified": true,
@@ -55,9 +55,9 @@
       "slot": "getInstance"
     },
     "enterWorld": {
-      "owner": "bib",
+      "owner": "bao",
       "name": "a",
-      "descriptor": "(Ljava/lang/String;Ljava/lang/String;Lamx;)V",
+      "descriptor": "(Ljava/lang/String;Ljava/lang/String;Lahj;)V",
       "source": "fingerprint",
       "confidence": "MEDIUM",
       "verified": true,
@@ -65,9 +65,9 @@
       "slot": "enterWorld"
     },
     "setScreen": {
-      "owner": "bib",
+      "owner": "bao",
       "name": "a",
-      "descriptor": "(Lblk;)V",
+      "descriptor": "(Lbdw;)V",
       "source": "fingerprint",
       "confidence": "HIGH",
       "verified": true,
@@ -86,7 +86,7 @@
     },
     "stopServer": {
       "owner": "net/minecraft/server/MinecraftServer",
-      "name": "u",
+      "name": "o",
       "descriptor": "()V",
       "source": "fingerprint",
       "confidence": "HIGH",
@@ -109,15 +109,12 @@
     "版本微字典里没有 1.7.10，指纹推不出的槽位会保持 unresolved"
   ],
   "inputs": {
-    "clientJar": "E:\\llmUsage\\Minecraft-AIO\\launcher\\.cache\\symbols\\1.12.2-client.jar",
-    "jarBytes": 10180113,
-    "versionJson": "E:\\llmUsage\\Minecraft-AIO\\launcher\\.cache\\symbols\\1.7.10.json"
+    "clientJar": "E:\\llmUsage\\AtlasLauncher\\build\\win-local\\Debug\\libraries\\com\\mojang\\minecraft\\1.7.10\\minecraft-1.7.10-client.jar",
+    "jarBytes": 5256245
   },
   "timings": {
-    "jarMs": 533,
+    "jarMs": 356,
     "fingerprintMs": 2,
-    "totalMs": 536
-  },
-  "cacheVersion": 2,
-  "cacheHit": false
+    "totalMs": 362
+  }
 }

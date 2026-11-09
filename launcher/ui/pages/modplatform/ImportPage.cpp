@@ -53,6 +53,7 @@
 #include "maps/MapArchiveScanner.h"
 #include "maps/MapImportDialog.h"
 #include "maps/MapImportTask.h"
+#include "maps/MapLibraryPanel.h"
 #include "modplatform/flame/FlameAPI.h"
 #include "net/NetJob.h"
 #include "ui/dialogs/CustomMessageBox.h"
@@ -94,6 +95,19 @@ ImportPage::ImportPage(NewInstanceDialog* dialog, QWidget* parent)
     ui->mapCardFrame->setStyleSheet(
         QStringLiteral("QFrame#mapCardFrame { background-color: palette(alternate-base); border: 1px solid palette(mid); border-radius: 6px; padding: 8px; }"));
     ui->mapCardFrame->setVisible(false);
+
+    /**
+     * 本地地图库放在地图页的最下面：上面是"拖一个压缩包进来"，下面是"从库里挑一张"。
+     *
+     * 面板只负责「把路径填进 mapEdit」——识别、建实例仍然走上面那条链路，
+     * 所以库里的图和外面拖进来的图行为完全一致（同一条 MapImportTask）。
+     */
+    m_libraryPanel = new maps::MapLibraryPanel(this);
+    ui->mapLayout->addWidget(m_libraryPanel, 1);
+    connect(m_libraryPanel, &maps::MapLibraryPanel::importRequested, this, [this](const QString& path) {
+        ui->mapEdit->setText(path);
+        updateState();
+    });
 }
 
 ImportPage::~ImportPage()
@@ -114,6 +128,9 @@ void ImportPage::retranslate()
 void ImportPage::openedImpl()
 {
     updateState();
+    // 每次打开页面重新扫一遍库目录：玩家可能刚往里面丢过压缩包
+    if (m_libraryPanel != nullptr)
+        m_libraryPanel->refresh();
 }
 
 void ImportPage::dragEnterEvent(QDragEnterEvent* event)

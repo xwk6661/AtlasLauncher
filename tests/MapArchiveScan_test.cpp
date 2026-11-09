@@ -18,6 +18,7 @@
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -97,6 +98,54 @@ class MapArchiveScanTest : public QObject {
         QCOMPARE(Detector::normalizeVersion(QStringLiteral("  1.16.5  ")).value, QStringLiteral("1.16.5"));
         QCOMPARE(Detector::normalizeVersion(QString()).kind, QStringLiteral("unknown"));
         QCOMPARE(Detector::normalizeVersion(QStringLiteral("23w14a")).kind, QStringLiteral("snapshot"));
+    }
+
+    /// 回归：中文旁证来源名曾被 QLatin1String 按 Latin-1 解读，落进 map.json 变成
+    /// 「åç¼©åæä»¶å...」（2026-11-08 在 instances/盘灵古域/map.json 里实锤）。
+    /// 这里同时钉住两件事：来源名是 UTF-8 中文；压缩包名的 3 倍权重确实生效。
+    void test_evidenceSourceEncoding()
+    {
+        MapDetectInput input;
+        input.archiveName = QStringLiteral("[1.8.9]某地图.zip");
+        input.worldFolderLabel = QStringLiteral("1.7.10 存档");
+
+        const auto guess = MapVersionDetector::detect(input);
+
+        // 压缩包名权重 3、存档目录名权重 1 -> 选 1.8.9；
+        // 若权重比较和 push() 的解码方式不一致，两边都退化成 1，平票会按「取最低」落到 1.7.10。
+        QCOMPARE(guess.mcVersion, QStringLiteral("1.8.9"));
+
+        bool sawArchiveSource = false;
+        for (const auto& evidence : guess.evidence) {
+            QVERIFY2(!evidence.kind.contains(QChar(0x00E5)),
+                     qPrintable(QStringLiteral("来源名不是 UTF-8 解码：%1").arg(evidence.kind)));
+            if (evidence.kind == QStringLiteral("压缩包文件名"))
+                sawArchiveSource = true;
+        }
+        QVERIFY2(sawArchiveSource, "压缩包名这条旁证的来源名丢了");
+    }
+
+    /// 随包的每一张符号表都必须能加载、能拼出参数。表一多，硬编码列表必然漏项，
+    /// 所以直接枚举资源目录：新增版本的门槛变成「放进去 + 校验过」，没有别的入口。
+    void test_allShippedSymbols()
+    {
+        const QDir dir(QStringLiteral(":/agents/symbols"));
+        const auto files = dir.entryList(QStringList{ QStringLiteral("*.json") }, QDir::Files, QDir::Name);
+        QVERIFY2(files.size() >= 12, qPrintable(QStringLiteral("符号表只有 %1 张，资源没打进去？").arg(files.size())));
+
+        for (const auto& file : files) {
+            const QString version = QFileInfo(file).completeBaseName();
+            QString error;
+            const auto table = AgentBootstrap::loadSymbols(version, &error);
+            QVERIFY2(table.has_value(), qPrintable(QStringLiteral("%1：%2").arg(version, error)));
+
+            AgentBootstrap::AgentOptions options;
+            options.worldFolder = QStringLiteral("MapWorld");
+            options.agentLogPath = QStringLiteral("D:/tmp/agent.log");
+            const auto args = AgentBootstrap::buildAgentArgs(*table, options);
+            QVERIFY2(!args.args.isEmpty(),
+                     qPrintable(QStringLiteral("%1 拼不出参数：%2").arg(version, args.skipReason)));
+        }
     }
 
     /// M2 前置：Agent jar 与主流版本的离线符号表必须在资源里，且能拼出合法参数

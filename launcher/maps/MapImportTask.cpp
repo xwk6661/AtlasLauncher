@@ -31,8 +31,10 @@
 #include "FileSystem.h"
 #include "MMCZip.h"
 #include "DataVersionTable.h"
+#include "MapLibrary.h"
 #include "MapMeta.h"
 #include "MapRepository.h"
+#include "MapTextUtils.h"
 #include "archive/ArchiveReader.h"
 #include "minecraft/MinecraftInstance.h"
 #include "minecraft/PackProfile.h"
@@ -438,8 +440,21 @@ Result<> MapImportTask::writeMetadata()
 
     // 把压缩包归入地图库：原路径可能是下载目录 / U 盘，删掉就再也装不回来了
     const QString libraryCopy = MapRepository::importIntoLibrary(m_scan.archivePath);
-    if (!libraryCopy.isEmpty())
+    if (!libraryCopy.isEmpty()) {
         meta.archive.libraryCopy = libraryCopy;
+        // 顺手把这次识别到的版本/名字补进库索引，免得界面上一直显示"未识别"。
+        // 世界名是中文就当中文名，否则当英文名 —— 只做归类，不做翻译。
+        const QString worldName = text::stripFormattingCodes(primary.level.levelName);
+        bool hasChinese = false;
+        for (const auto ch : worldName) {
+            if (ch.unicode() >= 0x4E00 && ch.unicode() <= 0x9FFF) {
+                hasChinese = true;
+                break;
+            }
+        }
+        MapLibrary::rememberImported(libraryCopy, primary.version.mcVersion, hasChinese ? QString() : worldName,
+                                     hasChinese ? worldName : QString());
+    }
 
     QString error;
     if (!meta.save(instanceRoot(), &error))

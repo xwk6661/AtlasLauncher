@@ -26,6 +26,7 @@
 #include "AgentBootstrap.h"
 #include "Application.h"
 #include "BaseInstance.h"
+#include "DataVersionTable.h"
 #include "FileSystem.h"
 #include "minecraft/MinecraftInstance.h"
 #include "settings/SettingsObject.h"
@@ -113,14 +114,23 @@ MapLaunchPrep::Plan MapLaunchPrep::plan(MinecraftInstance* instance, const MapMe
     plan.enterDelay = std::clamp(instance->settings()->get("MapEnterDelay").toInt(), 0, 60);
 
     const auto traits = traitsFor(instance);
-    if (traits.contains(QStringLiteral("feature:is_quick_play_singleplayer"))) {
+    const bool traitSaysQuickPlay = traits.contains(QStringLiteral("feature:is_quick_play_singleplayer"));
+    // traits 为空 = 组件尚未解析（命令行 / 快捷方式冷启动）。这一刻不能就此判「不支持 quickPlay」：
+    // 1.20+ 会一路掉进下面的 Agent 分支，而 1.21.1 恰好有一张符号表 —— 结果是把旧版 Agent
+    // 注进新版游戏（2026-11-08 复查代码时发现，见 06 §50）。所以只在「trait 缺失且 traits 为空」
+    // 时用版本表兜底；traits 有内容就以它为准（Forge/NeoForge 派生版本的 trait 可能和原版不同）。
+    const bool versionSaysQuickPlay = traits.isEmpty() && DataVersionTable::supportsQuickPlay(meta.version.mcVersion);
+    if (traitSaysQuickPlay || versionSaysQuickPlay) {
         if (!plan.autoEnter) {
             plan.track = Track::Plain;
             plan.reason = QStringLiteral("已关闭「自动跳过主菜单」，将从主菜单启动");
             return plan;
         }
         plan.track = Track::QuickPlay;
-        plan.reason = QStringLiteral("该版本原生支持 --quickPlaySingleplayer，直接进图");
+        plan.reason = traitSaysQuickPlay
+                          ? QStringLiteral("该版本原生支持 --quickPlaySingleplayer，直接进图")
+                          : QStringLiteral("实例组件尚未解析，按版本表判定 %1 支持 quickPlay，直接进图")
+                                .arg(meta.version.mcVersion);
         return plan;
     }
 

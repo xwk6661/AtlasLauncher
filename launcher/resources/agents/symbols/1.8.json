@@ -1,0 +1,120 @@
+{
+  "mcVersion": "1.8",
+  "strategy": "fingerprint",
+  "hasMappings": false,
+  "generatedAt": "2026-11-08T12:53:00.250Z",
+  "classes": {
+    "menuClass": {
+      "obf": "bxq",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "menuClass"
+    },
+    "guiScreen": {
+      "obf": "bxf",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "guiScreen"
+    },
+    "minecraft": {
+      "obf": "bsu",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "slot": "minecraft"
+    },
+    "minecraftServer": {
+      "obf": "net/minecraft/server/MinecraftServer",
+      "source": "fingerprint",
+      "confidence": "MEDIUM",
+      "verified": true,
+      "slot": "minecraftServer"
+    }
+  },
+  "methods": {
+    "menuInit": {
+      "owner": "bxq",
+      "name": "b",
+      "descriptor": "(II)V",
+      "source": "fingerprint",
+      "confidence": "MEDIUM",
+      "verified": true,
+      "isStatic": false,
+      "slot": "menuInit"
+    },
+    "getInstance": {
+      "owner": "bsu",
+      "name": "z",
+      "descriptor": "()Lbsu;",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": true,
+      "slot": "getInstance"
+    },
+    "enterWorld": {
+      "owner": "bsu",
+      "name": "a",
+      "descriptor": "(Ljava/lang/String;Ljava/lang/String;Larb;)V",
+      "source": "fingerprint",
+      "confidence": "MEDIUM",
+      "verified": true,
+      "isStatic": false,
+      "slot": "enterWorld"
+    },
+    "setScreen": {
+      "owner": "bsu",
+      "name": "a",
+      "descriptor": "(Lbxf;)V",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "setScreen"
+    },
+    "saveAllWorlds": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "a",
+      "descriptor": "(Z)V",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "saveAllWorlds"
+    },
+    "stopServer": {
+      "owner": "net/minecraft/server/MinecraftServer",
+      "name": "r",
+      "descriptor": "()V",
+      "source": "fingerprint",
+      "confidence": "HIGH",
+      "verified": true,
+      "isStatic": false,
+      "slot": "stopServer"
+    }
+  },
+  "unresolved": [
+    {
+      "slot": "worldClient",
+      "reason": "没有任何来源给出候选"
+    },
+    {
+      "slot": "setLevel",
+      "reason": "指纹：参数类型（客户端世界类）没有可靠指纹，需映射表或版本微字典"
+    }
+  ],
+  "warnings": [
+    "版本微字典里没有 1.8，指纹推不出的槽位会保持 unresolved"
+  ],
+  "inputs": {
+    "clientJar": "E:\\llmUsage\\AtlasLauncher\\build\\win-local\\Debug\\libraries\\com\\mojang\\minecraft\\1.8\\minecraft-1.8-client.jar",
+    "jarBytes": 7746841
+  },
+  "timings": {
+    "jarMs": 557,
+    "fingerprintMs": 4,
+    "totalMs": 564
+  }
+}

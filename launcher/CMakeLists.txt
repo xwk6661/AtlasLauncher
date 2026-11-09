@@ -789,6 +789,10 @@ set(MAPS_SOURCES
     maps/HallAPI.cpp
     maps/MapRepository.h
     maps/MapRepository.cpp
+    maps/MapLibrary.h
+    maps/MapLibrary.cpp
+    maps/MapLibraryPanel.h
+    maps/MapLibraryPanel.cpp
     maps/MapImportDialog.h
     maps/MapImportDialog.cpp
     maps/MapGalleryPage.h
