@@ -472,6 +472,7 @@ Result<> MapImportTask::writeMetadata()
 }
 
 Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMeta& meta,
+                                        bool backupExisting,
                                         std::function<bool(qint64, qint64)> progress)
 {
     if (meta.worlds.isEmpty())
@@ -485,7 +486,6 @@ Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMe
     if (!FS::ensureFolderPathExists(savesDir))
         return std::unexpected{ tr("无法创建 saves 目录：%1").arg(savesDir) };
 
-    // 旧存档整体挪走，不删：玩家可能在图里建过东西
     const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
     const QString backupRoot = FS::PathCombine(savesDir, QStringLiteral(".mcml-backup"), stamp);
 
@@ -497,17 +497,6 @@ Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMe
 
         const QString finalDir = FS::PathCombine(savesDir, world.folder);
         const QString tempDir = FS::PathCombine(savesDir, world.folder + QStringLiteral(".tmp-world"));
-
-        if (QFile::exists(FS::PathCombine(finalDir, "level.dat"))) {
-            if (!FS::ensureFolderPathExists(backupRoot))
-                return std::unexpected{ tr("无法创建备份目录：%1").arg(backupRoot) };
-            const QString backupDir = FS::PathCombine(backupRoot, world.folder);
-            FS::deletePath(backupDir);
-            if (!FS::move(finalDir, backupDir))
-                return std::unexpected{ tr("无法把旧存档移动到备份目录：%1").arg(backupDir) };
-        } else {
-            FS::deletePath(finalDir);
-        }
 
         FS::deletePath(tempDir);
         if (!FS::ensureFolderPathExists(tempDir))
@@ -528,6 +517,27 @@ Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMe
             FS::deletePath(tempDir);
             return std::unexpected{ tr("重装后没有找到 level.dat，压缩包可能已损坏：%1").arg(world.folder) };
         }
+
+        // 解压确认成功后再处置旧存档，保证解压失败时不损坏现有存档
+        if (QFile::exists(FS::PathCombine(finalDir, "level.dat"))) {
+            if (backupExisting) {
+                if (!FS::ensureFolderPathExists(backupRoot)) {
+                    FS::deletePath(tempDir);
+                    return std::unexpected{ tr("无法创建备份目录：%1").arg(backupRoot) };
+                }
+                const QString backupDir = FS::PathCombine(backupRoot, world.folder);
+                FS::deletePath(backupDir);
+                if (!FS::move(finalDir, backupDir)) {
+                    FS::deletePath(tempDir);
+                    return std::unexpected{ tr("无法把旧存档移动到备份目录：%1").arg(backupDir) };
+                }
+            } else {
+                FS::deletePath(finalDir);
+            }
+        } else {
+            FS::deletePath(finalDir);
+        }
+
         if (!FS::move(tempDir, finalDir)) {
             FS::deletePath(tempDir);
             return std::unexpected{ tr("无法把解压结果移动到 %1").arg(finalDir) };
@@ -541,8 +551,8 @@ Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMe
 // MapReinstallTask
 // ----------------------------------------------------------------------------
 
-MapReinstallTask::MapReinstallTask(QString instanceRoot, MapMeta meta)
-    : m_instanceRoot(std::move(instanceRoot)), m_meta(std::move(meta))
+MapReinstallTask::MapReinstallTask(QString instanceRoot, MapMeta meta, bool backupExisting)
+    : m_instanceRoot(std::move(instanceRoot)), m_meta(std::move(meta)), m_backupExisting(backupExisting)
 {
 }
 
@@ -555,7 +565,7 @@ void MapReinstallTask::executeTask()
     connect(&m_watcher, &QFutureWatcher<Result<>>::finished, this, &MapReinstallTask::onReinstallFinished);
 
     auto future = QtConcurrent::run(QThreadPool::globalInstance(), [this]() -> Result<> {
-        return MapImportTask::reinstallWorlds(m_instanceRoot, m_meta, [this](qint64 done, qint64 total) {
+        return MapImportTask::reinstallWorlds(m_instanceRoot, m_meta, m_backupExisting, [this](qint64 done, qint64 total) {
             if (m_abortRequested.load()) {
                 return false;
             }

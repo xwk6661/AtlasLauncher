@@ -54,6 +54,8 @@ QString sha1OfFile(const QString& path)
 
 QString MapRepository::libraryDir()
 {
+    if (!APPLICATION || !APPLICATION->settings())
+        return {};
     const QString configured = APPLICATION->settings()->get("MapLibraryDir").toString();
     if (!configured.isEmpty())
         return configured;

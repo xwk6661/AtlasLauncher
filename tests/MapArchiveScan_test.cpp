@@ -37,6 +37,7 @@
 #include <maps/MapDiskCleanup.h>
 #include <maps/MapImportTask.h>
 #include <maps/MapLaunchPrep.h>
+#include <maps/MapLibrary.h>
 #include <maps/MapMeta.h>
 #include <maps/MapNotes.h>
 #include <maps/MapVersionDetector.h>
@@ -551,6 +552,34 @@ class MapArchiveScanTest : public QObject {
 
         const auto document = QJsonDocument::fromJson(body);
         QVERIFY2(document.isArray() || document.isObject(), "拿回来的不是 JSON");
+    }
+
+    /// 地图库分类与 Plan B 自定义分类逻辑校验
+    void test_mapLibraryCategories()
+    {
+        // 1. 验证默认分类纯英文且无中文备注（解决 8.3 与 8.1 截断）
+        QCOMPARE(categoryLabel(MapCategory::Rpg), QStringLiteral("RPG"));
+        QCOMPARE(categoryLabel(MapCategory::Aad), QStringLiteral("AAD"));
+        QCOMPARE(categoryLabel(MapCategory::Ctm), QStringLiteral("CTM"));
+        QCOMPARE(categoryLabel(MapCategory::Minigame), QStringLiteral("MiniGame"));
+        QCOMPARE(categoryLabel(MapCategory::Other), QStringLiteral("Other"));
+
+        // 2. 验证默认分类信息集合完整
+        const auto defs = MapLibrary::defaultCategories();
+        QCOMPARE(defs.size(), 5);
+        QStringList ids;
+        for (const auto& c : defs)
+            ids.append(c.id);
+        QVERIFY(ids.contains(QStringLiteral("rpg")));
+        QVERIFY(ids.contains(QStringLiteral("aad")));
+        QVERIFY(ids.contains(QStringLiteral("ctm")));
+        QVERIFY(ids.contains(QStringLiteral("minigame")));
+        QVERIFY(ids.contains(QStringLiteral("other")));
+
+        // 3. 验证 ID 映射与归一化
+        QCOMPARE(categoryFromId(QStringLiteral("RPG")), MapCategory::Rpg);
+        QCOMPARE(categoryFromId(QStringLiteral("mini_game")), MapCategory::Minigame);
+        QCOMPARE(categoryFromId(QStringLiteral("unknown_custom")), MapCategory::Other);
     }
 
     /// M0 验收：AI0 的 23 个夹具逐个比对版本 / 置信度 / 世界数 / 材质包数

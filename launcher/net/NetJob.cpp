@@ -244,3 +244,8 @@ void NetJob::setAskRetry(bool askRetry)
 {
     m_askRetry = askRetry;
 }
+
+void NetJob::setMaxTries(int maxTries)
+{
+    m_maxTries = maxTries;
+}

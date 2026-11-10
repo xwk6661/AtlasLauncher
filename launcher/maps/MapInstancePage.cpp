@@ -18,6 +18,7 @@
 #include "MapInstancePage.h"
 
 #include <QApplication>
+#include <QCheckBox>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDir>
@@ -782,21 +783,34 @@ void MapInstancePage::reinstallWorlds()
         return;
     }
 
-    const auto answer = QMessageBox::question(
-        this, tr("重装地图"),
-        tr("会用来源压缩包重新解压世界目录，实例本身（版本、加载器、模组）保持不变。\n\n"
-           "现有存档不会删除，会整体移动到 saves/.mcml-backup/<时间戳>/ 下。\n\n继续吗？"),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-    if (answer != QMessageBox::Yes)
+    QMessageBox box(this);
+    box.setWindowTitle(tr("重装地图"));
+    box.setIcon(QMessageBox::Question);
+    box.setText(tr("会用来源压缩包重新解压世界目录，实例本身（版本、加载器、模组）保持不变。\n\n继续吗？"));
+
+    auto* backupCheck = new QCheckBox(tr("备份现有存档到 saves/.mcml-backup/ 目录下"), &box);
+    backupCheck->setChecked(true);
+    box.setCheckBox(backupCheck);
+
+    auto* yesButton = box.addButton(tr("是"), QMessageBox::YesRole);
+    auto* noButton = box.addButton(tr("否"), QMessageBox::NoRole);
+    box.setDefaultButton(noButton);
+
+    box.exec();
+    if (box.clickedButton() != yesButton)
         return;
 
-    auto task = std::make_unique<MapReinstallTask>(m_instance->instanceRoot(), m_meta);
+    const bool doBackup = backupCheck->isChecked();
+
+    auto task = std::make_unique<MapReinstallTask>(m_instance->instanceRoot(), m_meta, doBackup);
     connect(task.get(), &Task::failed, this, [this](const QString& reason) {
         CustomMessageBox::selectable(this, tr("重装失败"), reason, QMessageBox::Critical)->show();
     });
-    connect(task.get(), &Task::succeeded, this, [this]() {
-        CustomMessageBox::selectable(this, tr("重装完成"),
-                                     tr("世界已重新解压。旧存档在 saves/.mcml-backup/ 下。"), QMessageBox::Information)
+    connect(task.get(), &Task::succeeded, this, [this, doBackup]() {
+        const QString successMsg = doBackup
+            ? tr("世界已重新解压。旧存档在 saves/.mcml-backup/ 下。")
+            : tr("世界已重新解压。");
+        CustomMessageBox::selectable(this, tr("重装完成"), successMsg, QMessageBox::Information)
             ->show();
         reload();
     });

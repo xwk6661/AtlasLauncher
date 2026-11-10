@@ -358,6 +358,8 @@ QUrl ModrinthAPI::searchProjectsURL(const SearchArgs& args)
 std::pair<Task::Ptr, QByteArray*> ModrinthAPI::getModCategories() const
 {
     auto netJob = makeShared<NetJob>(QString("Modrinth::GetCategories"), APPLICATION->network());
+    netJob->setAskRetry(false);
+    netJob->setMaxTries(1);
     auto [action, response] = Net::ApiRequest::makeByteArray(QUrl(BuildConfig.MODRINTH_PROD_URL + "/tag/category"));
     netJob->addNetAction(action);
     QObject::connect(netJob.get(), &Task::failed, netJob.get(),

@@ -71,10 +71,11 @@ class MapImportTask : public InstanceTask {
     /**
      * 重装：用 map.json 里记录的归档重新解压世界，实例本身保留。
      *
-     * 旧存档不删，整体挪到 `saves/.mcml-backup/<时间戳>/<目录>/` —— 玩家在里面建过东西，
-     * 直接覆盖等于删档（AIO 的 M1 验收也要求这条）。
+     * @param backupExisting 若为 true，旧存档挪到 `saves/.mcml-backup/<时间戳>/<目录>/`；
+     *                       若为 false，则不创建备份直接覆盖旧存档。
      */
     static Result<> reinstallWorlds(const QString& instanceRoot, const MapMeta& meta,
+                                    bool backupExisting = true,
                                     std::function<bool(qint64, qint64)> progress = nullptr);
 
     void executeTask() override;
@@ -131,7 +132,7 @@ class MapReinstallTask : public Task {
     Q_OBJECT
 
    public:
-    MapReinstallTask(QString instanceRoot, MapMeta meta);
+    MapReinstallTask(QString instanceRoot, MapMeta meta, bool backupExisting = true);
     ~MapReinstallTask() override = default;
 
     void executeTask() override;
@@ -143,6 +144,7 @@ class MapReinstallTask : public Task {
    private:
     QString m_instanceRoot;
     MapMeta m_meta;
+    bool m_backupExisting = true;
     std::atomic<bool> m_abortRequested{false};
     QFutureWatcher<Result<>> m_watcher;
 };

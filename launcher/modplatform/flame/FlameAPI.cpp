@@ -325,6 +325,8 @@ std::optional<QString> FlameAPI::getVersionsURL(const VersionSearchArgs& args) c
 std::pair<Task::Ptr, QByteArray*> FlameAPI::getCategories(ModPlatform::ResourceType type)
 {
     auto netJob = makeShared<NetJob>(QString("Flame::GetCategories"), APPLICATION->network());
+    netJob->setAskRetry(false);
+    netJob->setMaxTries(1);
     auto [action, response] = Net::ApiRequest::makeByteArray(
         QUrl(QString(BuildConfig.FLAME_BASE_URL + "/categories?gameId=432&classId=%1").arg(getClassId(type))));
     netJob->addNetAction(action);

@@ -23,6 +23,8 @@ Task::Ptr ResourceAPI::getProjectVersions(const VersionSearchArgs& args,
     const auto& versionsUrl = versionsUrlOptional.value();
 
     auto netJob = makeShared<NetJob>(QString("%1::Versions").arg(args.pack->name), APPLICATION->network());
+    netJob->setAskRetry(false);
+    netJob->setMaxTries(1);
 
     auto [action, response] = Net::ApiRequest::makeByteArray(versionsUrl);
     netJob->addNetAction(action);
@@ -187,6 +189,8 @@ std::pair<NetJob::Ptr, QList<ModPlatform::IndexedPack>*> ResourceAPI::searchProj
     auto spec = searchProjects(args);
 
     auto netJob = makeShared<NetJob>(QString("%1::Search").arg(debugName()), APPLICATION->network());
+    netJob->setAskRetry(false);
+    netJob->setMaxTries(1);
 
     auto [action, response] = Net::RPC::make<QList<ModPlatform::IndexedPack>>(spec);
     netJob->addNetAction(action);

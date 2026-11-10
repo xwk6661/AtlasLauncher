@@ -4,11 +4,11 @@
 把 [`Minecraft-AIO`](E:/llmUsage/Minecraft-AIO)（mcml v0.33.0，Electron + TypeScript）的
 「以地图为中心」搬到了原生 Qt 上 —— **点地图卡片直接进图，版本由程序推断**。
 
-> **状态（2026-11-09 15:20）**：构建通过 · 测试 `65 passed / 0 failed / 2 skipped` ·
-> M0、M2 完成，M1–M5 代码全部落地 · 真机已过「1.20+ 进图与自动关游戏」「≤1.19.4 Agent 进图与安全落盘退出（1.8.9 / 1.12 Forge / 1.16.5 全通）」「大文件分片下载」「断点续传 / 看门狗」「本地离线优先启动」与「本地地图库（分类 / 已安装 / 拖拽归类）」·
-> Agent 符号表已按**真实 client jar** 全量校正：`1.6.1–1.19.4` 共 **59 张全部逐槽位通过**（覆盖矩阵见 [`agent-matrix.md`](agent-matrix.md)）· 分支 `feature/map-launcher`
+> **状态（2026-11-10 11:00）**：构建通过 · 测试 `66 passed / 0 failed / 2 skipped` ·
+> M0、M2、M5 完成，M1–M5 代码全部落地 · 真机已过「1.20+ 进图与自动关游戏」「≤1.19.4 Agent 进图与安全落盘退出（1.8.9 / 1.12 Forge / 1.16.5 全通）」「大文件分片下载」「断点续传 / 看门狗」「本地离线优先启动」与「本地地图库（分类 / 已安装 / 拖拽归类）」·
+> Agent 符号表已按**真实 client jar** 全量校正：60 张符号表逐槽位审计 100% 通过（覆盖矩阵见 [`agent-matrix.md`](agent-matrix.md)）· 分支 `feature/map-launcher`
 >
-> ⚠️ 地图库还有 3 个用户反馈问题待处理（分类栏过宽、导入页弹网络错误、分类名/归类方式），带截图见 [05 §8](05-进度与遗留.md)。
+> ✅ 真机反馈问题已全部闭环解决（分类栏收窄固定 132px、CurseForge 搜索轻量静默失败不弹模态框、纯英文短分类名与方案 B 自定义分类增删改、重装地图可选备份与中文「是/否」对话框，见 [05 §8](05-进度与遗留.md) 与 [06 §52–§53](06-变更记录.md)）。
 
 ---
 
@@ -62,7 +62,7 @@
 - 模组预设：内置性能/实用三套 + 可自建，按实例的 MC 版本与加载器现查 Modrinth / CurseForge，
   逐条带说明、可勾选，required 依赖自动补齐；缺加载器先引导安装；编辑器里能直接搜索添加；
 - 实例「信息」页三页签：简介（封面 + 基本信息卡）、评论（卡片流）、我的（三张卡片）；
-- **本地地图库**：`添加实例 → 导入 → 地图存档导入` 下方。分类（RPG / AAD / CTM / 小游戏 / 其他）、
+- **本地地图库**：`添加实例 → 导入 → 地图存档导入` 下方。分类（纯英文 RPG / AAD / CTM / MiniGame / Other，且支持通过 + / - 及右键菜单动态增删改自定义分类）、
   拖行归类、已安装标绿、双击导入；索引 `map-library.json` 以文件名为键，库整体搬走也不失效；
 - 设置页：全局「地图」「资源」两页，实例「设置 → 地图」页签（可覆盖全局）；
   资源页能把 `assets / libraries / java` **真的迁移**到任意盘（同盘瞬间完成），换启动器不用重下。
@@ -87,7 +87,7 @@
 | **识别** | `MapArchiveScanner`（免解压嗅探）· `LevelDatReader`（NBT）· `MapVersionDetector`（三级判定）· `DataVersionTable` · `MapTypes` · `MapTextUtils` |
 | **数据** | `MapMeta`（`map.json`）· `MapNotes`（`notes.json`，玩家数据）· `MapHallLink`（实例 ↔ 大厅关联）· `HallCache`（大厅本地库） |
 | **导入** | `MapImportTask`（建实例 / 解世界 / 落材质包 / 重装）· `MapRepository`（地图库目录与归档）· `MapImportDialog` |
-| **地图库** | `MapLibrary`（`map-library.json`：分类 / 元数据 / 已安装判定）· `MapLibraryPanel`（分类栏 + 列表 + 拖拽归类）。位置：添加实例 → 导入 → 地图存档导入下方 |
+| **地图库** | `MapLibrary`（`map-library.json`：分类 / 元数据 / 已安装判定）· `MapLibraryPanel`（分类栏固定 132px + 列表 + 拖拽归类 + 自定义分类管理）。位置：添加实例 → 导入 → 地图存档导入下方 |
 | **启动** | `MapLaunchPrep`（选轨道 / 统一准备点）· `AgentBootstrap`（符号表 → `-javaagent`）· `MapWindowFocus`（把前台交给游戏窗口） |
 | **大厅** | `HallAPI` · `HallTypes` · `HallProxy` · `BrowserFetch` · `HallDialog` · `MapHallPage` |
 | **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（信息页）· `MapGalleryPage/Window` · `MapReviewCard`（评论卡）· `MapInfoCard`（信息卡工厂）· `MapCoverLoader`（封面）· `OptiFineDialog` · `StarRatingWidget` · `MapTheme` |

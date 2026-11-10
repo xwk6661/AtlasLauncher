@@ -20,6 +20,7 @@
 #include "MapTheme.h"
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QColor>
 #include <QDesktopServices>
 #include <QDir>
@@ -29,8 +30,10 @@
 #include <QFileInfo>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPushButton>
@@ -65,13 +68,6 @@ class LibraryTable : public QTableWidget {
     using QTableWidget::QTableWidget;
 
    protected:
-    /**
-     * 必须自己造 QDrag。
-     *
-     * QTableWidget 默认的拖拽走 `QAbstractItemModel::mimeData()`（内部格式
-     * `application/x-qabstractitemmodeldatalist`），覆写 `mimeData(items)` 根本不会被调用
-     * —— 实测拖到分类上没有任何反应（2026-11-09）。
-     */
     void startDrag(Qt::DropActions) override
     {
         auto* item = currentItem();
@@ -96,7 +92,7 @@ class CategoryList : public QListWidget {
    public:
     using QListWidget::QListWidget;
 
-    std::function<void(const QString&, MapCategory)> onDropFile;
+    std::function<void(const QString&, const QString&)> onDropFile;
 
    protected:
     void dragEnterEvent(QDragEnterEvent* event) override
@@ -123,12 +119,12 @@ class CategoryList : public QListWidget {
             event->ignore();
             return;
         }
-        const int value = target->data(Qt::UserRole).toInt();
-        if (value < 0) {                     // 「全部」不是分类，不接受投放
+        const QString catId = target->data(Qt::UserRole).toString();
+        if (catId.isEmpty()) {                     // 「全部」不是分类，不接受投放
             event->ignore();
             return;
         }
-        onDropFile(file, static_cast<MapCategory>(value));
+        onDropFile(file, catId);
         event->acceptProposedAction();
     }
 
@@ -157,8 +153,6 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
 
     m_summary = new QLabel(this);
     m_summary->setEnabled(false);
-    // QLabel 默认按整段文字给最小宽度，会把整个对话框撑宽（实测右侧「状态」列被裁掉）。
-    // 让它可以被压缩，完整信息放 tooltip。
     m_summary->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_summary->setMinimumWidth(0);
     header->addWidget(m_summary, 1);
@@ -179,17 +173,43 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     auto* body = new QHBoxLayout;
     body->setSpacing(8);
 
+    // 左侧分类栏容器：固定宽度 132px，防止挤占右侧表格（解决 8.1）
+    auto* catContainer = new QWidget(this);
+    catContainer->setFixedWidth(132);
+    auto* catLayout = new QVBoxLayout(catContainer);
+    catLayout->setContentsMargins(0, 0, 0, 0);
+    catLayout->setSpacing(4);
+
     m_categories = new CategoryList(this);
-    m_categories->setMinimumWidth(170);
-    m_categories->setMaximumWidth(220);
+    m_categories->setFixedWidth(132);
     m_categories->setAcceptDrops(true);
     m_categories->setDragDropMode(QAbstractItemView::DropOnly);
     m_categories->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_categories->setToolTip(tr("把右边的地图拖到分类上即可归类"));
-    static_cast<CategoryList*>(m_categories)->onDropFile = [this](const QString& file, MapCategory category) {
-        applyCategory(file, category);
+    m_categories->setContextMenuPolicy(Qt::CustomContextMenu);
+    m_categories->setToolTip(tr("把右边的地图拖到分类上即可归类；右键可新建、重命名或删除分类"));
+    static_cast<CategoryList*>(m_categories)->onDropFile = [this](const QString& file, const QString& categoryId) {
+        applyCategory(file, categoryId);
     };
-    body->addWidget(m_categories);
+    catLayout->addWidget(m_categories, 1);
+
+    auto* catBtnLayout = new QHBoxLayout;
+    catBtnLayout->setContentsMargins(0, 0, 0, 0);
+    catBtnLayout->setSpacing(4);
+
+    m_addCategoryBtn = new QPushButton(QStringLiteral("+"), this);
+    m_addCategoryBtn->setToolTip(tr("新建分类"));
+    m_addCategoryBtn->setFixedWidth(64);
+
+    m_delCategoryBtn = new QPushButton(QStringLiteral("-"), this);
+    m_delCategoryBtn->setToolTip(tr("删除选中分类（其下地图将移至 Other）"));
+    m_delCategoryBtn->setFixedWidth(64);
+    m_delCategoryBtn->setEnabled(false);
+
+    catBtnLayout->addWidget(m_addCategoryBtn);
+    catBtnLayout->addWidget(m_delCategoryBtn);
+    catLayout->addLayout(catBtnLayout);
+
+    body->addWidget(catContainer);
 
     m_table = new LibraryTable(this);
     m_table->setColumnCount(4);
@@ -246,17 +266,22 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     });
 
     connect(m_categories, &QListWidget::currentRowChanged, this, [this](int row) {
-        if (row < 0)
+        if (row < 0 || row >= m_categories->count()) {
+            m_delCategoryBtn->setEnabled(false);
             return;
-        const int value = m_categories->item(row)->data(Qt::UserRole).toInt();
-        m_showAll = value < 0;
-        if (!m_showAll)
-            m_filter = static_cast<MapCategory>(value);
+        }
+        const QString catId = m_categories->item(row)->data(Qt::UserRole).toString();
+        m_showAll = catId.isEmpty();
+        m_filterCategoryId = catId;
+        m_delCategoryBtn->setEnabled(!m_showAll && catId != QLatin1String("other"));
         rebuildTable();
     });
 
+    connect(m_addCategoryBtn, &QPushButton::clicked, this, &MapLibraryPanel::onAddCategoryClicked);
+    connect(m_delCategoryBtn, &QPushButton::clicked, this, &MapLibraryPanel::onDeleteCategoryClicked);
+    connect(m_categories, &QWidget::customContextMenuRequested, this, &MapLibraryPanel::showCategoryContextMenu);
+
     connect(&m_library, &MapLibrary::changed, this, [this] {
-        // 排队执行：changed 可能是从拖放/双击的栈里发出来的，同步重建会把正在拖的 item 删掉
         rebuildCategories();
         rebuildTable();
     }, Qt::QueuedConnection);
@@ -271,34 +296,123 @@ void MapLibraryPanel::refresh()
     rebuildTable();
 }
 
+void MapLibraryPanel::onAddCategoryClicked()
+{
+    bool ok = false;
+    const QString name = QInputDialog::getText(this, tr("新建分类"), tr("分类名称："), QLineEdit::Normal, QString(), &ok);
+    if (!ok || name.trimmed().isEmpty())
+        return;
+
+    const QString id = m_library.addCategory(name.trimmed());
+    if (id.isEmpty()) {
+        QMessageBox::warning(this, tr("新建分类失败"), tr("分类名称无效或已存在同名分类。"));
+        return;
+    }
+}
+
+void MapLibraryPanel::onRenameCategoryClicked()
+{
+    auto* item = m_categories->currentItem();
+    if (item == nullptr)
+        return;
+    const QString catId = item->data(Qt::UserRole).toString();
+    if (catId.isEmpty())
+        return;
+
+    const QString oldName = m_library.categoryName(catId);
+    bool ok = false;
+    const QString newName = QInputDialog::getText(this, tr("重命名分类"), tr("新分类名称："), QLineEdit::Normal, oldName, &ok);
+    if (!ok || newName.trimmed().isEmpty() || newName.trimmed() == oldName)
+        return;
+
+    if (!m_library.renameCategory(catId, newName.trimmed())) {
+        QMessageBox::warning(this, tr("重命名失败"), tr("无法更新分类名称。"));
+    }
+}
+
+void MapLibraryPanel::onDeleteCategoryClicked()
+{
+    auto* item = m_categories->currentItem();
+    if (item == nullptr)
+        return;
+    const QString catId = item->data(Qt::UserRole).toString();
+    if (catId.isEmpty() || catId == QLatin1String("other"))
+        return;
+
+    const QString catName = m_library.categoryName(catId);
+    const int count = m_library.count(catId);
+    const auto res = QMessageBox::question(
+        this, tr("删除分类"),
+        tr("确定要删除分类「%1」吗？\n该分类下的 %2 张地图将被移至「Other」分类。").arg(catName).arg(count),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    if (res != QMessageBox::Yes)
+        return;
+
+    if (!m_library.deleteCategory(catId)) {
+        QMessageBox::warning(this, tr("删除分类失败"), tr("无法删除该分类。"));
+    }
+}
+
+void MapLibraryPanel::showCategoryContextMenu(const QPoint& pos)
+{
+    auto* item = m_categories->itemAt(pos);
+    QMenu menu(this);
+
+    auto* addAction = menu.addAction(tr("新建分类..."));
+    connect(addAction, &QAction::triggered, this, &MapLibraryPanel::onAddCategoryClicked);
+
+    if (item != nullptr) {
+        const QString catId = item->data(Qt::UserRole).toString();
+        if (!catId.isEmpty()) {
+            auto* renameAction = menu.addAction(tr("重命名分类..."));
+            connect(renameAction, &QAction::triggered, this, &MapLibraryPanel::onRenameCategoryClicked);
+
+            if (catId != QLatin1String("other")) {
+                auto* delAction = menu.addAction(tr("删除分类"));
+                connect(delAction, &QAction::triggered, this, &MapLibraryPanel::onDeleteCategoryClicked);
+            }
+        }
+    }
+
+    menu.exec(m_categories->mapToGlobal(pos));
+}
+
 void MapLibraryPanel::rebuildCategories()
 {
-    const int previous = m_categories->currentRow();
+    const QString previousCat = (m_categories->currentItem() != nullptr)
+                                    ? m_categories->currentItem()->data(Qt::UserRole).toString()
+                                    : (m_showAll ? QString() : m_filterCategoryId);
     QSignalBlocker blocker(m_categories);
     m_categories->clear();
 
     auto* all = new QListWidgetItem(tr("全部（%1）").arg(m_library.items().size()), m_categories);
-    all->setData(Qt::UserRole, -1);
+    all->setData(Qt::UserRole, QString());
 
-    for (auto category : allCategories()) {
-        auto* item = new QListWidgetItem(tr("%1（%2）").arg(categoryLabel(category)).arg(m_library.count(category)),
-                                        m_categories);
-        item->setData(Qt::UserRole, static_cast<int>(category));
+    int selectedRow = 0;
+    int rowIdx = 1;
+    for (const auto& cat : m_library.categories()) {
+        auto* item = new QListWidgetItem(QStringLiteral("%1（%2）").arg(cat.name).arg(m_library.count(cat.id)),
+                                         m_categories);
+        item->setData(Qt::UserRole, cat.id);
+        if (!m_showAll && cat.id == previousCat)
+            selectedRow = rowIdx;
+        rowIdx++;
     }
 
-    // 尽量保持原来的选择
-    int row = previous;
-    if (row < 0 || row >= m_categories->count())
-        row = 0;
-    m_categories->setCurrentRow(row);
+    if (selectedRow >= m_categories->count())
+        selectedRow = 0;
+
+    m_categories->setCurrentRow(selectedRow);
+    const QString currentCatId = m_categories->currentItem() ? m_categories->currentItem()->data(Qt::UserRole).toString() : QString();
+    m_showAll = currentCatId.isEmpty();
+    m_filterCategoryId = currentCatId;
+    m_delCategoryBtn->setEnabled(!currentCatId.isEmpty() && currentCatId != QLatin1String("other"));
 }
 
 void MapLibraryPanel::rebuildTable()
 {
-    const auto items = m_showAll ? m_library.items() : m_library.items(m_filter);
+    const auto items = m_showAll ? m_library.items() : m_library.items(m_filterCategoryId);
 
-    // 重建会清掉选择；把之前选中的文件记住，重建后按文件名选回去
-    // （否则拖完一次再想拖第二次，要先用鼠标重新点一下这一行）
     QString previousFile;
     if (auto* current = m_table->currentItem())
         previousFile = current->data(Qt::UserRole).toString();
@@ -325,21 +439,19 @@ void MapLibraryPanel::rebuildTable()
         versionItem->setData(Qt::UserRole, item.file);
         m_table->setItem(row, 1, versionItem);
 
-        auto* categoryItem = new QTableWidgetItem(categoryLabel(categoryFromId(item.category)));
+        auto* categoryItem = new QTableWidgetItem(m_library.categoryName(item.category));
         categoryItem->setData(Qt::UserRole, item.file);
         m_table->setItem(row, 2, categoryItem);
 
         auto* stateItem = new QTableWidgetItem(item.installed ? tr("已安装") : QStringLiteral("—"));
         stateItem->setData(Qt::UserRole, item.file);
         if (item.installed) {
-            // 用主题里的"高置信度绿"，不写死色号（深色主题下 0x2E7D32 只有 1.6:1 对比度）
             stateItem->setForeground(ui::confidenceColor(Confidence::High));
             stateItem->setToolTip(tr("已安装为实例：%1").arg(item.installedInstances.join(QStringLiteral("、"))));
         }
         m_table->setItem(row, 3, stateItem);
     }
 
-    // 把选择还原到同一个文件（重建会把 item 全换掉）
     if (!previousFile.isEmpty()) {
         for (int row = 0; row < m_table->rowCount(); ++row) {
             auto* first = m_table->item(row, 0);
@@ -372,20 +484,13 @@ void MapLibraryPanel::rebuildTable()
     m_importButton->setEnabled(false);
 }
 
-void MapLibraryPanel::applyCategory(const QString& file, MapCategory category)
+void MapLibraryPanel::applyCategory(const QString& file, const QString& categoryId)
 {
-    const bool ok = m_library.setCategory(file, category);
+    const bool ok = m_library.setCategory(file, categoryId);
     if (!ok) {
         QMessageBox::warning(this, tr("改分类失败"),
                              tr("无法写入地图库索引：%1").arg(QDir::toNativeSeparators(MapLibrary::indexPath())));
     }
-    /**
-     * **必须延后到下一轮事件循环**。
-     *
-     * 这个函数是从分类列表的 dropEvent 里进来的，此刻 QDrag::exec() 还在栈上，
-     * 拖拽源就是右边这张表；如果在这里同步 rebuildTable()，会把正在被拖的 item 删掉
-     * ——实测直接崩掉整个启动器（2026-11-09）。
-     */
     QTimer::singleShot(0, this, [this] {
         rebuildCategories();
         rebuildTable();
