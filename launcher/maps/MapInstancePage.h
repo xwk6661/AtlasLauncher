@@ -19,6 +19,9 @@
 
 #include <QWidget>
 
+#include <memory>
+
+#include "MapL10nProbe.h"
 #include "MapMeta.h"
 #include "MapHallLink.h"
 #include "MapNotes.h"
@@ -35,6 +38,10 @@ namespace maps {
 
 class HallAPI;
 struct HallItem;
+
+namespace l10n {
+class MapL10nTask;
+}  // namespace l10n
 
 /// 五星评分控件（半星粒度，内部 1~10），定义在 MapInstancePage.cpp
 class StarRatingWidget;
@@ -84,6 +91,44 @@ class MapInstancePage : public QWidget, public BasePage {
     void applyNotesToUi();
     /// 写 notes.json 并刷新状态文字
     void saveNotes();
+
+    // ── 「汉化」页 ──
+    /// 主世界目录（`saves/<folder>`）；拿不到返回空串
+    QString worldRoot() const;
+    QWidget* buildL10nPage();
+    /// deep = true 才扫区块（几十秒）；false 只读资源包与数据包
+    void startL10nProbe(bool deep);
+    void applyL10nResult(const l10n::ProbeResult& result);
+    void finishL10nProbe();
+    /// 体检进行中的按钮/状态互斥
+    void setL10nBusy(bool busy);
+    /// 把待译清单写到 `<实例>/l10n/`
+    void exportL10n();
+    /// 用 OpenAI 兼容接口把 strings.json 里的待译条目翻成中文（就地写回）
+    void translateL10n();
+    /// 把译文写进**存档副本**（C 档：注入式汉化），源存档只读
+    void applyL10n();
+    /// 用汉化版副本顶替本实例存档：旧存档先打包成 zip 备份（不删实例，随时可还原）
+    void replaceWithL10nCopy(const QString& newWorldRoot);
+
+    QWidget* m_l10nPage = nullptr;
+    QLabel* m_l10nMode = nullptr;
+    QLabel* m_l10nDesc = nullptr;
+    QLabel* m_l10nTotal = nullptr;
+    QLabel* m_l10nPack = nullptr;
+    QLabel* m_l10nDatapack = nullptr;
+    QLabel* m_l10nRegion = nullptr;
+    QLabel* m_l10nState = nullptr;
+    QLabel* m_l10nNotes = nullptr;
+    QPushButton* m_l10nDeep = nullptr;
+    QPushButton* m_l10nExport = nullptr;
+    QPushButton* m_l10nTranslate = nullptr;
+    QPushButton* m_l10nApply = nullptr;
+    l10n::MapL10nTask* m_l10nTask = nullptr;
+    /// 最近一次体检结果：导出待译清单要用（切页签不会丢）
+    l10n::ProbeResult m_l10nResult;
+    /// 快检只跑一次（reload 会被调用多次）
+    bool m_l10nFastDone = false;
 
     MinecraftInstance* m_instance = nullptr;
     MapMeta m_meta;

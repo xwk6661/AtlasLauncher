@@ -87,7 +87,13 @@ class MapImportTask : public InstanceTask {
     Result<> extractWorlds();
     Result<> deployResources();
     Result<> writeMetadata();
-    Result<> mergeOptionsTxt();
+    /**
+     * 落 options.txt：随包材质包 + 语言 + 键位。
+     *
+     * 三件事都只在**新建实例**时写一次；之后玩家在游戏里怎么改都不会被覆盖
+     * （重装走的是 `reinstallWorlds`，不经过这里）。
+     */
+    Result<> applyOptionsDefaults();
 
     /// 解压单个条目到目标文件；目标目录会自动创建
     Result<> extractEntry(const QString& entryPath, const QString& targetPath);
@@ -112,6 +118,15 @@ class MapImportTask : public InstanceTask {
     QString m_loaderVersion;
     /// 判成模组环境但缺加载器版本、被迫按原版导入时的说明（写进证据链）
     QString m_loaderFallbackNote;
+
+    /**
+     * 导入时要写进 options.txt 的偏好，**在构造时从全局设置读一次**。
+     *
+     * 构造发生在 UI 线程（三个调用点都在对话框里），而 `executeTask` 跑在线程池；
+     * `SettingsObject` 不是线程安全的，所以不在任务线程里读。
+     */
+    bool m_optionsSetChinese = false;
+    bool m_optionsSwapSprintSneak = false;
 
     QString m_primaryWorldFolder;
     /// 已解出的世界目录（失败回滚用）

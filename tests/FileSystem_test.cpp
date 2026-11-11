@@ -1,4 +1,5 @@
 #include <QDir>
+#include <QFile>
 #include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTest>
@@ -11,6 +12,47 @@
 
 #include <filesystem>
 namespace fs = std::filesystem;
+
+#if defined Q_OS_WIN32
+/**
+ * 当前系统能不能建符号链接。
+ *
+ * Windows 上建符号链接要管理员权限或"开发者模式"，否则一定失败。
+ *
+ * **这里绝不申请提权**：以前的做法是失败后走 `runPrivileged()`，
+ * 结果是每跑一次链接用例就弹一次 UAC —— 七个用例就是七个弹窗，
+ * 点"是"接着弹下一个、点"否"任务失败，看上去像启动器在反复刷权限。
+ * 单元测试没有理由向用户要管理员权限，建不出来就跳过。
+ */
+static bool symlinksAvailable()
+{
+    QTemporaryDir dir;
+    if (!dir.isValid())
+        return false;
+
+    const QString target = dir.filePath("symlink_probe.txt");
+    {
+        QFile file(target);
+        if (!file.open(QIODevice::WriteOnly))
+            return false;
+        file.write("x");
+    }
+
+    std::error_code err;
+    fs::create_symlink(StringUtils::toStdString(target), StringUtils::toStdString(dir.filePath("symlink_probe.lnk")), err);
+    return !err;
+}
+
+#define SKIP_IF_NO_SYMLINKS()                                                                                         \
+    do {                                                                                                              \
+        if (!symlinksAvailable())                                                                                     \
+            QSKIP("当前系统不允许创建符号链接（Windows 需要开发者模式或管理员权限），跳过 —— 测试不会为此申请提权"); \
+    } while (false)
+#else
+#define SKIP_IF_NO_SYMLINKS() \
+    do {                       \
+    } while (false)
+#endif
 
 class LinkTask : public Task {
     Q_OBJECT
@@ -43,23 +85,17 @@ class LinkTask : public Task {
         if (!(*m_lnk)()) {
 #if defined Q_OS_WIN32
             if (!m_useHard) {
-                qDebug() << "EXPECTED: Link failure, Windows requires permissions for symlinks";
-
-                qDebug() << "atempting to run with privelage";
-                connect(m_lnk, &FS::create_link::finishedPrivileged, this, [this](bool gotResults) {
-                    if (gotResults) {
-                        emitSucceeded();
-                    } else {
-                        qDebug() << "Privileged run exited without results!";
-                        emitFailed();
-                    }
-                });
-                m_lnk->runPrivileged();
+                // 建不了符号链接（没开发者模式 / 没管理员）就是失败，**不要申请提权**。
+                // 用例自己会在开头 SKIP_IF_NO_SYMLINKS()，走到这里通常只是环境的边界情况。
+                qDebug() << "Link failed:" << m_lnk->getOSError().value() << m_lnk->getOSError().message().c_str();
+                emitFailed();
             } else {
                 qDebug() << "Link Failed!" << m_lnk->getOSError().value() << m_lnk->getOSError().message().c_str();
+                emitFailed();
             }
 #else
             qDebug() << "Link Failed!" << m_lnk->getOSError().value() << m_lnk->getOSError().message().c_str();
+            emitFailed();
 #endif
         } else {
             emitSucceeded();
@@ -308,6 +344,8 @@ class FileSystemTest : public QObject {
 
     void test_link()
     {
+        SKIP_IF_NO_SYMLINKS();
+
         QString folder = QFINDTESTDATA("testdata/FileSystem/test_folder");
         auto f = [&folder]() {
             QTemporaryDir tempDir;
@@ -402,6 +440,8 @@ class FileSystemTest : public QObject {
 
     void test_link_with_blacklist()
     {
+        SKIP_IF_NO_SYMLINKS();
+
         QString folder = QFINDTESTDATA("testdata/FileSystem/test_folder");
         auto f = [&folder]() {
             QTemporaryDir tempDir;
@@ -448,6 +488,8 @@ class FileSystemTest : public QObject {
 
     void test_link_with_whitelist()
     {
+        SKIP_IF_NO_SYMLINKS();
+
         QString folder = QFINDTESTDATA("testdata/FileSystem/test_folder");
         auto f = [&folder]() {
             QTemporaryDir tempDir;
@@ -495,6 +537,8 @@ class FileSystemTest : public QObject {
 
     void test_link_with_dot_hidden()
     {
+        SKIP_IF_NO_SYMLINKS();
+
         QString folder = QFINDTESTDATA("testdata/FileSystem/test_folder");
         auto f = [&folder]() {
             QTemporaryDir tempDir;
@@ -542,6 +586,8 @@ class FileSystemTest : public QObject {
 
     void test_link_single_file()
     {
+        SKIP_IF_NO_SYMLINKS();
+
         QTemporaryDir tempDir;
         tempDir.setAutoRemove(true);
 
@@ -577,6 +623,8 @@ class FileSystemTest : public QObject {
 
     void test_link_with_max_depth()
     {
+        SKIP_IF_NO_SYMLINKS();
+
         QString folder = QFINDTESTDATA("testdata/FileSystem/test_folder");
         auto f = [&folder]() {
             QTemporaryDir tempDir;
@@ -627,6 +675,8 @@ class FileSystemTest : public QObject {
 
     void test_link_with_no_max_depth()
     {
+        SKIP_IF_NO_SYMLINKS();
+
         QString folder = QFINDTESTDATA("testdata/FileSystem/test_folder");
         auto f = [&folder]() {
             QTemporaryDir tempDir;

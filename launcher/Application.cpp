@@ -813,6 +813,15 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         // 1.20+：地图自带改过世界生成的数据包时，原版会先弹「不支持使用实验性设置的世界」，
         // quickPlay 会停在那一页。开着就注入 introskip agent 直接加载（不动世界数据）
         m_settings->registerSetting("MapSkipExperimentalPrompt", true);
+        // 导入时写进 options.txt 的默认值（只在新建实例时写一次，之后不再管）：
+        // 语言设成简体中文；键位对调成「Shift 奔跑、Ctrl 蹲下」（MC 默认正好相反）。
+        // 写法随版本分叉，见 maps/MapOptionsTxt.h
+        m_settings->registerSetting("MapOptionsForceChinese", true);
+        m_settings->registerSetting("MapOptionsSwapSprintSneak", true);
+        // 汉化：自动翻译走 OpenAI 兼容接口（Base URL 可以指到任何兼容网关）
+        m_settings->registerSetting("MapL10nApiBase", QStringLiteral("https://api.openai.com/v1"));
+        m_settings->registerSetting("MapL10nApiKey", QString());
+        m_settings->registerSetting("MapL10nModel", QStringLiteral("gpt-4o-mini"));
         // 控制台（实例窗口）页签开关：地图启动器默认收起这四页，
         // 一个地图一个实例，世界/服务器/备注/其他日志基本用不上
         m_settings->registerSetting("MapConsoleShowNotes", false);

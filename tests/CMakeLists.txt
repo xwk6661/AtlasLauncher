@@ -27,6 +27,10 @@ set(TEST_SOURCES
     XmlLogs_test.cpp
     Commandline_test.cpp
     MapArchiveScan_test.cpp
+    MapOptionsTxt_test.cpp
+    MapL10nProbe_test.cpp
+    MapL10nTranslate_test.cpp
+    MapL10nApply_test.cpp
     ModPresets_test.cpp
     DownloadSource_test.cpp
     RequestRetry_test.cpp

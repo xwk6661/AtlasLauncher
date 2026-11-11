@@ -34,6 +34,15 @@ class ArchiveWriter {
     Result<> open();
     Result<> close();
 
+    /**
+     * zip 的压缩方式，只在 `open()` 之前调用有效。
+     *
+     * 默认 `deflate`（保持原有行为）。打包**已经压缩过的数据**（.mca 区块、jar、png）时
+     * 用 `store` —— deflate 在这种数据上几乎压不动，只是白烧 CPU 和时间。
+     * 见 `MapL10nApply` 的存档备份。
+     */
+    void setCompression(const QString& method) { m_compression = method; }
+
     Result<> addFile(const QString& fileName, const QString& fileDest);
     Result<> addFile(const QString& fileDest, const QByteArray& data);
     Result<> addFile(ArchiveReader::File* f);
@@ -44,5 +53,6 @@ class ArchiveWriter {
     struct archive* m_archive = nullptr;
     QString m_filename;
     QString m_format = "zip";
+    QString m_compression = "deflate";
 };
 }  // namespace MMCZip

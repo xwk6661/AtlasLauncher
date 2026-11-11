@@ -129,6 +129,64 @@ void MapSettingsWidget::buildGlobalGroups(QWidget* parent, QVBoxLayout* layout)
     });
     layout->addWidget(libraryBox);
 
+    // ── 导入时的游戏设置 ──
+    // 只影响"新建实例时写进 options.txt 的初始值"。玩家进游戏改过之后，启动器不再插手：
+    // 每次启动都强推一遍配置是最讨人厌的行为，这里刻意只写一次。
+    auto* optionsBox = new QGroupBox(tr("导入时的游戏设置"), parent);
+    auto* optionsLayout = new QVBoxLayout(optionsBox);
+    optionsLayout->setSpacing(6);
+
+    m_optionsChinese = new QCheckBox(tr("把游戏语言设为简体中文"), optionsBox);
+    m_optionsChinese->setToolTip(tr("写进实例的 options.txt（lang）。\n"
+                                    "1.13 起是 zh_cn，1.12 及更早是 zh_CN —— 写法不同，按版本自动选。"));
+    m_optionsSprintSneak = new QCheckBox(tr("对调 Shift / Ctrl：Shift 奔跑、Ctrl 蹲下"), optionsBox);
+    m_optionsSprintSneak->setToolTip(tr("MC 默认是 Ctrl 奔跑、Shift 蹲下，这里直接对调。\n"
+                                        "1.12 及更早写的是数字键码（29 / 42），1.13 起写 key.keyboard.*。"));
+    optionsLayout->addWidget(m_optionsChinese);
+    optionsLayout->addWidget(m_optionsSprintSneak);
+
+    auto* optionsHint = new QLabel(tr("只在新建实例时写一次，之后你在游戏里怎么改都不会被覆盖。\n"
+                                      "版本判不出来时这两项一律跳过（写错一代会让蹲/跑静默失效）。"),
+                                   optionsBox);
+    optionsHint->setWordWrap(true);
+    optionsHint->setEnabled(false);
+    optionsLayout->addWidget(optionsHint);
+    layout->addWidget(optionsBox);
+
+    // ── 汉化翻译（OpenAI 兼容接口）──
+    // 只用于"把导出的待译清单自动翻成中文"。不填也能用——导出 CSV 自己翻、再导入。
+    auto* l10nBox = new QGroupBox(tr("汉化翻译"), parent);
+    auto* l10nLayout = new QVBoxLayout(l10nBox);
+    l10nLayout->setSpacing(6);
+
+    auto* l10nForm = new QFormLayout();
+    l10nForm->setContentsMargins(0, 0, 0, 0);
+
+    m_l10nApiBase = new QLineEdit(l10nBox);
+    m_l10nApiBase->setPlaceholderText(QStringLiteral("https://api.openai.com/v1"));
+    m_l10nApiBase->setToolTip(tr("任何 OpenAI 兼容的 /chat/completions 接口都行（中转、自建网关、本地模型）。\n"
+                                 "末尾的 / 会被自动去掉。"));
+    l10nForm->addRow(tr("接口地址"), m_l10nApiBase);
+
+    m_l10nApiKey = new QLineEdit(l10nBox);
+    m_l10nApiKey->setEchoMode(QLineEdit::Password);
+    m_l10nApiKey->setPlaceholderText(QStringLiteral("sk-…"));
+    m_l10nApiKey->setToolTip(tr("存在启动器配置里（明文）。只在你主动点「自动翻译」时才会用到。"));
+    l10nForm->addRow(tr("API Key"), m_l10nApiKey);
+
+    m_l10nModel = new QLineEdit(l10nBox);
+    m_l10nModel->setPlaceholderText(QStringLiteral("gpt-4o-mini"));
+    l10nForm->addRow(tr("模型"), m_l10nModel);
+    l10nLayout->addLayout(l10nForm);
+
+    auto* l10nHint = new QLabel(tr("不填 API Key 也能用：导出的 strings.csv 用 Excel 自己翻，再导入回来。\n"
+                                   "术语表固定内置（Creeper=苦力怕 这类），§ 格式码与占位符会强制保留。"),
+                                l10nBox);
+    l10nHint->setWordWrap(true);
+    l10nHint->setEnabled(false);
+    l10nLayout->addWidget(l10nHint);
+    layout->addWidget(l10nBox);
+
     // ── 大厅 ──
     auto* hallBox = new QGroupBox(tr("地图大厅"), parent);
     auto* hallLayout = new QVBoxLayout(hallBox);
@@ -233,6 +291,11 @@ void MapSettingsWidget::loadSettings()
         return;
 
     m_libraryDir->setText(m_settings->get("MapLibraryDir").toString());
+    m_optionsChinese->setChecked(m_settings->get("MapOptionsForceChinese").toBool());
+    m_optionsSprintSneak->setChecked(m_settings->get("MapOptionsSwapSprintSneak").toBool());
+    m_l10nApiBase->setText(m_settings->get("MapL10nApiBase").toString());
+    m_l10nApiKey->setText(m_settings->get("MapL10nApiKey").toString());
+    m_l10nModel->setText(m_settings->get("MapL10nModel").toString());
     m_hallEndpoint->setText(m_settings->get("MapHallEndpoint").toString());
     m_hallTransport->setCurrentIndex(
         std::max(0, m_hallTransport->findData(m_settings->get("MapHallTransport").toString())));
@@ -271,6 +334,11 @@ void MapSettingsWidget::saveSettings()
     m_settings->set("MapSkipExperimentalPrompt", m_skipPrompt->isChecked());
     m_settings->set("MapEnterDelay", m_enterDelay->value());
     m_settings->set("MapLibraryDir", m_libraryDir->text().trimmed());
+    m_settings->set("MapOptionsForceChinese", m_optionsChinese->isChecked());
+    m_settings->set("MapOptionsSwapSprintSneak", m_optionsSprintSneak->isChecked());
+    m_settings->set("MapL10nApiBase", m_l10nApiBase->text().trimmed());
+    m_settings->set("MapL10nApiKey", m_l10nApiKey->text().trimmed());
+    m_settings->set("MapL10nModel", m_l10nModel->text().trimmed());
     m_settings->set("MapHallEndpoint", m_hallEndpoint->text().trimmed());
     m_settings->set("MapHallTransport", m_hallTransport->currentData().toString());
     m_settings->set("MapHallProxyMode", m_hallProxyMode->currentData().toString());

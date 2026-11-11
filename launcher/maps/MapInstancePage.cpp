@@ -33,6 +33,7 @@
 #include <QHeaderView>
 #include <QLabel>
 #include <QLineEdit>
+#include <QLocale>
 #include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
@@ -51,6 +52,7 @@
 #include <algorithm>
 
 #include "FileSystem.h"
+#include "Application.h"
 #include "HallAPI.h"
 #include "HallCache.h"
 #include "MapCoverLoader.h"
@@ -58,6 +60,11 @@
 #include "MapImportTask.h"
 #include "MapRepository.h"
 #include "MapInfoCard.h"
+#include "MapL10nApply.h"
+#include "MapL10nExport.h"
+#include "MapL10nProbe.h"
+#include "MapL10nTask.h"
+#include "MapL10nTranslate.h"
 #include "MapTheme.h"
 #include "MapReviewCard.h"
 #include "StarRatingWidget.h"
@@ -259,9 +266,9 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
     });
 
     /**
-     * 三个页签：简介 / 评论 / 我的。
+     * 四个页签：简介 / 评论 / 我的 / 汉化。
      *
-     * 前两页来自大厅本地库（`hall-cache.json`），第三页是本地信息（上面直接建好的）。
+     * 前两页来自大厅本地库（`hall-cache.json`），后两页是本地信息（上面直接建好的）。
      */
     {
         m_tabs = new QTabWidget(this);
@@ -269,6 +276,7 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
         m_tabs->addTab(buildAboutPage(), tr("简介"));
         m_tabs->addTab(buildReviewsPage(), tr("评论"));
         m_tabs->addTab(minePage, tr("我的"));
+        m_tabs->addTab(buildL10nPage(), tr("汉化"));
         layout->addWidget(m_tabs, 1);
 
         // 切到「评论」页才去拉（见 refreshHallTabs 里的说明）
@@ -690,6 +698,596 @@ void MapInstancePage::refreshHallTabs()
         m_reviewsRequested = true, m_hall->reviews(m_link.mapUuid, 20, 0);
 }
 
+// ────────────────────────────── 汉化页 ──────────────────────────────
+
+QString MapInstancePage::worldRoot() const
+{
+    if (m_instance == nullptr || m_meta.worlds.isEmpty())
+        return {};
+    return FS::PathCombine(m_instance->instanceRoot(), QStringLiteral(".minecraft"), QStringLiteral("saves"),
+                           m_meta.worlds.at(0).folder);
+}
+
+QWidget* MapInstancePage::buildL10nPage()
+{
+    m_l10nPage = new QWidget(this);
+    auto* layout = new QVBoxLayout(m_l10nPage);
+    layout->setContentsMargins(4, 8, 4, 4);
+    layout->setSpacing(10);
+
+    // ── 卡片 1：结论 ──
+    QVBoxLayout* modeBody = nullptr;
+    layout->addWidget(ui::makeCard(m_l10nPage, tr("这张图能不能汉化"), &modeBody));
+
+    m_l10nMode = new QLabel(tr("还没体检"), m_l10nPage);
+    QFont modeFont = m_l10nMode->font();
+    modeFont.setBold(true);
+    modeFont.setPointSizeF(modeFont.pointSizeF() * 1.15);
+    m_l10nMode->setFont(modeFont);
+    modeBody->addWidget(m_l10nMode);
+
+    m_l10nDesc = new QLabel(tr("先摸清楚文本藏在哪：资源包的语言表、数据包里的函数、还是直接写在区块数据里。\n"
+                              "体检全程只读，不改存档、不联网。"),
+                            m_l10nPage);
+    m_l10nDesc->setWordWrap(true);
+    m_l10nDesc->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    modeBody->addWidget(m_l10nDesc);
+
+    // ── 卡片 2：载体明细 ──
+    QVBoxLayout* carrierBody = nullptr;
+    layout->addWidget(ui::makeCard(m_l10nPage, tr("文本在哪"), &carrierBody));
+
+    auto* grid = new QGridLayout();
+    grid->setHorizontalSpacing(12);
+    grid->setVerticalSpacing(8);
+    grid->setColumnStretch(1, 1);
+
+    const auto addRow = [&](int row, const QString& name) -> QLabel* {
+        grid->addWidget(ui::makeKeyLabel(name, m_l10nPage), row, 0, Qt::AlignTop);
+        auto* value = new QLabel(m_l10nPage);
+        value->setWordWrap(true);
+        value->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        value->setText(tr("—"));
+        grid->addWidget(value, row, 1);
+        return value;
+    };
+    m_l10nPack = addRow(0, tr("资源包"));
+    m_l10nDatapack = addRow(1, tr("数据包"));
+    m_l10nRegion = addRow(2, tr("区块"));
+    carrierBody->addLayout(grid);
+
+    // ── 卡片 3：待译与下一步 ──
+    QVBoxLayout* actionBody = nullptr;
+    layout->addWidget(ui::makeCard(m_l10nPage, tr("待译与下一步"), &actionBody));
+
+    m_l10nTotal = new QLabel(tr("—"), m_l10nPage);
+    QFont totalFont = m_l10nTotal->font();
+    totalFont.setBold(true);
+    m_l10nTotal->setFont(totalFont);
+    actionBody->addWidget(m_l10nTotal);
+
+    auto* buttonRow = new QHBoxLayout();
+    buttonRow->setSpacing(8);
+    m_l10nDeep = new QPushButton(tr("扫描全部区块"), m_l10nPage);
+    m_l10nDeep->setToolTip(tr("把 region / entities / data 全部读一遍，得到完整结论。\n"
+                              "大图要几十秒，可以随时取消。只读，不写任何文件。"));
+    m_l10nExport = new QPushButton(tr("导出待译文本…"), m_l10nPage);
+    m_l10nExport->setEnabled(false);
+    m_l10nExport->setToolTip(tr("导出成 strings.json（给程序）和 strings.csv（给 Excel 改）。\n"
+                                "先跑一次体检才有东西可导。"));
+    m_l10nTranslate = new QPushButton(tr("自动翻译…"), m_l10nPage);
+    m_l10nTranslate->setEnabled(false);
+    m_l10nTranslate->setToolTip(tr("用 设置 → 地图 → 汉化翻译 里配的 OpenAI 兼容接口，\n"
+                                   "把 strings.json 里还没翻的条目译成中文并写回。"));
+    m_l10nApply = new QPushButton(tr("生成汉化版（改存档）…"), m_l10nPage);
+    m_l10nApply->setEnabled(false);
+    m_l10nApply->setToolTip(tr("把译文写进**存档副本**：复制一份世界，只在副本上改文本。\n"
+                               "原存档一个字节都不动；改完会逐区块做结构比对，不一致的区块直接丢弃。\n"
+                               "生成完会问要不要用它替换本实例存档 —— 旧图先打包成 zip 备份，随时能还原。"));
+    buttonRow->addWidget(m_l10nDeep);
+    buttonRow->addWidget(m_l10nExport);
+    buttonRow->addWidget(m_l10nTranslate);
+    buttonRow->addWidget(m_l10nApply);
+    buttonRow->addStretch(1);
+    actionBody->addLayout(buttonRow);
+
+    m_l10nState = new QLabel(m_l10nPage);
+    m_l10nState->setWordWrap(true);
+    m_l10nState->setEnabled(false);
+    actionBody->addWidget(m_l10nState);
+
+    connect(m_l10nDeep, &QPushButton::clicked, this, [this] { startL10nProbe(true); });
+    connect(m_l10nExport, &QPushButton::clicked, this, &MapInstancePage::exportL10n);
+    connect(m_l10nTranslate, &QPushButton::clicked, this, &MapInstancePage::translateL10n);
+    connect(m_l10nApply, &QPushButton::clicked, this, &MapInstancePage::applyL10n);
+
+    // ── 已知限制：写在页面上，别让玩家自己撞 ──
+    m_l10nNotes = new QLabel(m_l10nPage);
+    m_l10nNotes->setWordWrap(true);
+    m_l10nNotes->setEnabled(false);
+    m_l10nNotes->setText(tr("已知限制：1.12 及更早的命令方块里是裸字符串，暂不处理；\n"
+                            "图片化的文字（地图画、位图字体整段渲染）看不见；\n"
+                            "中文比英文宽，告示牌和书页可能被裁 —— 工具只能报警，不会自动缩排。"));
+    layout->addWidget(m_l10nNotes);
+
+    layout->addStretch(1);
+    return m_l10nPage;
+}
+
+void MapInstancePage::setL10nBusy(bool busy)
+{
+    if (m_l10nDeep != nullptr)
+        m_l10nDeep->setEnabled(!busy);
+    if (m_l10nExport != nullptr)
+        m_l10nExport->setEnabled(!busy && m_l10nResult.isValid());
+    if (m_l10nTranslate != nullptr)
+        m_l10nTranslate->setEnabled(!busy && m_l10nResult.isValid());
+    if (m_l10nApply != nullptr)
+        m_l10nApply->setEnabled(!busy && m_l10nResult.isValid());
+    if (m_l10nState != nullptr) {
+        m_l10nState->setEnabled(!busy);
+        if (!busy && m_l10nState->text().isEmpty())
+            m_l10nState->clear();
+    }
+}
+
+void MapInstancePage::exportL10n()
+{
+    if (m_instance == nullptr || !m_l10nResult.isValid())
+        return;
+
+    const QString directory = FS::PathCombine(m_instance->instanceRoot(), QStringLiteral("l10n"));
+    const auto result = l10n::exportStrings(m_l10nResult, directory);
+    if (!result.error.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("导出失败"), result.error, QMessageBox::Critical)->show();
+        return;
+    }
+
+    QString text = tr("已导出 %1 条待译文本：资源包 %2 条、存档 %3 条。")
+                       .arg(QLocale().toString(result.total))
+                       .arg(QLocale().toString(result.fromPack))
+                       .arg(QLocale().toString(result.fromWorld));
+    if (!result.regionsScanned)
+        text += tr("\n\n注意：区块还没扫过，这份清单只含资源包与数据包，会偏少。");
+    text += tr("\n\nstrings.csv 可以直接用 Excel 打开填中文（带 BOM，不会乱码）；\n"
+               "strings.json 是给后面的翻译与写回流程用的。");
+
+    QMessageBox box(this);
+    box.setWindowTitle(tr("导出完成"));
+    box.setIcon(QMessageBox::Information);
+    box.setText(text);
+    auto* openButton = box.addButton(tr("打开目录"), QMessageBox::ActionRole);
+    box.addButton(tr("好"), QMessageBox::AcceptRole);
+    box.exec();
+    if (box.clickedButton() == openButton)
+        QDesktopServices::openUrl(QUrl::fromLocalFile(directory));
+}
+
+void MapInstancePage::finishL10nProbe()
+{
+    setL10nBusy(false);
+    if (m_l10nTask != nullptr) {
+        m_l10nTask->deleteLater();
+        m_l10nTask = nullptr;
+    }
+}
+
+void MapInstancePage::startL10nProbe(bool deep)
+{
+    if (m_l10nTask != nullptr)
+        return;
+
+    const QString root = worldRoot();
+    if (root.isEmpty() || !QFileInfo(root).isDir()) {
+        if (m_l10nState != nullptr)
+            m_l10nState->setText(tr("找不到这个实例的存档目录，没法体检。"));
+        return;
+    }
+
+    auto* task = new l10n::MapL10nTask(root, m_meta.version.mcVersion, deep);
+    m_l10nTask = task;
+    setL10nBusy(true);
+    if (m_l10nState != nullptr)
+        m_l10nState->setText(deep ? tr("正在扫描区块…") : tr("正在读取资源包与数据包…"));
+
+    connect(task, &Task::status, this, [this](const QString& text) {
+        if (m_l10nState != nullptr)
+            m_l10nState->setText(text);
+    });
+    connect(task, &Task::failed, this, [this](const QString& reason) {
+        if (m_l10nState != nullptr)
+            m_l10nState->setText(reason);
+    });
+
+    if (deep) {
+        // 进度对话框自己跑事件循环，结束（完成或取消）后才返回 —— 任务的生命周期在这里收
+        ProgressDialog dialog(this);
+        dialog.showSkipButton();
+        dialog.execWithTask(task);
+        applyL10nResult(task->result());
+        if (m_l10nState != nullptr && m_l10nTask == task)
+            m_l10nState->clear();
+        finishL10nProbe();
+        return;
+    }
+
+    // 快检：静默跑，不弹窗
+    connect(task, &Task::succeeded, this, [this, task] {
+        applyL10nResult(task->result());
+        if (m_l10nState != nullptr)
+            m_l10nState->clear();
+        finishL10nProbe();
+    });
+    connect(task, &Task::aborted, this, &MapInstancePage::finishL10nProbe);
+    task->start();
+}
+
+void MapInstancePage::applyL10nResult(const l10n::ProbeResult& result)
+{
+    if (m_l10nPage == nullptr)
+        return;
+
+    if (!result.error.isEmpty()) {
+        m_l10nMode->setText(tr("体检失败"));
+        m_l10nMode->setStyleSheet(QStringLiteral("color: %1;").arg(ui::noticeColorName()));
+        m_l10nDesc->setText(result.error);
+        return;
+    }
+    if (result.root.isEmpty())
+        return;  // 取消得太早，什么都没有，保持原样
+
+    m_l10nFastDone = true;
+    m_l10nResult = result;
+    if (m_l10nExport != nullptr)
+        m_l10nExport->setEnabled(true);
+    if (m_l10nTranslate != nullptr)
+        m_l10nTranslate->setEnabled(true);
+    if (m_l10nApply != nullptr)
+        m_l10nApply->setEnabled(true);
+
+    if (result.regionsScanned) {
+        const auto mode = result.mode();
+        m_l10nMode->setText(l10n::modeLabel(mode));
+        m_l10nDesc->setText(l10n::modeDescription(mode));
+        // 颜色只区分"能不能只靠资源包"，不吓唬人：改存档也是正路，只是要留副本
+        const QColor color = mode == l10n::Mode::Key ? ui::confidenceColor(Confidence::High)
+                                                     : ui::confidenceColor(Confidence::Medium);
+        m_l10nMode->setStyleSheet(QStringLiteral("color: %1;").arg(color.name()));
+    } else {
+        m_l10nMode->setText(tr("还没扫区块"));
+        m_l10nMode->setStyleSheet(QString());
+        m_l10nDesc->setText(tr("资源包和数据包已经读完，区块还没看 —— 只凭这两处下结论会漏掉大半文本。\n"
+                               "点下面的「扫描全部区块」拿完整结论。"));
+    }
+
+    // 载体明细
+    if (!result.pack.found) {
+        m_l10nPack->setText(tr("没有自带资源包"));
+    } else if (result.pack.enKeys == 0 && result.pack.locales.isEmpty()) {
+        m_l10nPack->setText(tr("%1（没读到语言表）").arg(result.pack.path));
+    } else {
+        const QString ns = result.pack.namespaceName.isEmpty() ? tr("未知") : result.pack.namespaceName;
+        m_l10nPack->setText(tr("命名空间 %1 · 英文 %2 键 · 中文 %3 键 · %4 种语言")
+                                .arg(ns)
+                                .arg(QLocale().toString(result.pack.enKeys))
+                                .arg(QLocale().toString(result.pack.zhKeys))
+                                .arg(result.pack.locales.size()));
+    }
+
+    if (result.datapackFiles == 0) {
+        m_l10nDatapack->setText(tr("没有数据包"));
+    } else {
+        m_l10nDatapack->setText(tr("%1 个文件 · %2 处语言表引用（%3 个键）· %4 处硬编码")
+                                    .arg(QLocale().toString(result.datapackFiles))
+                                    .arg(QLocale().toString(result.datapacks.refs))
+                                    .arg(QLocale().toString(result.datapacks.keys.size()))
+                                    .arg(QLocale().toString(result.datapacks.literalOccurrences)));
+    }
+
+    if (!result.regionsScanned) {
+        m_l10nRegion->setText(tr("还没扫描（%1 个区块文件待读）").arg(QLocale().toString(result.regionFiles)));
+    } else {
+        m_l10nRegion->setText(tr("%1 个文件 · %2 个区块 · %3 处硬编码（%4 条唯一）")
+                                  .arg(QLocale().toString(result.regionFiles))
+                                  .arg(QLocale().toString(result.chunks))
+                                  .arg(QLocale().toString(result.regions.literalOccurrences))
+                                  .arg(QLocale().toString(result.regions.uniqueTexts())));
+    }
+
+    // 待译合计
+    const int packMissing = result.pack.missingProse;
+    const int hardcoded = result.datapacks.uniqueTexts() + result.regions.uniqueTexts();
+    if (!result.regionsScanned) {
+        m_l10nTotal->setText(tr("待译：资源包 %1 条 · 存档 %2 条（区块未扫描，偏少）")
+                                 .arg(QLocale().toString(packMissing))
+                                 .arg(QLocale().toString(hardcoded)));
+    } else if (packMissing + hardcoded == 0) {
+        m_l10nTotal->setText(tr("待译：0 条 —— 这张图的文本可能已经全部是中文，或者都藏在图片里。"));
+    } else {
+        m_l10nTotal->setText(tr("待译：%1 条（资源包 %2 + 存档 %3）")
+                                 .arg(QLocale().toString(packMissing + hardcoded))
+                                 .arg(QLocale().toString(packMissing))
+                                 .arg(QLocale().toString(hardcoded)));
+    }
+
+    // 补充说明：只放真正需要玩家知道的风险，不重复上面的话
+    QStringList extras = result.notes;
+    if (result.regions.errors > 0)
+        extras.append(tr("有 %1 处区块/文本解析失败，统计可能偏少。").arg(QLocale().toString(result.regions.errors)));
+    if (m_l10nNotes != nullptr && !extras.isEmpty()) {
+        QString text = m_l10nNotes->text();
+        const int marker = text.indexOf(QStringLiteral("\n\n"));
+        if (marker >= 0)
+            text = text.left(marker);
+        m_l10nNotes->setText(text + QStringLiteral("\n\n") + extras.join(QLatin1Char('\n')));
+    }
+}
+
+void MapInstancePage::translateL10n()
+{
+    if (m_instance == nullptr)
+        return;
+
+    const QString directory = FS::PathCombine(m_instance->instanceRoot(), QStringLiteral("l10n"));
+    const QString json = QDir(directory).filePath(QStringLiteral("strings.json"));
+    if (!QFile::exists(json)) {
+        CustomMessageBox::selectable(this, tr("还没有待译清单"),
+                                     tr("先点「导出待译文本…」生成 strings.json，再回来自动翻译。"),
+                                     QMessageBox::Information)
+            ->show();
+        return;
+    }
+
+    const auto settings = APPLICATION->settings();
+    const QString base = settings->get("MapL10nApiBase").toString().trimmed();
+    const QString key = settings->get("MapL10nApiKey").toString().trimmed();
+    const QString model = settings->get("MapL10nModel").toString().trimmed();
+    if (base.isEmpty() || key.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("没有配置翻译接口"),
+                                     tr("去「设置 → 地图 → 汉化翻译」填接口地址和 API Key。\n\n"
+                                        "不想用在线翻译也可以：导出的 strings.csv 用 Excel 填完中文再导入。"),
+                                     QMessageBox::Information)
+            ->show();
+        return;
+    }
+
+    auto task = std::make_unique<l10n::MapL10nTranslateTask>(json, base, key,
+                                                             model.isEmpty() ? QStringLiteral("gpt-4o-mini") : model);
+
+    // 失败原因先存下来，等进度对话框关掉再提示 —— 免得弹窗叠在弹窗上
+    QString failure;
+    connect(task.get(), &Task::failed, this, [&failure](const QString& reason) { failure = reason; });
+
+    ProgressDialog dialog(this);
+    dialog.showSkipButton();
+    dialog.execWithTask(task.get());
+
+    const int translated = task->translated();
+    const int failed = task->failed();
+
+    if (!failure.isEmpty()) {
+        CustomMessageBox::selectable(this,
+                                     tr("自动翻译中断"),
+                                     tr("%1\n\n已翻好的 %2 条已经写回 strings.json，不会白跑。")
+                                         .arg(failure)
+                                         .arg(QLocale().toString(translated)),
+                                     QMessageBox::Warning)
+            ->show();
+        return;
+    }
+    if (translated == 0) {
+        CustomMessageBox::selectable(this, tr("没有翻出东西"),
+                                     tr("接口没有返回任何译文。检查模型名与接口地址是否正确。"),
+                                     QMessageBox::Warning)
+            ->show();
+        return;
+    }
+
+    QString text = tr("已翻译 %1 条，写回 strings.json。").arg(QLocale().toString(translated));
+    if (failed > 0)
+        text += tr("\n有 %1 条没翻出来，会保持原文。").arg(QLocale().toString(failed));
+    text += tr("\n\n下一步点「生成汉化版（改存档）…」把译文写进存档副本；"
+               "生成完可以直接选「替换本实例存档」——旧图会先打包成 zip 备份。");
+
+    QMessageBox box(this);
+    box.setWindowTitle(tr("自动翻译完成"));
+    box.setIcon(QMessageBox::Information);
+    box.setText(text);
+    auto* openButton = box.addButton(tr("打开目录"), QMessageBox::ActionRole);
+    box.addButton(tr("好"), QMessageBox::AcceptRole);
+    box.exec();
+    if (box.clickedButton() == openButton)
+        QDesktopServices::openUrl(QUrl::fromLocalFile(directory));
+}
+
+void MapInstancePage::applyL10n()
+{
+    if (m_instance == nullptr)
+        return;
+
+    const QString directory = FS::PathCombine(m_instance->instanceRoot(), QStringLiteral("l10n"));
+    const QString json = QDir(directory).filePath(QStringLiteral("strings.json"));
+    if (!QFile::exists(json)) {
+        CustomMessageBox::selectable(this, tr("还没有译文"),
+                                     tr("先「导出待译文本…」，再把中文填进 zh 列（自动翻译或 CSV 手填）。"),
+                                     QMessageBox::Information)
+            ->show();
+        return;
+    }
+
+    int available = 0;
+    QString error;
+    const auto mapping = l10n::loadTranslations(json, &available, &error);
+    if (!error.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("读不了译文"), error, QMessageBox::Critical)->show();
+        return;
+    }
+    if (available == 0) {
+        CustomMessageBox::selectable(this, tr("一条译文都没有"),
+                                     tr("strings.json 里 zh 全是空的。先自动翻译，或用 Excel 填完再导入。"),
+                                     QMessageBox::Information)
+            ->show();
+        return;
+    }
+
+    const QString world = worldRoot();
+    if (world.isEmpty() || !QFileInfo(world).isDir()) {
+        CustomMessageBox::selectable(this, tr("找不到存档"), tr("这个实例没有可用的存档目录。"),
+                                     QMessageBox::Critical)
+            ->show();
+        return;
+    }
+
+    const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+    const QString outputRoot =
+        FS::PathCombine(m_instance->instanceRoot(), QStringLiteral(".mcml-l10n"), stamp, QStringLiteral("MapWorld"));
+
+    QMessageBox box(this);
+    box.setWindowTitle(tr("生成汉化版"));
+    box.setIcon(QMessageBox::Question);
+    box.setText(tr("会把这份存档**复制**到：\n%1\n\n然后在副本上替换 %2 条文本。"
+                   "\n\n原存档一个字节都不会动；改完会逐区块做结构比对，"
+                   "结构对不上的区块会直接丢弃（保留原文），不会写坏。\n\n继续吗？")
+                    .arg(QDir::toNativeSeparators(outputRoot))
+                    .arg(QLocale().toString(available)));
+    box.setTextFormat(Qt::PlainText);
+    auto* yesButton = box.addButton(tr("开始"), QMessageBox::AcceptRole);
+    auto* noButton = box.addButton(tr("取消"), QMessageBox::RejectRole);
+    box.setDefaultButton(noButton);
+    box.exec();
+    if (box.clickedButton() != yesButton)
+        return;
+
+    auto task = std::make_unique<l10n::MapL10nApplyTask>(world, outputRoot, mapping);
+
+    QString failure;
+    connect(task.get(), &Task::failed, this, [&failure](const QString& reason) { failure = reason; });
+
+    ProgressDialog dialog(this);
+    dialog.showSkipButton();
+    dialog.execWithTask(task.get());
+
+    const auto stats = task->stats();
+    if (!failure.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("生成失败"), failure, QMessageBox::Critical)->show();
+        return;
+    }
+
+    QString text = tr("已生成汉化版：\n%1\n\n"
+                      "替换 %2 处文本，涉及 %3 个区块；结构比对差异 %4 处。")
+                       .arg(QDir::toNativeSeparators(outputRoot))
+                       .arg(QLocale().toString(stats.replaced))
+                       .arg(QLocale().toString(stats.patchedChunks))
+                       .arg(QLocale().toString(stats.structureDiffs));
+    if (stats.discarded > 0)
+        text += tr("\n\n有 %1 个区块被丢弃（保留原文）—— 明细见日志。").arg(QLocale().toString(stats.discarded));
+    text += tr("\n\n要不要现在就用它替换本实例的存档？\n"
+               "旧存档会先打包成 zip 备份，替换后启动游戏就是汉化版。");
+
+    QMessageBox done(this);
+    done.setWindowTitle(tr("汉化版已生成"));
+    done.setIcon(QMessageBox::Question);
+    done.setTextFormat(Qt::PlainText);
+    done.setText(text);
+    auto* replaceButton = done.addButton(tr("替换本实例存档"), QMessageBox::AcceptRole);
+    auto* openButton = done.addButton(tr("打开目录"), QMessageBox::ActionRole);
+    done.addButton(tr("稍后"), QMessageBox::RejectRole);
+    done.setDefaultButton(replaceButton);
+    done.exec();
+
+    if (done.clickedButton() == openButton)
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(outputRoot).absolutePath()));
+    else if (done.clickedButton() == replaceButton)
+        replaceWithL10nCopy(outputRoot);
+}
+
+void MapInstancePage::replaceWithL10nCopy(const QString& newWorldRoot)
+{
+    if (m_instance == nullptr)
+        return;
+
+    const QString world = worldRoot();
+    if (world.isEmpty() || !QFileInfo(world).isDir()) {
+        CustomMessageBox::selectable(this, tr("找不到存档"), tr("这个实例没有可用的存档目录。"),
+                                     QMessageBox::Critical)
+            ->show();
+        return;
+    }
+
+    // 游戏开着的时候替换存档目录：Windows 上会挪不动（session.lock / region 文件被占用），
+    // 硬来时还可能把正在保存的世界写坏。直接拒绝更省事。
+    if (m_instance->isRunning()) {
+        CustomMessageBox::selectable(this, tr("游戏正在运行"),
+                                     tr("先关掉游戏再替换存档。现在替换会和游戏争抢存档文件。"),
+                                     QMessageBox::Warning)
+            ->show();
+        return;
+    }
+
+    const QString backupDir = FS::PathCombine(m_instance->instanceRoot(), QStringLiteral("l10n"),
+                                              QStringLiteral("backups"));
+    const QString worldFolder = QFileInfo(world).fileName();
+
+    QMessageBox box(this);
+    box.setWindowTitle(tr("替换存档"));
+    box.setIcon(QMessageBox::Question);
+    box.setTextFormat(Qt::PlainText);
+    box.setText(tr("会用刚生成的汉化版顶替这个实例的存档：\n%1\n\n"
+                   "旧存档先打包成 zip 备份，放在：\n%2\n\n"
+                   "替换后启动游戏就是汉化版；想回到原图，把备份解压回 saves 目录即可"
+                   "（也可以直接用「重装地图」从地图库还原）。\n\n继续吗？")
+                    .arg(QDir::toNativeSeparators(world), QDir::toNativeSeparators(backupDir)));
+    auto* yesButton = box.addButton(tr("替换"), QMessageBox::AcceptRole);
+    auto* noButton = box.addButton(tr("取消"), QMessageBox::RejectRole);
+    box.setDefaultButton(noButton);
+    box.exec();
+    if (box.clickedButton() != yesButton)
+        return;
+
+    auto task = std::make_unique<l10n::MapL10nReplaceTask>(world, newWorldRoot, backupDir);
+
+    QString failure;
+    connect(task.get(), &Task::failed, this, [&failure](const QString& reason) { failure = reason; });
+
+    ProgressDialog dialog(this);
+    dialog.showSkipButton();
+    dialog.execWithTask(task.get());
+
+    if (!failure.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("替换失败"), failure, QMessageBox::Critical)->show();
+        return;
+    }
+
+    const auto replaceStats = task->stats();
+    QString text = tr("已替换成汉化版。\n\n"
+                      "旧存档备份：\n%1\n（%2，共 %3 个文件）\n\n"
+                      "世界目录：%4\n\n"
+                      "现在启动游戏就是汉化版；没翻到的条目仍然是原文。")
+                       .arg(QDir::toNativeSeparators(replaceStats.backupPath))
+                       .arg(QLocale().formattedDataSize(replaceStats.backupBytes))
+                       .arg(QLocale().toString(replaceStats.files))
+                       .arg(replaceStats.worldFolder);
+
+    QMessageBox finished(this);
+    finished.setWindowTitle(tr("替换完成"));
+    finished.setIcon(QMessageBox::Information);
+    finished.setText(text);
+    auto* revealButton = finished.addButton(tr("打开备份目录"), QMessageBox::ActionRole);
+    finished.addButton(tr("好"), QMessageBox::AcceptRole);
+    finished.exec();
+
+    if (finished.clickedButton() == revealButton)
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(replaceStats.backupPath).absolutePath()));
+
+    // 存档换过了，之前那份体检结果已经过期（导出/翻译/生成都基于旧存档）
+    m_l10nResult = l10n::ProbeResult{};
+    m_l10nFastDone = false;
+    setL10nBusy(false);
+    if (m_l10nState != nullptr)
+        m_l10nState->setText(tr("已替换成汉化版，旧存档备份在 %1。重新体检可以看到新的待译条数。")
+                                 .arg(QDir::toNativeSeparators(replaceStats.backupPath)));
+}
+
 void MapInstancePage::reload()
 {
     if (m_instance == nullptr)
@@ -698,6 +1296,11 @@ void MapInstancePage::reload()
     m_meta = MapMeta::load(m_instance->instanceRoot());
     m_notes = MapNotes::load(m_instance->instanceRoot());
     applyNotesToUi();
+
+    // 「汉化」页：第一次打开实例时静默跑一次快检（只读资源包与数据包，毫秒级）。
+    // reload() 会被多次调用（存笔记、切页签），所以只跑一次；区块扫描永远要玩家自己点。
+    if (!m_l10nFastDone && m_l10nTask == nullptr && m_l10nPage != nullptr)
+        startL10nProbe(false);
 
     m_title->setText(m_meta.title.isEmpty() ? m_instance->name() : m_meta.title);
 

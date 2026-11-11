@@ -74,6 +74,11 @@ class MapSettingsWidget : public QWidget {
 
     // 以下仅全局作用域可见
     QLineEdit* m_libraryDir = nullptr;
+    QCheckBox* m_optionsChinese = nullptr;
+    QCheckBox* m_optionsSprintSneak = nullptr;
+    QLineEdit* m_l10nApiBase = nullptr;
+    QLineEdit* m_l10nApiKey = nullptr;
+    QLineEdit* m_l10nModel = nullptr;
     QLineEdit* m_hallEndpoint = nullptr;
     QComboBox* m_hallTransport = nullptr;
     QComboBox* m_hallProxyMode = nullptr;

@@ -785,7 +785,15 @@ void ExternalLinkFileProcess::runLinkFile()
     params += " -H " + QVariant(m_useHardLinks).toString();
 
 #if defined Q_OS_WIN32
-    SHELLEXECUTEINFO ShExecInfo;
+    /**
+     * 提权跑一次 filelink，把这一批链接一次性做完。
+     *
+     * 这里必须零初始化：用户在 UAC 上点「否」时 `ShellExecuteEx` 返回 FALSE，
+     * 结构体里的 `hProcess` 保持未初始化 —— 以前直接拿它 `WaitForSingleObject`，
+     * 那是个野句柄，轻则 WAIT_FAILED、重则一直等下去。失败要干净地返回，
+     * 由上层把链接判为失败（`run()` 之后照样会 emit processExited）。
+     */
+    SHELLEXECUTEINFO ShExecInfo{};
 
     fileLinkExe = fileLinkExe + ".exe";
 
@@ -806,7 +814,10 @@ void ExternalLinkFileProcess::runLinkFile()
     ShExecInfo.nShow = SW_HIDE;
     ShExecInfo.hInstApp = NULL;
 
-    ShellExecuteEx(&ShExecInfo);
+    if (!ShellExecuteEx(&ShExecInfo) || ShExecInfo.hProcess == nullptr) {
+        qWarning() << "提权被取消或启动失败，跳过这次链接";
+        return;
+    }
 
     WaitForSingleObject(ShExecInfo.hProcess, INFINITE);
     CloseHandle(ShExecInfo.hProcess);

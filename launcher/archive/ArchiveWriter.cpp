@@ -72,6 +72,14 @@ Result<> ArchiveWriter::open()
         return std::unexpected{ QString("Could not set charset for archive %1: %2").arg(m_filename, archive_error_string(m_archive)) };
     }
 
+    // 压缩方式只对 zip 有意义；设不上不算致命（退回 libarchive 的默认值）
+    if (m_format == QLatin1String("zip") && !m_compression.isEmpty()) {
+        const auto option = QStringLiteral("zip:compression=%1").arg(m_compression).toUtf8();
+        if (archive_write_set_options(m_archive, option.constData()) != ARCHIVE_OK) {
+            qWarning() << "Could not set compression for archive" << m_filename << ":" << archive_error_string(m_archive);
+        }
+    }
+
     auto archiveNameW = m_filename.toStdWString();
     if (archive_write_open_filename_w(m_archive, archiveNameW.data()) != ARCHIVE_OK) {
         return std::unexpected{ QString("Could not open archive %1 for writing: %2").arg(m_filename, archive_error_string(m_archive)) };

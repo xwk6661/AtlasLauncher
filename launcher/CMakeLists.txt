@@ -751,6 +751,18 @@ set(MAPS_SOURCES
     maps/MapTypes.h
     maps/MapTextUtils.h
     maps/MapTextUtils.cpp
+    maps/MapOptionsTxt.h
+    maps/MapOptionsTxt.cpp
+    maps/MapL10nProbe.h
+    maps/MapL10nProbe.cpp
+    maps/MapL10nTask.h
+    maps/MapL10nTask.cpp
+    maps/MapL10nExport.h
+    maps/MapL10nExport.cpp
+    maps/MapL10nTranslate.h
+    maps/MapL10nTranslate.cpp
+    maps/MapL10nApply.h
+    maps/MapL10nApply.cpp
     maps/MapTheme.h
     maps/DataVersionTable.h
     maps/DataVersionTable.cpp

@@ -30,15 +30,18 @@
 
 #include "FileSystem.h"
 #include "MMCZip.h"
+#include "Application.h"
 #include "DataVersionTable.h"
 #include "MapLibrary.h"
 #include "MapMeta.h"
+#include "MapOptionsTxt.h"
 #include "MapRepository.h"
 #include "MapTextUtils.h"
 #include "archive/ArchiveReader.h"
 #include "minecraft/MinecraftInstance.h"
 #include "minecraft/PackProfile.h"
 #include "settings/INISettingsObject.h"
+#include "settings/SettingsObject.h"
 
 namespace maps {
 namespace {
@@ -68,6 +71,13 @@ MapImportTask::MapImportTask(QString archivePath, MapScanResult scan, MapImportO
     : m_archivePath(std::move(archivePath)), m_scan(std::move(scan)), m_options(std::move(options))
 {
     setName(m_options.displayName);
+
+    // 构造在 UI 线程：设置对象的读取放在这里，别带到线程池里去（见头文件里的说明）
+    if (const auto* app = APPLICATION) {
+        const auto settings = app->settings();
+        m_optionsSetChinese = settings->get("MapOptionsForceChinese").toBool();
+        m_optionsSwapSprintSneak = settings->get("MapOptionsSwapSprintSneak").toBool();
+    }
 }
 
 QString MapImportTask::instanceRoot() const
@@ -354,13 +364,18 @@ Result<> MapImportTask::deployResources()
     }
 
     // 世界内置的 resources.zip 已经随世界一起解开，不需要额外处理
-    return mergeOptionsTxt();
+    return applyOptionsDefaults();
 }
 
-Result<> MapImportTask::mergeOptionsTxt()
+Result<> MapImportTask::applyOptionsDefaults()
 {
     const auto packs = m_scan.resourcePacks();
-    if (packs.isEmpty())
+
+    options::Defaults defaults;
+    defaults.setChinese = m_optionsSetChinese;
+    defaults.swapSprintSneak = m_optionsSwapSprintSneak;
+
+    if (packs.isEmpty() && defaults.isEmpty())
         return {};
 
     const QString path = FS::PathCombine(minecraftRoot(), "options.txt");
@@ -373,22 +388,42 @@ Result<> MapImportTask::mergeOptionsTxt()
         }
     }
 
-    // 只改 resourcePacks 这一行，玩家的按键/灵敏度/语言等设置原样保留
-    QStringList wanted{ QStringLiteral("vanilla") };
-    for (const auto& pack : packs)
-        wanted.append(QStringLiteral("file/%1").arg(baseNameOf(pack)));
-    const QString value = QStringLiteral("resourcePacks:[\"%1\"]").arg(wanted.join(QStringLiteral("\",\"")));
+    bool touched = false;
 
-    bool replaced = false;
-    for (auto& line : lines) {
-        if (line.startsWith(QLatin1String("resourcePacks:"))) {
-            line = value;
-            replaced = true;
-            break;
+    // ── 1. 随包材质包：除了这一行，玩家的其余设置原样保留 ──
+    if (!packs.isEmpty()) {
+        QStringList wanted{ QStringLiteral("vanilla") };
+        for (const auto& pack : packs)
+            wanted.append(QStringLiteral("file/%1").arg(baseNameOf(pack)));
+        const QString value = QStringLiteral("resourcePacks:[\"%1\"]").arg(wanted.join(QStringLiteral("\",\"")));
+
+        bool replaced = false;
+        for (auto& line : lines) {
+            if (line.startsWith(QLatin1String("resourcePacks:"))) {
+                line = value;
+                replaced = true;
+                break;
+            }
         }
+        if (!replaced)
+            lines.append(value);
+        touched = true;
     }
-    if (!replaced)
-        lines.append(value);
+
+    // ── 2. 语言与键位 ──
+    // 版本先判一代（≤1.12 的数字键码 / ≥1.13 的 key.keyboard.*）；判不出来就退回
+    // 看现有 options.txt 的写法，两者都没有就**一条都不写** —— 写错一代会让
+    // 蹲/跑静默失效，比不写更糟。
+    if (!defaults.isEmpty()) {
+        auto format = options::formatForVersion(m_mcVersion);
+        if (!format)
+            format = options::detectFormat(lines);
+        if (format && options::applyDefaults(lines, *format, defaults) > 0)
+            touched = true;
+    }
+
+    if (!touched)
+        return {};
 
     QFile out(path);
     if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate))
