@@ -66,3 +66,7 @@ flatbuild
 # Local asset backups
 asset/
 *.zip
+
+# tools/*.py 的产物
+__pycache__/
+*.pyc
