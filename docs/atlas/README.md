@@ -4,8 +4,8 @@
 把 [`Minecraft-AIO`](E:/llmUsage/Minecraft-AIO)（mcml v0.33.0，Electron + TypeScript）的
 「以地图为中心」搬到了原生 Qt 上 —— **点地图卡片直接进图，版本由程序推断**。
 
-> **状态（2026-11-12 19:40，以 [05](05-进度与遗留.md) 为准）**：构建通过 · 测试 `409 passed / 0 failed / 13 skipped`
-> （非提权实测，31 个套件 / 422 项；开开发者模式后那 7 项符号链接用例才会真正执行，skip 降到 6）·
+> **状态（2026-11-12 22:10，以 [05](05-进度与遗留.md) 为准）**：构建通过 · 测试 `415 passed / 0 failed / 13 skipped`
+> （非提权实测，31 个套件 / 428 项；开开发者模式后那 7 项符号链接用例才会真正执行，skip 降到 6）·
 > M0、M2、M5 完成，M1 / M3 / M4 代码落地但仍有真机验收缺口，M6 主链路完成但**已隐藏** ·
 > 真机已过「1.20+ 进图与自动关游戏」「≤1.19.4 Agent 进图与安全退出（1.8.9 / 1.12 Forge / 1.16.5）」
 > 「大文件分片 + 续传 / 看门狗」「本地离线优先启动」「本地地图库」，真机反馈 4 条全部闭环（[05 §8](05-进度与遗留.md)）·
@@ -63,7 +63,7 @@
   required 依赖自动补齐、缺加载器先引导安装；
 - 本地地图库：分类（默认 RPG / AAD / CTM / MiniGame / Other，可增删改）、拖行归类、已安装标绿、双击导入；
   索引以**文件名**为键，库整体搬走也不失效；
-- 实例「信息」页三页签（简介 / 评论 / 我的）；设置里有全局「地图」「资源」两页，资源页能把
+- 实例窗口「地图」页四页签（简介 / 评论 / 我的 / 启动），右侧卡片带「模组预设」「编辑实例」；设置里有全局「地图」「资源」两页，资源页能把
   `assets / libraries / java` **真的迁移**到任意盘；
 - ⏸ **地图汉化（已隐藏，代码与测试保留）**：链路完整（体检 → 导出 / 机翻 → 写回副本 → 备份后顶替），
   但字形表（键化图）的图翻不了、写回后没在游戏里验证过显示，2026-11-12 起界面入口收起
@@ -93,7 +93,7 @@
 | **地图库** | `MapLibrary`（`map-library.json`：分类 / 元数据 / 已安装判定）· `MapLibraryPanel`（分类栏固定 132px + 列表 + 拖拽归类 + 自定义分类管理）。位置：添加实例 → 导入 → 地图存档导入下方 |
 | **启动** | `MapLaunchPrep`（选轨道 / 统一准备点）· `AgentBootstrap`（符号表 → `-javaagent`）· `MapWindowFocus`（把前台交给游戏窗口） |
 | **大厅** | `HallAPI` · `HallTypes` · `HallProxy` · `BrowserFetch` · `HallDialog` · `MapHallPage` |
-| **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（信息页）· `MapGalleryPage/Window` · `MapReviewCard`（评论卡）· `MapInfoCard`（信息卡工厂）· `MapCoverLoader`（封面）· `OptiFineDialog` · `StarRatingWidget` · `MapTheme` |
+| **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（「地图」页）· `MapGalleryPage/Window` · `MapReviewCard`（评论卡）· `MapInfoCard`（信息卡工厂）· `MapCoverLoader`（封面）· `OptiFineDialog` · `StarRatingWidget` · `MapTheme` |
 | **模组** | `ModPresets`（预设数据 + 双平台解析 + 依赖）· `ModPresetDialog`（安装 / 编辑）· `ModSearchDialog`（搜索添加） |
 | **设置** | `MapSettingsWidget`（内容体）· `MapPage`（全局「地图」）· `MapResourcePage`（全局「资源」）· `ResourceStore`（迁移）· `launcher/ResourcePaths`（路径解析） |
 | **退出** | `MapQuitWatcher`（1.20+ 读日志关游戏） |
@@ -102,7 +102,7 @@
 
 资源：`launcher/resources/maps/dataversion.json`（483 个版本）、`launcher/resources/agents/`
 （`quickboot.jar` + `introskip.jar` + **60 张符号表**，由 `tools/agent_symbol_audit.py` 对着真实 jar 复核）。
-测试：31 个套件、422 项，非提权实测 `409 passed / 0 failed / 13 skipped`（开开发者模式后 skip 降到 6，
+测试：31 个套件、428 项，非提权实测 `415 passed / 0 failed / 13 skipped`（开开发者模式后 skip 降到 6，
 差的就是 `FileSystem_test` 那 7 项符号链接用例）。地图相关的有 `MapArchiveScan`（17 + 2 项门控）、
 `MapOptionsTxt`（32）、`MapL10nProbe`（29 + 1 项门控）、`MapL10nTranslate`（7）、
 `MapL10nApply`（15 + 3 项门控）、`ModPresets`（14）、`DownloadSource`（12）、`RequestRetry`（23）。
