@@ -749,6 +749,7 @@ endif()
 # rebases only ever touch this list, never the modules themselves.
 set(MAPS_SOURCES
     maps/MapTypes.h
+    maps/MapFeatures.h
     maps/MapTextUtils.h
     maps/MapTextUtils.cpp
     maps/MapOptionsTxt.h

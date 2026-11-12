@@ -16,6 +16,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include "MapSettingsWidget.h"
+#include "MapFeatures.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -192,7 +193,18 @@ void MapSettingsWidget::buildGlobalGroups(QWidget* parent, QVBoxLayout* layout)
     l10nHint->setWordWrap(true);
     l10nHint->setEnabled(false);
     l10nLayout->addWidget(l10nHint);
-    layout->addWidget(l10nBox);
+
+    /**
+     * 汉化功能当前整体隐藏（`maps::features::kLocalization == false`，见 MapFeatures.h）。
+     *
+     * 控件照常建出来、照常读写配置 —— 只是**不进布局、直接 hide()**：
+     * 已经填过接口地址的玩家不会因为这次隐藏把配置清掉，恢复开关时也不用改动这里。
+     */
+    if (features::kLocalization) {
+        layout->addWidget(l10nBox);
+    } else {
+        l10nBox->hide();
+    }
 
     // ── 大厅 ──
     auto* hallBox = new QGroupBox(tr("地图大厅"), parent);

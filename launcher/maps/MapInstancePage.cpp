@@ -60,6 +60,7 @@
 #include "MapHallLink.h"
 #include "MapImportTask.h"
 #include "MapRepository.h"
+#include "MapFeatures.h"
 #include "MapInfoCard.h"
 #include "MapL10nApply.h"
 #include "MapL10nExport.h"
@@ -270,6 +271,11 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
      * 四个页签：简介 / 评论 / 我的 / 汉化。
      *
      * 前两页来自大厅本地库（`hall-cache.json`），后两页是本地信息（上面直接建好的）。
+     *
+     * 「汉化」页当前整体隐藏（`maps::features::kLocalization == false`）——
+     * 链路是通的，但效果不达标（字形表的图翻不了、写回后没在游戏里验证过显示），
+     * 先不给玩家看。页签索引因此不再固定为 4 个，下面按**页面指针**取评论页，
+     * 不再写死数字，恢复开关时不用回头改这里。
      */
     {
         m_tabs = new QTabWidget(this);
@@ -277,12 +283,14 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
         m_tabs->addTab(buildAboutPage(), tr("简介"));
         m_tabs->addTab(buildReviewsPage(), tr("评论"));
         m_tabs->addTab(minePage, tr("我的"));
-        m_tabs->addTab(buildL10nPage(), tr("汉化"));
+        if (features::kLocalization)
+            m_tabs->addTab(buildL10nPage(), tr("汉化"));
         layout->addWidget(m_tabs, 1);
 
         // 切到「评论」页才去拉（见 refreshHallTabs 里的说明）
-        connect(m_tabs, &QTabWidget::currentChanged, this, [this](int index) {
-            if (index != 1 || m_reviewsRequested || m_hallUuid.isEmpty() || m_hall == nullptr)
+        const int reviewsIndex = m_tabs->indexOf(m_reviewsPage);
+        connect(m_tabs, &QTabWidget::currentChanged, this, [this, reviewsIndex](int index) {
+            if (index != reviewsIndex || m_reviewsRequested || m_hallUuid.isEmpty() || m_hall == nullptr)
                 return;
             m_reviewsRequested = true;
             m_reviewsState->setText(tr("正在读取评论…"));
@@ -695,7 +703,8 @@ void MapInstancePage::refreshHallTabs()
      */
     m_reviewsRequested = false;
     m_reviewsState->setText(tr("点开「评论」页时再读取。"));
-    if (m_tabs != nullptr && m_tabs->currentIndex() == 1)
+    // 按页面指针判断当前是不是「评论」页 —— 页签数量会随功能开关变，别写死索引
+    if (m_tabs != nullptr && m_tabs->currentWidget() == m_reviewsPage)
         m_reviewsRequested = true, m_hall->reviews(m_link.mapUuid, 20, 0);
 }
 
