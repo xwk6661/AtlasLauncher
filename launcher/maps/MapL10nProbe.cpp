@@ -142,6 +142,20 @@ bool hasLetters(const QString& text)
 }
 
 /// 去掉 § 格式化码与私用区字形（位图图标），剩下的才是"字"
+bool looksLikeGlyphValue(const QString& text)
+{
+    static const QRegularExpression glyph(QStringLiteral("[\ue000-\uf8ff]"));
+    if (text.isEmpty())
+        return false;
+    int hits = 0;
+    auto it = glyph.globalMatch(text);
+    while (it.hasNext()) {
+        it.next();
+        ++hits;
+    }
+    return hits > 0 && hits * 5 >= text.size() * 2;  // 40% 以上
+}
+
 QString stripDecorations(const QString& text)
 {
     static const QRegularExpression format(QStringLiteral("\u00a7."));
@@ -417,6 +431,19 @@ struct LangEntry {
     QString path;  // 目录内相对路径，或 zip 条目名
 };
 
+/// `assets/<ns>/font/<name>.json` —— 自定义字体定义，键化图靠它把字形塞进文本
+bool isFontPath(const QString& name, QString* nameSpace)
+{
+    const QStringList parts = name.split(QLatin1Char('/'));
+    if (parts.size() < 4 || parts.at(0) != QLatin1String("assets") || parts.at(2) != QLatin1String("font"))
+        return false;
+    if (!parts.at(3).endsWith(QLatin1String(".json")))
+        return false;
+    if (nameSpace != nullptr)
+        *nameSpace = parts.at(1);
+    return true;
+}
+
 bool splitLangPath(const QString& name, LangEntry* out)
 {
     // assets/<ns>/lang/<code>.json —— 必须正好四段
@@ -490,13 +517,16 @@ void scanPack(ProbeResult& result)
     result.pack.path = fromZip ? zipPath : dirPath;
 
     QList<LangEntry> entries;
+    int fontFiles = 0;
     if (fromZip) {
         MMCZip::ArchiveReader reader(zipPath);
-        const auto parsed = reader.parse([&entries](MMCZip::ArchiveReader::File* file) -> Result<bool> {
+        const auto parsed = reader.parse([&entries, &fontFiles](MMCZip::ArchiveReader::File* file) -> Result<bool> {
             if (file->isFile()) {
                 LangEntry entry;
                 if (splitLangPath(file->filename(), &entry))
                     entries.append(entry);
+                else if (isFontPath(file->filename(), nullptr))
+                    ++fontFiles;
             }
             return false;  // false = 继续读下一个条目（true 是"停止"）
         });
@@ -509,12 +539,15 @@ void scanPack(ProbeResult& result)
                         QDir::Files, QDirIterator::Subdirectories);
         while (it.hasNext()) {
             const QString absolute = it.next();
-            const QString relative = QDir(dirPath).relativeFilePath(absolute);
+            const QString relative = QString(QDir(dirPath).relativeFilePath(absolute)).replace('\\', '/');
             LangEntry entry;
-            if (splitLangPath(QString(relative).replace('\\', '/'), &entry))
+            if (splitLangPath(relative, &entry))
                 entries.append(entry);
+            else if (isFontPath(relative, nullptr))
+                ++fontFiles;
         }
     }
+    result.pack.fontFiles = fontFiles;
 
     if (entries.isEmpty())
         return;
@@ -565,12 +598,29 @@ void scanPack(ProbeResult& result)
     result.pack.enKeys = int(en.size());
     result.pack.zhKeys = int(zh.size());
 
+    int puaHeavy = 0;
     for (auto it = en.begin(); it != en.end(); ++it) {
         const QString existing = zh.value(it.key());
         if (!existing.isEmpty() && existing != it.value())
             continue;  // 已有中文且不是照抄英文
         if (looksLikeProse(it.value()))
             ++result.pack.missingProse;
+        if (looksLikeGlyphValue(it.value()))
+            ++puaHeavy;
+    }
+
+    /**
+     * 键化图判定：表里没有一句散文，值又几乎全是私用区字形，还带自定义字体 ——
+     * 那不是"语言表"，是**字形表**。这类图的文字是画出来的，
+     * 字符串替换（不管改语言表还是改存档）都碰不到，只能重画字形贴图。
+     */
+    const bool glyphish = result.pack.enKeys > 0 && result.pack.missingProse == 0 && puaHeavy * 2 >= result.pack.enKeys;
+    result.pack.glyphTable = glyphish;
+    if (glyphish) {
+        result.notes.append(
+            tr("资源包里的 %1 个键是**字形表**（值基本是私用区字形，可翻散文 0 条），不是句子。\n"
+               "这类图的文字是画在字体贴图里的，改字符串（语言表 / 存档）都改不到它 —— 只能重画字形贴图。")
+                .arg(QString::number(result.pack.enKeys)));
     }
 }
 
@@ -792,7 +842,7 @@ QString modeDescription(Mode mode)
 {
     switch (mode) {
         case Mode::Key:
-            return tr("文本都走语言表，产出资源包就够了，不动存档。");
+            return tr("文本都在资源包的语言表里 —— 只产出资源包（zh_cn.json），存档一个字节都不动。");
         case Mode::Mixed:
             return tr("一部分文本在语言表里，另一部分硬编码在存档中，两边都要处理。");
         case Mode::Injection:
@@ -920,7 +970,19 @@ double ProbeResult::keyRatio() const
 
 Mode ProbeResult::mode() const
 {
-    // 与参考实现同一套阈值：两端实测 0.998 与 0.0985，中间地带很宽
+    /**
+     * 先看**资源包**：语言表里有真散文，就说明作者把文本放在资源包里，
+     * 汉化只需要产出资源包（`zh_cn.json`），存档一个字节都不用改。
+     * 这条以前没算进来 —— 于是"只差资源包"的图被判成"必须改存档"，
+     * 白复制几百 MB 存档、还可能把结构改出问题（2026-11-12 修）。
+     */
+    const int packProse = pack.found ? pack.missingProse : 0;
+    const int worldTexts = datapacks.uniqueTexts() + regions.uniqueTexts();
+    if (packProse > 0)
+        return worldTexts > 0 ? Mode::Mixed : Mode::Key;
+
+    // 资源包帮不上忙时，退回"世界里的文本长什么样"：与参考实现同一套阈值
+    // （两端实测 0.998 与 0.0985，中间地带很宽）
     const double ratio = keyRatio();
     if (ratio > 0.8)
         return Mode::Key;

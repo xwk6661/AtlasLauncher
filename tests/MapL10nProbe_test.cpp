@@ -328,12 +328,79 @@ class MapL10nProbeTest : public QObject {
                                      .arg(exported.total)
                                      .arg(exported.fromPack)
                                      .arg(exported.fromWorld);
-            if (result.pack.found && result.pack.enKeys > 0)
-                QVERIFY2(exported.fromPack > 0, "有英文语言表却一条都没导出");
+            // 语言表里有**可翻散文**才应该有导出条目；键化图的表是字形表（可翻 0 条），
+            // 导出 0 条才是对的 —— 以前的断言没加这个条件，2026-11-12 在这类图上误报
+            if (result.pack.found && result.pack.missingProse > 0)
+                QVERIFY2(exported.fromPack > 0, "有可翻的英文语言表却一条都没导出");
+            if (result.pack.glyphTable)
+                QVERIFY2(exported.fromPack == 0, "字形表不该导出任何条目");
 
             ++probed;
         }
         QVERIFY2(probed > 0, "ATLAS_L10N_WORLDS 下没找到任何 .minecraft/saves/MapWorld");
+    }
+
+    /**
+     * 资源包的两副面孔：语言表里是**句子**，还是**字形表**。
+     *
+     * 2026-11-12 真机反馈：键化图的表里 8260 个键，界面只报"键数"，
+     * 玩家以为导出漏了（其实可翻散文 0 条）。这条用例把两种表钉死。
+     */
+    void packProseVsGlyphTable()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString world = dir.filePath(QStringLiteral("MapWorld"));
+        QVERIFY(QDir().mkpath(world + QStringLiteral("/resources/assets/test/lang")));
+
+        const auto writeLang = [&](const QByteArray& bytes) {
+            QFile file(world + QStringLiteral("/resources/assets/test/lang/en_us.json"));
+            QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            QVERIFY(file.write(bytes) == bytes.size());
+        };
+
+        // ① 真·语言表：两条散文
+        writeLang(R"({"greeting":"Hello there","door":"Open the door"})");
+        auto prose = scanFast(world, QStringLiteral("1.21.1"));
+        QVERIFY(prose.isValid());
+        QVERIFY(prose.pack.found);
+        QCOMPARE(prose.pack.enKeys, 2);
+        QCOMPARE(prose.pack.missingProse, 2);
+        QVERIFY(!prose.pack.glyphTable);
+        // 世界侧没有任何文本 → 结论就是"只改资源包"
+        QCOMPARE(int(prose.mode()), int(Mode::Key));
+
+        // ② 字形表：值全是私用区字形，一句散文都没有
+        writeLang(QStringLiteral(R"({"offset.1":"\uf800%s\uf801","space.a":"\uf802\uf803"})").toUtf8());
+        auto glyph = scanFast(world, QStringLiteral("1.21.1"));
+        QVERIFY(glyph.isValid());
+        QCOMPARE(glyph.pack.enKeys, 2);
+        QCOMPARE(glyph.pack.missingProse, 0);
+        QVERIFY2(glyph.pack.glyphTable, "私用区字形表必须被判成字形表");
+        QVERIFY(!glyph.notes.isEmpty());  // 界面上要能说出来
+    }
+
+    /// 已经带中文的表不该再算"待译"（否则汉化版会被重导一遍）
+    void packSkipsAlreadyChinese()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString world = dir.filePath(QStringLiteral("MapWorld"));
+        QVERIFY(QDir().mkpath(world + QStringLiteral("/resources/assets/test/lang")));
+
+        const auto write = [&](const QString& name, const QByteArray& bytes) {
+            QFile file(world + QStringLiteral("/resources/assets/test/lang/") + name);
+            QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            QVERIFY(file.write(bytes) == bytes.size());
+        };
+        write(QStringLiteral("en_us.json"), R"({"a":"Hello there","b":"Open the door"})");
+        write(QStringLiteral("zh_cn.json"), QStringLiteral(R"({"a":"\u4f60\u597d"})").toUtf8());
+
+        const auto result = scanFast(world, QStringLiteral("1.21.1"));
+        QVERIFY(result.isValid());
+        QCOMPARE(result.pack.enKeys, 2);
+        QCOMPARE(result.pack.zhKeys, 1);
+        QCOMPARE(result.pack.missingProse, 1);  // 只有 b 还缺中文
     }
 };
 

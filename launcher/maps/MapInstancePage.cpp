@@ -1048,6 +1048,10 @@ void MapInstancePage::exportL10n()
                        .arg(QLocale().toString(result.fromWorld));
     if (!result.regionsScanned)
         text += tr("\n\n注意：区块还没扫过，这份清单只含资源包与数据包，会偏少。");
+    if (m_l10nResult.pack.glyphTable)
+        text += tr("\n\n资源包那 0 条是正常的：它的语言表是**字形表**（%1 个键全是私用区字形），"
+                   "文字画在字体贴图里，字符串替换改不到。")
+                    .arg(QLocale().toString(m_l10nResult.pack.enKeys));
     text += tr("\n\nstrings.csv 可以直接用 Excel 打开填中文（带 BOM，不会乱码）；\n"
                "strings.json 是给后面的翻译与写回流程用的。");
 
@@ -1166,11 +1170,20 @@ void MapInstancePage::applyL10nResult(const l10n::ProbeResult& result)
         m_l10nPack->setText(tr("%1（没读到语言表）").arg(result.pack.path));
     } else {
         const QString ns = result.pack.namespaceName.isEmpty() ? tr("未知") : result.pack.namespaceName;
-        m_l10nPack->setText(tr("命名空间 %1 · 英文 %2 键 · 中文 %3 键 · %4 种语言")
-                                .arg(ns)
-                                .arg(QLocale().toString(result.pack.enKeys))
-                                .arg(QLocale().toString(result.pack.zhKeys))
-                                .arg(result.pack.locales.size()));
+        /**
+         * 只报「键数」会骗人：键化图的表里有几千个键，可翻散文是 0 ——
+         * 玩家会以为是导出漏了（2026-11-12 反馈）。所以两个数字一起给，
+         * 字形表再单独点明"文字是画出来的"。
+         */
+        QString text = tr("命名空间 %1 · 语言表 %2 键（可翻 %3 条）· 已有中文 %4 键 · %5 种语言")
+                           .arg(ns)
+                           .arg(QLocale().toString(result.pack.enKeys))
+                           .arg(QLocale().toString(result.pack.missingProse))
+                           .arg(QLocale().toString(result.pack.zhKeys))
+                           .arg(result.pack.locales.size());
+        if (result.pack.glyphTable)
+            text += tr("\n这张表是**字形表**，不是句子：文字画在字体贴图里，改字符串改不到它。");
+        m_l10nPack->setText(text);
     }
 
     if (result.datapackFiles == 0) {
@@ -1321,7 +1334,11 @@ void MapInstancePage::applyL10n()
         CustomMessageBox::selectable(this, tr("读不了译文"), error, QMessageBox::Critical)->show();
         return;
     }
-    if (available == 0) {
+
+    int availableKeys = 0;
+    const auto keyMapping = l10n::loadKeyTranslations(json, &availableKeys, nullptr);
+
+    if (available == 0 && availableKeys == 0) {
         CustomMessageBox::selectable(this, tr("一条译文都没有"),
                                      tr("strings.json 里 zh 全是空的。先自动翻译，或用 Excel 填完再导入。"),
                                      QMessageBox::Information)
@@ -1337,6 +1354,23 @@ void MapInstancePage::applyL10n()
         return;
     }
 
+    /**
+     * 两条路线，按体检结论分：
+     *   · 文本都在资源包语言表里（`Mode::Key`）→ **只改资源包**：写 zh_cn.json，
+     *     存档一个字节都不动，也就不需要复制、不需要结构比对；
+     *   · 文本在存档里（注入 / 混合）→ 复制存档，在副本上注入；
+     *     混合档同时把语言表那部分写进副本的资源包。
+     *
+     * 以前不分，一律"复制存档 + 注入"，键化图（Final Paradox / Lacuna Sanctum）
+     * 明明是资源包的活，却白改一遍存档（2026-11-12 反馈）。
+     */
+    const l10n::Mode mode = m_l10nResult.isValid() ? m_l10nResult.mode() : l10n::Mode::Injection;
+    const bool packOnly = (mode == l10n::Mode::Key) && availableKeys > 0;
+    if (packOnly) {
+        applyL10nToPack(keyMapping);
+        return;
+    }
+
     const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
     const QString outputRoot =
         FS::PathCombine(m_instance->instanceRoot(), QStringLiteral(".mcml-l10n"), stamp, QStringLiteral("MapWorld"));
@@ -1344,11 +1378,13 @@ void MapInstancePage::applyL10n()
     QMessageBox box(this);
     box.setWindowTitle(tr("生成汉化版"));
     box.setIcon(QMessageBox::Question);
-    box.setText(tr("会把这份存档**复制**到：\n%1\n\n然后在副本上替换 %2 条文本。"
+    QString what = tr("在副本上替换 %1 条存档内文本").arg(QLocale().toString(available));
+    if (availableKeys > 0 && !keyMapping.isEmpty())
+        what += tr("，并汉化副本里的资源包（%1 条语言表）").arg(QLocale().toString(availableKeys));
+    box.setText(tr("会把这份存档**复制**到：\n%1\n\n然后%2。"
                    "\n\n原存档一个字节都不会动；改完会逐区块做结构比对，"
                    "结构对不上的区块会直接丢弃（保留原文），不会写坏。\n\n继续吗？")
-                    .arg(QDir::toNativeSeparators(outputRoot))
-                    .arg(QLocale().toString(available)));
+                    .arg(QDir::toNativeSeparators(outputRoot), what));
     box.setTextFormat(Qt::PlainText);
     auto* yesButton = box.addButton(tr("开始"), QMessageBox::AcceptRole);
     auto* noButton = box.addButton(tr("取消"), QMessageBox::RejectRole);
@@ -1357,7 +1393,7 @@ void MapInstancePage::applyL10n()
     if (box.clickedButton() != yesButton)
         return;
 
-    auto task = std::make_unique<l10n::MapL10nApplyTask>(world, outputRoot, mapping);
+    auto task = std::make_unique<l10n::MapL10nApplyTask>(world, outputRoot, mapping, keyMapping);
 
     QString failure;
     connect(task.get(), &Task::failed, this, [&failure](const QString& reason) { failure = reason; });
@@ -1378,6 +1414,8 @@ void MapInstancePage::applyL10n()
                        .arg(QLocale().toString(stats.replaced))
                        .arg(QLocale().toString(stats.patchedChunks))
                        .arg(QLocale().toString(stats.structureDiffs));
+    if (stats.packTranslated > 0)
+        text += tr("\n顺带写了资源包里的 %1 条语言表。").arg(QLocale().toString(stats.packTranslated));
     if (stats.discarded > 0)
         text += tr("\n\n有 %1 个区块被丢弃（保留原文）—— 明细见日志。").arg(QLocale().toString(stats.discarded));
     text += tr("\n\n要不要现在就用它替换本实例的存档？\n"
@@ -1398,6 +1436,78 @@ void MapInstancePage::applyL10n()
         QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(outputRoot).absolutePath()));
     else if (done.clickedButton() == replaceButton)
         replaceWithL10nCopy(outputRoot);
+}
+
+void MapInstancePage::applyL10nToPack(const QHash<QString, QString>& keyTranslations)
+{
+    if (m_instance == nullptr)
+        return;
+
+    const QString world = worldRoot();
+    if (world.isEmpty() || !QFileInfo(world).isDir()) {
+        CustomMessageBox::selectable(this, tr("找不到存档"), tr("这个实例没有可用的存档目录。"), QMessageBox::Critical)
+            ->show();
+        return;
+    }
+    // 资源包可能被正在运行的游戏读着（zip 被占用时改不动），先让玩家关掉
+    if (m_instance->isRunning()) {
+        CustomMessageBox::selectable(this, tr("游戏正在运行"), tr("先关掉游戏再写资源包。"), QMessageBox::Warning)
+            ->show();
+        return;
+    }
+
+    QMessageBox box(this);
+    box.setWindowTitle(tr("只汉化资源包"));
+    box.setIcon(QMessageBox::Question);
+    box.setTextFormat(Qt::PlainText);
+    box.setText(tr("这张图的文本都在资源包的语言表里，所以**只改资源包**：\n"
+                   "往世界自带的 resources.zip 里写一份 zh_cn.json（%1 条译文），"
+                   "存档数据一个字节都不动。\n\n"
+                   "原资源包会先完整备份到：\n%2\n\n继续吗？")
+                    .arg(QLocale().toString(keyTranslations.size()), QDir::toNativeSeparators(l10nBackupDir())));
+    auto* yesButton = box.addButton(tr("写入资源包"), QMessageBox::AcceptRole);
+    auto* noButton = box.addButton(tr("取消"), QMessageBox::RejectRole);
+    box.setDefaultButton(noButton);
+    box.exec();
+    if (box.clickedButton() != yesButton)
+        return;
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const auto stats = l10n::applyToPack(world, keyTranslations, l10nBackupDir());
+    QApplication::restoreOverrideCursor();
+
+    if (!stats.error.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("没写成"), stats.error, QMessageBox::Critical)->show();
+        return;
+    }
+
+    QString text = tr("已写入 %1 条译文：\n%2\n\n语言表一共 %3 个键，没翻到的仍然是英文。")
+                       .arg(QLocale().toString(stats.translated), stats.localeEntry)
+                       .arg(QLocale().toString(stats.total));
+    if (!stats.backupPath.isEmpty())
+        text += tr("\n\n原资源包备份：\n%1").arg(QDir::toNativeSeparators(stats.backupPath));
+    text += tr("\n\n启动游戏、语言设为简体中文即可看到效果；存档没有改动，随时可以删掉 zh_cn.json 还原。");
+
+    QMessageBox done(this);
+    done.setWindowTitle(tr("资源包已汉化"));
+    done.setIcon(QMessageBox::Information);
+    done.setTextFormat(Qt::PlainText);
+    done.setText(text);
+    auto* openButton = done.addButton(tr("打开资源包目录"), QMessageBox::ActionRole);
+    done.addButton(tr("好"), QMessageBox::AcceptRole);
+    done.exec();
+    if (done.clickedButton() == openButton)
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(stats.packPath).absolutePath()));
+
+    refreshL10nBackups();
+    if (m_l10nState != nullptr)
+        m_l10nState->setText(tr("已把 %1 条译文写进资源包（%2）。存档没有改动。")
+                                 .arg(QLocale().toString(stats.translated), stats.localeEntry));
+    // 语言表变了：重跑一次快检，把「可翻 N 条」刷成新的
+    if (m_l10nTask == nullptr) {
+        m_l10nFastDone = false;
+        startL10nProbe(false);
+    }
 }
 
 void MapInstancePage::replaceWithL10nCopy(const QString& newWorldRoot)

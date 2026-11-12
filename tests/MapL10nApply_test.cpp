@@ -20,6 +20,8 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLocale>
 #include <QTemporaryDir>
 #include <QTest>
@@ -503,6 +505,208 @@ class MapL10nApplyTest : public QObject {
         QVERIFY(scanRegions(reprobe, [](int, int) { return true; }));
         QCOMPARE(reprobe.chunks, probe.chunks);  // 区块一个不少
         QVERIFY(reprobe.regions.texts.size() < probe.regions.texts.size());  // 英文确实少了
+    }
+
+    /**
+     * A 档：只改资源包（写 zh_cn.json），存档数据一个字节都不碰。
+     *
+     * 两种形态都要覆盖 —— 世界里既有 `resources.zip` 也有 `resources/` 目录，
+     * zip 还得整包重写（`zh_cn.json` 以外的条目必须原样搬过去）。
+     */
+    void applyToPackWritesZhCnIntoDirectory()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString world = dir.filePath(QStringLiteral("MapWorld"));
+        const QString langDir = world + QStringLiteral("/resources/assets/test/lang");
+        QVERIFY(QDir().mkpath(langDir));
+        QVERIFY(writeFile(langDir + "/en_us.json", R"({"a":"Hello there","b":"Open the door"})"));
+
+        QHash<QString, QString> zh;
+        zh.insert(QStringLiteral("a"), QStringLiteral("你好"));
+        zh.insert(QStringLiteral("nope"), QStringLiteral("拼错的键"));  // 不在表里，应被忽略
+
+        const auto stats = applyToPack(world, zh, dir.filePath(QStringLiteral("backups")));
+        QVERIFY2(stats.ok(), qPrintable(stats.error));
+        QCOMPARE(stats.localeEntry, QStringLiteral("assets/test/lang/zh_cn.json"));
+        QCOMPARE(stats.translated, 1);  // 只有 a 命中
+        QCOMPARE(stats.total, 2);
+
+        QFile file(langDir + "/zh_cn.json");
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const auto doc = QJsonDocument::fromJson(file.readAll()).object();
+        QCOMPARE(doc.value(QStringLiteral("a")).toString(), QStringLiteral("你好"));
+        // 没翻到的键保持英文，而不是显示成键名
+        QCOMPARE(doc.value(QStringLiteral("b")).toString(), QStringLiteral("Open the door"));
+        QVERIFY(!doc.contains(QStringLiteral("nope")));
+    }
+
+    void applyToPackRewritesZipAndKeepsOtherEntries()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString world = dir.filePath(QStringLiteral("MapWorld"));
+        QVERIFY(QDir().mkpath(world));
+
+        const QString zip = world + QStringLiteral("/resources.zip");
+        const QByteArray texture("PNGDATA-1234567890");
+        {
+            MMCZip::ArchiveWriter writer(zip);
+            QVERIFY(writer.open().has_value());
+            QVERIFY(writer.addFile(QStringLiteral("pack.mcmeta"), QByteArray(R"({"pack":{"pack_format":15}})")).has_value());
+            QVERIFY(writer
+                        .addFile(QStringLiteral("assets/test/lang/en_us.json"),
+                                 QByteArray(R"({"title":"The Stone Fear","sub":"Enter the cave"})"))
+                        .has_value());
+            QVERIFY(writer.addFile(QStringLiteral("assets/test/textures/font/glyph.png"), texture).has_value());
+            QVERIFY(writer.close().has_value());
+        }
+
+        QHash<QString, QString> zh;
+        zh.insert(QStringLiteral("title"), QStringLiteral("石之恐惧"));
+
+        const QString backups = dir.filePath(QStringLiteral("backups"));
+        const auto stats = applyToPack(world, zh, backups);
+        QVERIFY2(stats.ok(), qPrintable(stats.error));
+        QCOMPARE(stats.translated, 1);
+        QVERIFY(QFileInfo::exists(stats.backupPath));  // 原包先备份
+
+        // 新 zip：zh_cn.json 有了，其它条目一个不少、字节一致
+        MMCZip::ArchiveReader reader(zip);
+        QVERIFY(reader.collectFiles(true).has_value());  // getFiles() 要先收集
+        const auto names = reader.getFiles();
+        QVERIFY2(names.contains(QStringLiteral("assets/test/lang/zh_cn.json")), qPrintable(names.join(QLatin1Char(','))));
+        QVERIFY(names.contains(QStringLiteral("assets/test/textures/font/glyph.png")));
+        QVERIFY(names.contains(QStringLiteral("pack.mcmeta")));
+        const auto kept = reader.readFile(QStringLiteral("assets/test/textures/font/glyph.png"));
+        QVERIFY(kept.has_value());
+        QCOMPARE(*kept, texture);
+
+        const auto table = reader.readFile(QStringLiteral("assets/test/lang/zh_cn.json"));
+        QVERIFY(table.has_value());
+        const auto doc = QJsonDocument::fromJson(*table).object();
+        QCOMPARE(doc.value(QStringLiteral("title")).toString(), QStringLiteral("石之恐惧"));
+        QCOMPARE(doc.value(QStringLiteral("sub")).toString(), QStringLiteral("Enter the cave"));
+
+        // 临时文件不许留下
+        QVERIFY(!QFileInfo::exists(zip + QStringLiteral(".new")));
+    }
+
+    /// 没有资源包的图，A 档要干净地拒绝（而不是写坏什么）
+    void applyToPackWithoutPackFails()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString world = dir.filePath(QStringLiteral("MapWorld"));
+        QVERIFY(QDir().mkpath(world));
+        QHash<QString, QString> zh;
+        zh.insert(QStringLiteral("a"), QStringLiteral("甲"));
+        const auto stats = applyToPack(world, zh, dir.filePath(QStringLiteral("backups")));
+        QVERIFY(!stats.ok());
+        QVERIFY(stats.error.contains(QStringLiteral("资源包")));
+    }
+
+    /**
+     * 真实资源包上的 A 档（`ATLAS_L10N_WORLDS` 门控）。
+     *
+     * 合成夹具只有三个条目，测不出"上千条目的真实包里 addFile 逐个搬运"会不会漏；
+     * 这里把真实 `resources.zip` 复制到临时目录再改，**不动真实存档**。
+     */
+    void applyToPackOnRealPacks()
+    {
+        const QString base = qEnvironmentVariable("ATLAS_L10N_WORLDS");
+        if (base.isEmpty())
+            QSKIP("未设置 ATLAS_L10N_WORLDS，跳过真实资源包写回");
+
+        const QDir root(base);
+        if (!root.exists())
+            QSKIP("ATLAS_L10N_WORLDS 指向的目录不存在");
+
+        int tested = 0;
+        for (const auto& instance : root.entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+            for (const auto& worldName : QDir(root.filePath(instance + QStringLiteral("/.minecraft/saves")))
+                                             .entryList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
+                const QString sourceZip =
+                    root.filePath(instance + QStringLiteral("/.minecraft/saves/") + worldName + QStringLiteral("/resources.zip"));
+                if (!QFileInfo::exists(sourceZip))
+                    continue;
+
+                QTemporaryDir tmp;
+                QVERIFY(tmp.isValid());
+                const QString world = tmp.filePath(QStringLiteral("MapWorld"));
+                QVERIFY(QDir().mkpath(world));
+                const QString zip = world + QStringLiteral("/resources.zip");
+                QVERIFY(QFile::copy(sourceZip, zip));
+
+                /**
+                 * 找一个真实键来翻。必须取**键最多的那个命名空间** ——
+                 * `applyToPack` 就是这么选目标的（与探针一致），
+                 * 随便取第一个 en_us 会挑到小命名空间，然后"一条都对不上"。
+                 */
+                QString ns;
+                QString key;
+                int bestSize = -1;
+                {
+                    MMCZip::ArchiveReader reader(zip);
+                    reader.parse([&](MMCZip::ArchiveReader::File* file) -> Result<bool> {
+                        const auto parts = file->filename().split(QLatin1Char('/'));
+                        if (!file->isFile() || parts.size() != 4 || parts.at(0) != QLatin1String("assets")
+                            || parts.at(2) != QLatin1String("lang") || parts.at(3) != QLatin1String("en_us.json"))
+                            return false;
+                        const auto data = file->readAll();
+                        if (!data)
+                            return false;
+                        const auto object = QJsonDocument::fromJson(*data).object();
+                        if (object.isEmpty() || object.size() <= bestSize)
+                            return false;
+                        bestSize = int(object.size());
+                        ns = parts.at(1);
+                        key = object.begin().key();
+                        return false;  // 继续找更大的
+                    });
+                }
+                if (ns.isEmpty() || key.isEmpty())
+                    continue;
+
+                // 挑一个非语言表条目，改前改后必须字节一致
+                QByteArray sampleName;
+                QByteArray sampleData;
+                {
+                    MMCZip::ArchiveReader reader(zip);
+                    reader.parse([&](MMCZip::ArchiveReader::File* file) -> Result<bool> {
+                        if (!file->isFile() || file->filename().contains(QStringLiteral("/lang/")))
+                            return false;
+                        const auto data = file->readAll();
+                        if (!data || data->isEmpty())
+                            return false;
+                        sampleName = file->filename().toUtf8();
+                        sampleData = *data;
+                        return true;
+                    });
+                }
+
+                QHash<QString, QString> zh;
+                zh.insert(key, QStringLiteral("测试译文"));
+                const auto stats = applyToPack(world, zh, tmp.filePath(QStringLiteral("backups")));
+                QVERIFY2(stats.ok(), qPrintable(QStringLiteral("%1: %2").arg(instance, stats.error)));
+                QCOMPARE(stats.translated, 1);
+
+                MMCZip::ArchiveReader after(zip);
+                QVERIFY(after.collectFiles(true).has_value());  // exists() 查的是 collect 出来的表
+                QVERIFY(after.exists(QStringLiteral("assets/%1/lang/zh_cn.json").arg(ns)));
+                if (!sampleName.isEmpty()) {
+                    const auto kept = after.readFile(QString::fromUtf8(sampleName));
+                    QVERIFY2(kept.has_value(), "非语言表条目必须还在");
+                    QCOMPARE(*kept, sampleData);
+                }
+                qInfo().noquote() << QStringLiteral("%1: 资源包 %2 键，写入 1 条，%3 字节")
+                                         .arg(instance)
+                                         .arg(stats.total)
+                                         .arg(QFileInfo(zip).size());
+                ++tested;
+            }
+        }
+        QVERIFY2(tested > 0, "ATLAS_L10N_WORLDS 下没有带 resources.zip 的世界");
     }
 };
 

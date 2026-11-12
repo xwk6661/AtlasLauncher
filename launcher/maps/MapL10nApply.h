@@ -47,6 +47,8 @@ struct ApplyStats {
     int structureDiffs = 0;
     /// 因为结构比对没过而被丢弃的区块数
     int discarded = 0;
+    /// 副本上的资源包顺带改了几条语言表（混合档才有）
+    int packTranslated = 0;
     QString error;
 
     bool ok() const { return error.isEmpty() && structureDiffs == 0; }
@@ -55,6 +57,46 @@ struct ApplyStats {
 /// 从 `strings.json` 读 "原文 → 译文"，只取 `zh` 非空的条目
 QHash<QString, QString> loadTranslations(const QString& jsonPath, int* withTranslation = nullptr,
                                          QString* error = nullptr);
+
+/**
+ * 从 `strings.json` 读 **语言表键 → 译文**（只取 `kind == "key"` 且 `zh` 非空）。
+ *
+ * 和 `loadTranslations` 分开：那一份按"原文"合并（同一个句子出现多次只翻一次），
+ * 这一份必须按**键**——写回资源包时认的是键，键与原文不是一一对应的。
+ */
+QHash<QString, QString> loadKeyTranslations(const QString& jsonPath, int* withTranslation = nullptr,
+                                            QString* error = nullptr);
+
+// ────────────────────────── A 档：只改资源包 ──────────────────────────
+
+struct PackApplyStats {
+    /// 资源包路径（`resources.zip` 或 `resources/`）
+    QString packPath;
+    /// 写入的语言表（包里相对路径，如 `assets/space/lang/zh_cn.json`）
+    QString localeEntry;
+    /// 原 zip 的备份（目录型资源包没有）
+    QString backupPath;
+    /// 语言表键数 / 实际写进去的条数
+    int total = 0;
+    int translated = 0;
+    QString error;
+
+    bool ok() const { return error.isEmpty(); }
+};
+
+/**
+ * **只改资源包**：把 `键 → 中文` 写进 `assets/<ns>/lang/zh_cn.json`，存档数据一个字节都不碰。
+ *
+ * 这是「文本都在语言表里」那类图的正路（`Mode::Key`）：不做存档复制、不做区块改写，
+ * 所以没有结构风险，也快得多。规则：
+ *   · 目标表已存在就在它上面合并，不存在就**从 `en_us` 复制一份**再替换 ——
+ *     这样没翻到的键仍然是英文，而不是显示成原始键名；
+ *   · 只写 `en_us` 里真实存在的键（拼错的键写进去也不会被读到，别污染文件）；
+ *   · zip 型资源包**重写整包**（`zh_cn.json` 以外的条目原样搬运），
+ *     改之前先把原包复制到 `backupDir` 备份；目录型资源包直接写文件。
+ */
+PackApplyStats applyToPack(const QString& worldRoot, const QHash<QString, QString>& keyToZh,
+                           const QString& backupDir);
 
 /**
  * 把世界**复制**到 `outputRoot`，在副本上替换文本。
@@ -70,7 +112,8 @@ QHash<QString, QString> loadTranslations(const QString& jsonPath, int* withTrans
  */
 ApplyStats applyToCopy(const QString& sourceRoot, const QString& outputRoot,
                        const QHash<QString, QString>& translations,
-                       const std::function<bool(int done, int total)>& progress = {});
+                       const std::function<bool(int done, int total)>& progress = {},
+                       const QHash<QString, QString>& keyTranslations = {});
 
 /**
  * 把 `applyToCopy` 包成带进度与取消的任务。
@@ -82,7 +125,8 @@ class MapL10nApplyTask : public Task {
     Q_OBJECT
 
    public:
-    MapL10nApplyTask(QString sourceRoot, QString outputRoot, QHash<QString, QString> translations);
+    MapL10nApplyTask(QString sourceRoot, QString outputRoot, QHash<QString, QString> translations,
+                     QHash<QString, QString> keyTranslations = {});
     ~MapL10nApplyTask() override = default;
 
     void executeTask() override;
@@ -97,6 +141,8 @@ class MapL10nApplyTask : public Task {
     QString m_sourceRoot;
     QString m_outputRoot;
     QHash<QString, QString> m_translations;
+    /// 语言表键 → 中文：副本上的资源包也要一起改（混合档）
+    QHash<QString, QString> m_keyTranslations;
     std::atomic<bool> m_aborted{ false };
     ApplyStats m_stats;
     QFutureWatcher<void> m_watcher;

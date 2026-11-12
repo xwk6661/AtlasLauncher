@@ -106,8 +106,11 @@ class MapInstancePage : public QWidget, public BasePage {
     void exportL10n();
     /// 用 OpenAI 兼容接口把 strings.json 里的待译条目翻成中文（就地写回）
     void translateL10n();
-    /// 把译文写进**存档副本**（C 档：注入式汉化），源存档只读
+    /// 把译文写进**存档副本**（C 档：注入式汉化），源存档只读；
+    /// 文本都在资源包语言表里时自动改走 `applyL10nToPack`
     void applyL10n();
+    /// A 档：只往世界自带资源包写 `zh_cn.json`，存档数据一个字节不动
+    void applyL10nToPack(const QHash<QString, QString>& keyTranslations);
     /// 用汉化版副本顶替本实例存档：旧存档先打包成 zip 备份（不删实例，随时可还原）
     void replaceWithL10nCopy(const QString& newWorldRoot);
     /// 备份目录（`<实例>/l10n/backups`）

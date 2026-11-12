@@ -82,6 +82,20 @@ struct PackFacts {
     int zhKeys = 0;
     /// en 有、zh 没有（或与 en 相同的）**散文**条数
     int missingProse = 0;
+    /**
+     * 语言表里的键是**字形表**，不是句子。
+     *
+     * 键化图（Final Paradox、Lacuna Sanctum 这类）把字体拆成一张贴图 + 一堆
+     * `offset.*` / `<ns>.*` 键，值里全是私用区字形（`\uf800` 那种），
+     * 一个可翻的散文都没有。这类表的正确做法是重画字形贴图，
+     * **字符串替换一概碰不到** —— 必须在界面上说出来，别让人以为漏导了。
+     */
+    bool glyphTable = false;
+    /// 资源包里自定义字体文件数（`assets/<ns>/font/*.json`）
+    int fontFiles = 0;
+
+    /// 语言表里真正需要翻的条数（= missingProse）
+    int proseKeys() const { return missingProse; }
 };
 
 struct ProbeResult {

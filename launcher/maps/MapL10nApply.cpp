@@ -601,9 +601,280 @@ QHash<QString, QString> loadTranslations(const QString& jsonPath, int* withTrans
     return mapping;
 }
 
+QHash<QString, QString> loadKeyTranslations(const QString& jsonPath, int* withTranslation, QString* error)
+{
+    QHash<QString, QString> mapping;
+    if (withTranslation != nullptr)
+        *withTranslation = 0;
+
+    QFile file(jsonPath);
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (error != nullptr)
+            *error = tr("打不开 %1").arg(jsonPath);
+        return mapping;
+    }
+    QJsonParseError parseError{};
+    const auto document = QJsonDocument::fromJson(file.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        if (error != nullptr)
+            *error = tr("strings.json 解析失败：%1").arg(parseError.errorString());
+        return mapping;
+    }
+
+    const auto items = document.object().value(QStringLiteral("items")).toArray();
+    for (const auto& value : items) {
+        const auto object = value.toObject();
+        if (object.value(QStringLiteral("kind")).toString() != QLatin1String("key"))
+            continue;
+        const QString key = object.value(QStringLiteral("key")).toString();
+        const QString zh = object.value(QStringLiteral("zh")).toString();
+        if (key.isEmpty() || zh.isEmpty())
+            continue;
+        mapping.insert(key, zh);
+        if (withTranslation != nullptr)
+            ++(*withTranslation);
+    }
+    return mapping;
+}
+
+// ────────────────────────── A 档：只改资源包 ──────────────────────────
+
+namespace {
+
+/// 资源包里的语言表入口（与探针同一套路径规则）
+struct PackLangEntry {
+    QString nameSpace;
+    QString locale;
+    QString path;
+};
+
+bool splitPackLangPath(const QString& name, PackLangEntry* out)
+{
+    const QStringList parts = name.split(QLatin1Char('/'));
+    if (parts.size() != 4 || parts.at(0) != QLatin1String("assets") || parts.at(2) != QLatin1String("lang"))
+        return false;
+    if (!parts.at(3).endsWith(QLatin1String(".json")))
+        return false;
+    out->nameSpace = parts.at(1);
+    out->locale = parts.at(3).chopped(5);
+    out->path = name;
+    return true;
+}
+
+QByteArray langJson(const QHash<QString, QString>& table)
+{
+    QJsonObject object;
+    QStringList keys = table.keys();
+    std::sort(keys.begin(), keys.end());  // 稳定输出，便于 diff
+    for (const auto& key : keys)
+        object.insert(key, table.value(key));
+    return QJsonDocument(object).toJson(QJsonDocument::Indented);
+}
+
+QHash<QString, QString> parseLangJson(const QByteArray& bytes)
+{
+    QHash<QString, QString> table;
+    QJsonParseError error{};
+    const auto doc = QJsonDocument::fromJson(bytes, &error);
+    if (error.error != QJsonParseError::NoError || !doc.isObject())
+        return table;
+    const auto object = doc.object();
+    for (auto it = object.begin(); it != object.end(); ++it)
+        table.insert(it.key(), it.value().toString());
+    return table;
+}
+
+}  // namespace
+
+PackApplyStats applyToPack(const QString& worldRoot, const QHash<QString, QString>& keyToZh,
+                           const QString& backupDir)
+{
+    PackApplyStats stats;
+
+    const QString zipPath = FS::PathCombine(worldRoot, QStringLiteral("resources.zip"));
+    const QString dirPath = FS::PathCombine(worldRoot, QStringLiteral("resources"));
+    const bool fromZip = QFileInfo::exists(zipPath);
+    if (!fromZip && !QFileInfo(dirPath).isDir()) {
+        stats.error = tr("这张图的存档里没有自带资源包（resources.zip / resources/），没有可写的语言表。");
+        return stats;
+    }
+    stats.packPath = fromZip ? zipPath : dirPath;
+
+    // ── 1. 找出「键最多的命名空间」的 en_us / zh_cn ──
+    QList<PackLangEntry> entries;
+    if (fromZip) {
+        MMCZip::ArchiveReader reader(zipPath);
+        const auto parsed = reader.parse([&entries](MMCZip::ArchiveReader::File* file) -> Result<bool> {
+            if (file->isFile()) {
+                PackLangEntry entry;
+                if (splitPackLangPath(file->filename(), &entry))
+                    entries.append(entry);
+            }
+            return false;
+        });
+        if (!parsed) {
+            stats.error = tr("读不出资源包：%1").arg(parsed.error());
+            return stats;
+        }
+    } else {
+        QDirIterator it(FS::PathCombine(dirPath, QStringLiteral("assets")), QStringList{ "*.json" }, QDir::Files,
+                        QDirIterator::Subdirectories);
+        while (it.hasNext()) {
+            const QString absolute = it.next();
+            const QString relative = QString(QDir(dirPath).relativeFilePath(absolute)).replace('\\', '/');
+            PackLangEntry entry;
+            if (splitPackLangPath(relative, &entry))
+                entries.append(entry);
+        }
+    }
+
+    if (entries.isEmpty()) {
+        stats.error = tr("资源包里没有任何语言表，没有可写的地方。");
+        return stats;
+    }
+
+    const auto readEntry = [&](const QString& path) -> QByteArray {
+        if (!fromZip) {
+            QFile file(FS::PathCombine(dirPath, path));
+            return file.open(QIODevice::ReadOnly) ? file.readAll() : QByteArray();
+        }
+        MMCZip::ArchiveReader reader(zipPath);
+        const auto data = reader.readFile(path);
+        return data ? *data : QByteArray();
+    };
+
+    // 每个 ns 的 en 表大小，取最大的那个（与探针一致）
+    QString bestNs;
+    int bestSize = -1;
+    QHash<QString, QString> enTable;
+    for (const auto& entry : entries) {
+        if (entry.locale != QLatin1String("en_us"))
+            continue;
+        const auto table = parseLangJson(readEntry(entry.path));
+        if (int(table.size()) > bestSize) {
+            bestSize = int(table.size());
+            bestNs = entry.nameSpace;
+            enTable = table;
+        }
+    }
+    if (bestNs.isEmpty() || enTable.isEmpty()) {
+        stats.error = tr("资源包里没有 en_us 语言表，判不出该往哪个命名空间写中文。");
+        return stats;
+    }
+    stats.total = int(enTable.size());
+
+    // ── 2. 目标表：已有 zh_cn 就在它上面合并，否则从 en_us 复制一份 ──
+    const QString zhPath = QStringLiteral("assets/%1/lang/zh_cn.json").arg(bestNs);
+    QHash<QString, QString> zhTable;
+    for (const auto& entry : entries) {
+        if (entry.nameSpace == bestNs && entry.locale == QLatin1String("zh_cn")) {
+            zhTable = parseLangJson(readEntry(entry.path));
+            break;
+        }
+    }
+    if (zhTable.isEmpty())
+        zhTable = enTable;  // 没翻到的键保持英文，总比显示成键名强
+
+    for (auto it = keyToZh.begin(); it != keyToZh.end(); ++it) {
+        if (!enTable.contains(it.key()))
+            continue;  // 拼错的键写进去也不会被读到
+        zhTable.insert(it.key(), it.value());
+        ++stats.translated;
+    }
+    stats.localeEntry = zhPath;
+    if (stats.translated == 0) {
+        stats.error = tr("译文里没有一条对得上资源包的键 —— 可能这张图的文本不在语言表里（见页面上的说明）。");
+        return stats;
+    }
+
+    const QByteArray json = langJson(zhTable);
+
+    // ── 3. 目录型：直接写；zip 型：整包重写，先把原包备份 ──
+    if (!fromZip) {
+        const QString target = FS::PathCombine(dirPath, zhPath);
+        if (!FS::ensureFilePathExists(target)) {
+            stats.error = tr("写不了 %1").arg(target);
+            return stats;
+        }
+        QSaveFile file(target);
+        if (!file.open(QIODevice::WriteOnly) || file.write(json) != json.size() || !file.commit()) {
+            stats.error = tr("写不了 %1：%2").arg(target, file.errorString());
+            return stats;
+        }
+        return stats;
+    }
+
+    if (!backupDir.isEmpty()) {
+        if (FS::ensureFolderPathExists(backupDir)) {
+            const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+            const QString backup =
+                QDir(backupDir).filePath(QStringLiteral("resources-%1.zip").arg(stamp));
+            if (!QFile::copy(zipPath, backup)) {
+                stats.error = tr("备份原资源包失败（%1），为安全起见没有改动它。").arg(backup);
+                return stats;
+            }
+            stats.backupPath = backup;
+        }
+    }
+
+    const QString tmpPath = zipPath + QStringLiteral(".new");
+    QFile::remove(tmpPath);
+    {
+        MMCZip::ArchiveWriter writer(tmpPath);
+        const auto opened = writer.open();
+        if (!opened) {
+            stats.error = tr("建不了新资源包：%1").arg(opened.error());
+            QFile::remove(tmpPath);
+            return stats;
+        }
+
+        MMCZip::ArchiveReader reader(zipPath);
+        QString failure;
+        const auto parsed = reader.parse([&](MMCZip::ArchiveReader::File* file) -> Result<bool> {
+            if (!file->isFile())
+                return false;
+            if (file->filename() == zhPath)
+                return false;  // 旧的 zh_cn 丢掉，稍后用新的写进去
+            const auto added = writer.addFile(file);
+            if (!added) {
+                failure = added.error();
+                return true;  // 停止遍历
+            }
+            return false;
+        });
+        if (!failure.isEmpty() || !parsed) {
+            writer.close();
+            QFile::remove(tmpPath);
+            stats.error = tr("重写资源包失败：%1").arg(failure.isEmpty() ? parsed.error() : failure);
+            return stats;
+        }
+        const auto added = writer.addFile(zhPath, json);
+        if (!added) {
+            writer.close();
+            QFile::remove(tmpPath);
+            stats.error = tr("写不进 zh_cn.json：%1").arg(added.error());
+            return stats;
+        }
+        const auto closed = writer.close();
+        if (!closed) {
+            QFile::remove(tmpPath);
+            stats.error = tr("资源包收尾失败：%1").arg(closed.error());
+            return stats;
+        }
+    }
+
+    if (!FS::move(tmpPath, zipPath)) {
+        QFile::remove(tmpPath);
+        stats.error = tr("新资源包就位失败（原包未动，备份在 %1）。").arg(stats.backupPath);
+        return stats;
+    }
+    return stats;
+}
+
 ApplyStats applyToCopy(const QString& sourceRoot, const QString& outputRoot,
                        const QHash<QString, QString>& translations,
-                       const std::function<bool(int done, int total)>& progress)
+                       const std::function<bool(int done, int total)>& progress,
+                       const QHash<QString, QString>& keyTranslations)
 {
     ApplyStats stats;
 
@@ -611,7 +882,8 @@ ApplyStats applyToCopy(const QString& sourceRoot, const QString& outputRoot,
         stats.error = tr("存档目录不存在：%1").arg(sourceRoot);
         return stats;
     }
-    if (translations.isEmpty()) {
+    // 只有语言表的译文时也允许跑：这类图不必改区块，复制完改资源包就够
+    if (translations.isEmpty() && keyTranslations.isEmpty()) {
         stats.error = tr("没有任何已翻译的条目。");
         return stats;
     }
@@ -642,13 +914,29 @@ ApplyStats applyToCopy(const QString& sourceRoot, const QString& outputRoot,
             files.append(dir.absoluteFilePath(name));
     }
 
-    const int total = int(files.size());
+    const int total = int(files.size()) + (keyTranslations.isEmpty() ? 0 : 1);
     int done = 0;
-    for (const auto& path : files) {
-        patchRegionFile(path, translations, stats);
+    // 只有语言表译文时（`translations` 为空）不必碰区块：复制 + 改资源包就够
+    if (!translations.isEmpty()) {
+        for (const auto& path : files) {
+            patchRegionFile(path, translations, stats);
+            ++done;
+            if (progress && !progress(done, total))
+                break;
+        }
+    } else {
+        done = int(files.size());
+    }
+
+    // 混合档：副本上的资源包也要一起汉化（语言表那部分）
+    if (!keyTranslations.isEmpty()) {
+        const auto pack = applyToPack(outputRoot, keyTranslations, QString());
+        stats.packTranslated = pack.translated;
+        if (!pack.error.isEmpty() && stats.error.isEmpty())
+            qWarning() << "MapL10nApply: 副本资源包没改成" << pack.error;
         ++done;
-        if (progress && !progress(done, total))
-            break;
+        if (progress)
+            progress(done, total);
     }
 
     return stats;
@@ -656,10 +944,12 @@ ApplyStats applyToCopy(const QString& sourceRoot, const QString& outputRoot,
 
 // ────────────────────────── 任务 ──────────────────────────
 
-MapL10nApplyTask::MapL10nApplyTask(QString sourceRoot, QString outputRoot, QHash<QString, QString> translations)
+MapL10nApplyTask::MapL10nApplyTask(QString sourceRoot, QString outputRoot, QHash<QString, QString> translations,
+                                   QHash<QString, QString> keyTranslations)
     : m_sourceRoot(std::move(sourceRoot))
     , m_outputRoot(std::move(outputRoot))
     , m_translations(std::move(translations))
+    , m_keyTranslations(std::move(keyTranslations))
 {
     setAbortable(true);
     setAbortButtonText(tr("取消"));
@@ -691,7 +981,8 @@ void MapL10nApplyTask::executeTask()
                 },
                 Qt::QueuedConnection);
             return true;
-        });
+        },
+                                  m_keyTranslations);
     }));
 }
 
