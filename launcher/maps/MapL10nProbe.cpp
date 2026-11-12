@@ -618,7 +618,7 @@ void scanPack(ProbeResult& result)
     result.pack.glyphTable = glyphish;
     if (glyphish) {
         result.notes.append(
-            tr("资源包里的 %1 个键是**字形表**（值基本是私用区字形，可翻散文 0 条），不是句子。\n"
+            tr("资源包里的 %1 个键是「字形表」（值基本是私用区字形，可翻散文 0 条），不是句子。\n"
                "这类图的文字是画在字体贴图里的，改字符串（语言表 / 存档）都改不到它 —— 只能重画字形贴图。")
                 .arg(QString::number(result.pack.enKeys)));
     }

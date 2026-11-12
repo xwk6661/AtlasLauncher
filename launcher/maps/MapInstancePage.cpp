@@ -808,7 +808,8 @@ QWidget* MapInstancePage::buildL10nPage()
                                   "把 strings.json 里还没翻的条目译成中文并就地写回。"));
     m_l10nTranslate->setEnabled(false);
     m_l10nApply = makeStep(tr("④ 生成汉化版…"),
-                           tr("把译文写进**存档副本**：先复制一份世界，只在副本上改文本。\n"
+                           tr("把译文写进「存档副本」：先复制一份世界，只在副本上改文本。\n"
+                              "文本都在资源包里时只会写资源包（存档不动）。\n"
                               "原存档一个字节都不动；改完逐区块做结构比对，对不上的区块直接丢弃。\n"
                               "生成完会问要不要顶替本实例存档 —— 旧图先打包成 zip 备份。"));
     m_l10nApply->setEnabled(false);
@@ -1049,7 +1050,7 @@ void MapInstancePage::exportL10n()
     if (!result.regionsScanned)
         text += tr("\n\n注意：区块还没扫过，这份清单只含资源包与数据包，会偏少。");
     if (m_l10nResult.pack.glyphTable)
-        text += tr("\n\n资源包那 0 条是正常的：它的语言表是**字形表**（%1 个键全是私用区字形），"
+        text += tr("\n\n资源包那 0 条是正常的：它的语言表是「字形表」（%1 个键全是私用区字形），"
                    "文字画在字体贴图里，字符串替换改不到。")
                     .arg(QLocale().toString(m_l10nResult.pack.enKeys));
     text += tr("\n\nstrings.csv 可以直接用 Excel 打开填中文（带 BOM，不会乱码）；\n"
@@ -1182,7 +1183,7 @@ void MapInstancePage::applyL10nResult(const l10n::ProbeResult& result)
                            .arg(QLocale().toString(result.pack.zhKeys))
                            .arg(result.pack.locales.size());
         if (result.pack.glyphTable)
-            text += tr("\n这张表是**字形表**，不是句子：文字画在字体贴图里，改字符串改不到它。");
+            text += tr("\n这张表是「字形表」，不是句子：文字画在字体贴图里，改字符串改不到它。");
         m_l10nPack->setText(text);
     }
 
@@ -1381,7 +1382,7 @@ void MapInstancePage::applyL10n()
     QString what = tr("在副本上替换 %1 条存档内文本").arg(QLocale().toString(available));
     if (availableKeys > 0 && !keyMapping.isEmpty())
         what += tr("，并汉化副本里的资源包（%1 条语言表）").arg(QLocale().toString(availableKeys));
-    box.setText(tr("会把这份存档**复制**到：\n%1\n\n然后%2。"
+    box.setText(tr("会把这份存档「复制」到：\n%1\n\n然后%2。"
                    "\n\n原存档一个字节都不会动；改完会逐区块做结构比对，"
                    "结构对不上的区块会直接丢弃（保留原文），不会写坏。\n\n继续吗？")
                     .arg(QDir::toNativeSeparators(outputRoot), what));
@@ -1460,7 +1461,7 @@ void MapInstancePage::applyL10nToPack(const QHash<QString, QString>& keyTranslat
     box.setWindowTitle(tr("只汉化资源包"));
     box.setIcon(QMessageBox::Question);
     box.setTextFormat(Qt::PlainText);
-    box.setText(tr("这张图的文本都在资源包的语言表里，所以**只改资源包**：\n"
+    box.setText(tr("这张图的文本都在资源包的语言表里，所以只改资源包：\n"
                    "往世界自带的 resources.zip 里写一份 zh_cn.json（%1 条译文），"
                    "存档数据一个字节都不动。\n\n"
                    "原资源包会先完整备份到：\n%2\n\n继续吗？")
