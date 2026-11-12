@@ -32,6 +32,7 @@
 
 #include <algorithm>
 
+#include "Application.h"
 #include "BaseInstance.h"
 #include "FileSystem.h"
 #include "HallCache.h"
@@ -121,7 +122,7 @@ void MapInstanceBar::buildUi()
     m_alias->setVisible(false);
     layout->addWidget(m_alias);
 
-    // ── 徽章行（AIO 的 .badges：版本 / 加载器；置信度不在这里，见「信息」页） ──
+    // ── 徽章行（AIO 的 .badges：版本 / 加载器；置信度不在这里，见「地图」页） ──
     m_chipBox = new QWidget(this);
     m_chipRow = new QHBoxLayout(m_chipBox);
     m_chipRow->setContentsMargins(0, 0, 0, 0);
@@ -149,8 +150,10 @@ void MapInstanceBar::buildUi()
     m_worldCombo->setVisible(false);
     layout->addWidget(m_worldCombo);
 
-    // 一键装模组预设：地图实例几乎都是 Vanilla，点进来先问加载器，再按版本挑文件
-    m_presets = new QPushButton(tr("装模组预设…"), this);
+    // 一行两个动作：模组预设 / 编辑实例。
+    // 两者同为次要动作、同宽、齐平；编辑入口原在原生操作栏底部（带齿轮图标），
+    // 按用户要求上移到这里，去掉图标只留文字。
+    m_presets = new QPushButton(tr("模组预设"), this);
     m_presets->setToolTip(tr("按这个实例的 Minecraft 版本与加载器，一次装好一组常用模组。\n"
                              "安装前可以逐条取消勾选，版本由 Modrinth 现查。"));
     m_presets->setVisible(false);
@@ -160,12 +163,21 @@ void MapInstanceBar::buildUi()
     });
     layout->addWidget(m_presets);
 
+    m_edit = new QPushButton(tr("编辑实例"), this);
+    m_edit->setToolTip(tr("打开实例窗口的「地图」页：简介 / 评论 / 我的记录 / 启动设置。"));
+    m_edit->setVisible(false);
+    connect(m_edit, &QPushButton::clicked, this, [this] {
+        if (m_instance != nullptr)
+            APPLICATION->showInstanceWindow(m_instance, QStringLiteral("map"));
+    });
+    layout->addWidget(m_edit);
+
     m_notice = new QLabel(this);
     m_notice->setWordWrap(true);
     m_notice->setVisible(false);
     layout->addWidget(m_notice);
 
-    // ── 我的评分（只读；编辑在实例窗口的「信息」页） ──
+    // ── 我的评分（只读；编辑在实例窗口的「地图」页） ──
     m_ratingHead = addSection(tr("我的评分"));
     auto* ratingRow = new QHBoxLayout();
     ratingRow->setContentsMargins(0, 0, 0, 0);
@@ -284,6 +296,7 @@ bool MapInstanceBar::updateInstance(MinecraftInstance* instance)
     m_instanceId.clear();
     m_instance = nullptr;
     m_selectedWorld.clear();
+    m_isMapInstance = false;
 
     if (instance == nullptr)
         return false;
@@ -300,6 +313,7 @@ bool MapInstanceBar::updateInstance(MinecraftInstance* instance)
     m_instance = instance;
     m_isMapInstance = isMapInstance;
     m_presets->setVisible(isMapInstance);
+    m_edit->setVisible(isMapInstance);
 
     clearRows();
     clearChips();
@@ -345,7 +359,7 @@ void MapInstanceBar::showMapCard(MinecraftInstance* instance)
                 ? entry.loaderName
                 : QStringLiteral("%1 %2").arg(entry.loaderName, entry.loaderVersion),
             ui::mutedTextColor());
-    // 置信度（LOW / HIGH）只留在导入确认与实例「信息」页；侧栏是日常操作区，不摆判定细节
+    // 置信度（LOW / HIGH）只留在导入确认与实例「地图」页；侧栏是日常操作区，不摆判定细节
 
     // 世界下拉：一包多世界才出现
     for (const auto& world : meta.worlds)
@@ -358,7 +372,7 @@ void MapInstanceBar::showMapCard(MinecraftInstance* instance)
     m_stars->setValue(notes.rating);
     m_ratingValue->setText(notes.rating > 0 ? notes.ratingText() : tr("未评分"));
     if (notes.note.trimmed().isEmpty()) {
-        m_note->setText(tr("还没有笔记 —— 在实例窗口的「信息」页里写"));
+        m_note->setText(tr("还没有笔记 —— 在实例窗口的「地图 → 我的」页里写"));
         m_note->setEnabled(false);
         m_note->setToolTip({});
     } else {
@@ -371,7 +385,7 @@ void MapInstanceBar::showMapCard(MinecraftInstance* instance)
     }
 
     // 详情：KV 行。
-    // 「状态」「存档」「导入于」是导入时的判定留痕，不进日常操作区（完整信息在实例「信息」页）；
+    // 「状态」「存档」「导入于」是导入时的判定留痕，不进日常操作区（完整信息在实例「地图」页）；
     // 这里只留玩家看卡片时真正会用的：玩了多久、上次什么时候、多大、这张图是谁做的。
     const auto& stats = meta.stats;
     setRow(tr("游玩"), formatPlayTime(stats.playSeconds), tr("累计游玩时长（含本次）"));
@@ -446,7 +460,7 @@ void MapInstanceBar::showWorldCard(MinecraftInstance* instance, const QStringLis
 
     setRow(tr("存档"), tr("%1 个").arg(worlds.size()));
 
-    // 符号表覆盖 / 置信度属于「版本细节」，只在导入确认与实例「信息」页出现，侧栏不提醒
+    // 符号表覆盖 / 置信度属于「版本细节」，只在导入确认与实例「地图」页出现，侧栏不提醒
 }
 
 }  // namespace maps

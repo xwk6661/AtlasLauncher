@@ -17,26 +17,14 @@
  */
 #include "InstanceSettingsPage.h"
 
-#include <QTabWidget>
-
-#include "Application.h"
-
 InstanceSettingsPage::InstanceSettingsPage(MinecraftInstance* instance, QWidget* parent)
     : MinecraftSettingsWidget(instance, parent)
 {
     /**
-     * 「地图」页签插在「常规」与「Java」之间。
+     * 这里曾经插过一个「地图」页签（maps::MapSettingsWidget 的实例作用域）。
      *
-     * 不写进 .ui：这一页只在实例窗口里出现（全局那份是独立的 maps::MapPage），
-     * 而 .ui 是两边共用的 —— 写进去还得在全局模式下再删一次。
+     * 2026-11-12 按用户要求挪到实例窗口的「地图 → 启动」页：打开实例先看到这张图，
+     * 顺手就能改它怎么进游戏，不用先进设置再找页签。保存责任也一起搬走
+     * （MapInstancePage::apply），所以这里不再持有那个 widget。
      */
-    m_mapSettings = new maps::MapSettingsWidget(m_instance, this);
-    // 走 objectName 拿页签容器：直接包含 ui_ 头会触发 AUTOUIC 按 .cpp 所在目录找 .ui（这里找不到）
-    if (auto* tabs = findChild<QTabWidget*>(QStringLiteral("settingsTabs")))
-        // 不带图标：和「常规」「Java」这些页签保持一致（图标只在左侧导航栏用）
-        tabs->insertTab(1, m_mapSettings, tr("地图"));
-
-    connect(APPLICATION, &Application::globalSettingsAboutToOpen, this, &InstanceSettingsPage::apply);
-    connect(APPLICATION, &Application::globalSettingsApplied, this, &InstanceSettingsPage::loadSettings);
-    connect(APPLICATION, &Application::globalSettingsApplied, this, [this] { m_mapSettings->loadSettings(); });
 }

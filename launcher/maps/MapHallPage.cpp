@@ -569,7 +569,7 @@ void MapHallPage::buildUi()
     m_tabs->setDocumentMode(true);
 
     /**
-     * 「简介」：与实例「信息 → 简介」同款 —— 写基本信息的卡片 + 写正文的卡片，
+     * 「简介」：与实例「地图 → 简介」同款 —— 写基本信息的卡片 + 写正文的卡片，
      * 整页一个滚动区（以前正文单独套一个滚动框，和属性区互相抢高度）。
      */
     auto* about = new QWidget(m_tabs);
@@ -635,7 +635,7 @@ void MapHallPage::buildUi()
     m_reviewsTabIndex = m_tabs->count() - 1;
 
     // 「我的」：本机视角 —— 哪张实例关联了这张图、它的评分笔记与游玩记录
-    // 「我的」：与实例「信息 → 我的」同款卡片列表，内容随选中项重建
+    // 「我的」：与实例「地图 → 我的」同款卡片列表，内容随选中项重建
     auto* mineTab = new QWidget(m_tabs);
     auto* mineLayout = new QVBoxLayout(mineTab);
     mineLayout->setContentsMargins(4, 6, 4, 4);
@@ -1324,7 +1324,7 @@ void MapHallPage::refreshMineTab()
     if (linked == nullptr) {
         addTipCard(tr("关联实例"), tr("本机还没有关联到这张图的实例。\n\n"
                                       "用下面的「选择已下载的文件…」把它导入成实例之后，\n"
-                                      "在实例窗口的「信息 → 简介」页可以把它关联到这里 ——\n"
+                                      "在实例窗口的「地图 → 简介」页可以把它关联到这里 ——\n"
                                       "那时这一页会显示它的中文名、我的评分、笔记和游玩记录。"));
         m_mineLayout->addStretch(1);
         return;

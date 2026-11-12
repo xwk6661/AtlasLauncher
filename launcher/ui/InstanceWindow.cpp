@@ -66,8 +66,9 @@ InstanceWindow::InstanceWindow(MinecraftInstance* instance, QWidget* parent) : Q
     // Add page container
     {
         auto provider = std::make_shared<InstancePageProvider>(m_instance);
-        // 默认停在「设置」：日志是排障时才看，改 Java/内存/窗口才是日常（见 InstancePageProvider）
-        m_container = new PageContainer(provider.get(), "settings", this);
+        // 默认停在「地图」（原「信息」页）：点「编辑实例」进来先看到这张图是什么。
+        // 非地图实例没有这一页，PageContainer 会回落到第一项「设置」（见 InstancePageProvider）。
+        m_container = new PageContainer(provider.get(), "map", this);
         m_container->setParentContainer(this);
         setCentralWidget(m_container);
         setContentsMargins(0, 0, 0, 0);

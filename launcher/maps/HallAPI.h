@@ -83,7 +83,7 @@ class HallAPI : public QObject {
      */
     void syncLibrary();
     void clearLibrary();
-    /// 从本地库按标题找一张图（信息页用来做"可能关联"建议与手动挑选）
+    /// 从本地库按标题找一张图（「地图」页用来做"可能关联"建议与手动挑选）
     QList<HallItem> libraryItems() const { return m_items; }
     /// 从磁盘重新载入（后台更新写完之后，界面下次打开就能看到新数据）
     void reloadLibrary() { applySnapshot(HallCache::load()); }

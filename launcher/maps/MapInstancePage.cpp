@@ -16,6 +16,7 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include "MapInstancePage.h"
+#include "MapSettingsWidget.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -268,9 +269,11 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
     });
 
     /**
-     * 四个页签：简介 / 评论 / 我的 / 汉化。
+     * 四个页签：简介 / 评论 / 我的 / 启动（+ 汉化，已隐藏）。
      *
      * 前两页来自大厅本地库（`hall-cache.json`），后两页是本地信息（上面直接建好的）。
+     * 「启动」页装的是实例级的地图启动设置 —— 原来在「设置 → 地图」页签里，
+     * 2026-11-12 挪过来：打开实例先看到这张图，顺手就能改它怎么进游戏。
      *
      * 「汉化」页当前整体隐藏（`maps::features::kLocalization == false`）——
      * 链路是通的，但效果不达标（字形表的图翻不了、写回后没在游戏里验证过显示），
@@ -283,6 +286,15 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
         m_tabs->addTab(buildAboutPage(), tr("简介"));
         m_tabs->addTab(buildReviewsPage(), tr("评论"));
         m_tabs->addTab(minePage, tr("我的"));
+
+        // 地图实例才有启动设置；非地图实例这一页本来就不显示（shouldDisplay）
+        if (shouldDisplay()) {
+            m_launchSettings = new MapSettingsWidget(m_instance, this);
+            m_tabs->addTab(buildLaunchPage(), tr("启动"));
+            // 全局设置改过之后，没被实例覆盖的项要跟着变（原来这条连接在 InstanceSettingsPage）
+            connect(APPLICATION, &Application::globalSettingsApplied, m_launchSettings, &MapSettingsWidget::loadSettings);
+        }
+
         if (features::kLocalization)
             m_tabs->addTab(buildL10nPage(), tr("汉化"));
         layout->addWidget(m_tabs, 1);
@@ -303,7 +315,7 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
 
 QString MapInstancePage::displayName() const
 {
-    return tr("信息");
+    return tr("地图");
 }
 
 QIcon MapInstancePage::icon() const
@@ -322,11 +334,33 @@ bool MapInstancePage::shouldDisplay() const
 void MapInstancePage::openedImpl()
 {
     reload();
+    // 「启动」页的值可能被别的路径改过（实例设置页、全局设置），每次进页面重新读一次
+    if (m_launchSettings != nullptr)
+        m_launchSettings->loadSettings();
+}
+
+bool MapInstancePage::apply()
+{
+    // 原来这一步在 InstanceSettingsPage::apply 里（「设置 → 地图」页签）；
+    // 页签搬到这边之后，保存责任也跟着过来 —— 否则改完关窗口不会落盘。
+    if (m_launchSettings != nullptr)
+        m_launchSettings->saveSettings();
+    return true;
+}
+
+QWidget* MapInstancePage::buildLaunchPage()
+{
+    // MapSettingsWidget 自己带滚动区与内边距，这里只做一层容器，别再套边距
+    auto* page = new QWidget(this);
+    auto* layout = new QVBoxLayout(page);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    layout->addWidget(m_launchSettings, 1);
+    return page;
 }
 
 QWidget* MapInstancePage::buildAboutPage()
-{
-    m_aboutPage = new QWidget(this);
+{    m_aboutPage = new QWidget(this);
     m_aboutLayout = new QVBoxLayout(m_aboutPage);
     m_aboutLayout->setContentsMargins(4, 4, 4, 4);
     m_aboutLayout->setSpacing(8);

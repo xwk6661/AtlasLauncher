@@ -38,14 +38,15 @@ class StarRatingWidget;
  *
  *   中文名（次要色）
  *   徽章行：版本 / 加载器 / 置信度（小 chip）
- *   动作行：「进入地图」（主）、「复制压缩包路径」
+ *   动作行：「进入地图」（主）、「模组预设」、「编辑实例」
  *   世界下拉（一包多世界才有）
  *   风险提示
  *   ── 我的评分（只读五颗星 + 3.5 / 5）
  *   ── 笔记（预览，悬停看全文）
  *   ── 详情（状态 / 游玩 / 上次 / 存档 / 包体积 / 导入于）
  *
- * 编辑入口在实例窗口的「信息」页 —— 与 AIO 一致：这一栏只负责"看一眼再决定进不进"。
+ * 「编辑实例」原来在原生操作栏底部（`actionEditInstance`，带齿轮图标）。地图卡片
+ * 出现时原生那一条会让位（见 MainWindow::instanceChanged），两个一样的入口不同时出现。
  */
 class MapInstanceBar : public QWidget {
     Q_OBJECT
@@ -58,6 +59,14 @@ class MapInstanceBar : public QWidget {
      * @return true 表示这块卡片接管了「启动」这个主操作（调用方应隐藏原生启动按钮）
      */
     bool updateInstance(MinecraftInstance* instance);
+
+    /**
+     * 卡片里是否有「编辑实例」入口（= 这是个地图实例）。
+     *
+     * 有的话原生操作栏里的「编辑」要让位（`MainWindow::instanceChanged`）；
+     * 只有存档、没有 map.json 的实例不显示这个按钮，原生那条也照旧。
+     */
+    bool hasEditEntry() const { return m_isMapInstance; }
 
    signals:
     void launchRequested(const QString& instanceId, const QString& worldFolder);
@@ -81,6 +90,8 @@ class MapInstanceBar : public QWidget {
     QHBoxLayout* m_chipRow = nullptr;
     QPushButton* m_launch = nullptr;
     QPushButton* m_presets = nullptr;
+    /// 「编辑实例」：从原生操作栏上移到卡片里（图标去掉，与「模组预设」齐平）
+    QPushButton* m_edit = nullptr;
     QComboBox* m_worldCombo = nullptr;
     QLabel* m_notice = nullptr;
 

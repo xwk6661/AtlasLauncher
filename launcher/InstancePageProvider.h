@@ -35,7 +35,7 @@ class InstancePageProvider : protected QObject, public BasePageProvider {
         /**
          * 换地图即换实例：一个实例只有一个存档目录，所以「世界」「服务器」「备注」
          * 「其他日志」这四页在地图启动器里几乎没有用武之地，默认收起，只留
-         * 日志 / 版本 / 模组 / 材质 / 光影 / 信息 / 截图 / 设置。
+         * 地图 / 设置 / 日志 / 版本 / 模组 / 材质 / 光影 / 截图。
          *
          * 这里直接不构造页面（而不是 shouldDisplay 返回 false）：页面本身会建
          * 文件监听、世界扫描这些活，收起的页不该在后台跑。
@@ -48,12 +48,17 @@ class InstancePageProvider : protected QObject, public BasePageProvider {
 
         QList<BasePage*> values;
         /**
-         * 「设置」置顶。
+         * 「地图」置顶（原「信息」页），「设置」排第二。
          *
-         * 玩家打开控制台，十次有九次是去改 Java / 内存 / 窗口大小这类东西；
-         * 日志是在出问题时的第二落点。所以把设置放到列表第一项，并让窗口
-         * 默认选中它（见 InstanceWindow 里的 defaultId）。
+         * 玩家点「编辑实例」进来，十次有九次是看这张图是什么、改中文名/评分/笔记，
+         * 或者调进图行为；改 Java / 内存反而没那么频繁。所以地图页放到第一项，
+         * 窗口默认选中它（见 InstanceWindow 里的 defaultId）。
+         *
+         * 非地图实例没有这一页（`shouldDisplay()` 判 map.json），PageContainer 会自动
+         * 落到第一项「设置」—— 与老行为一致。
          */
+        // 地图实例才有这一页（shouldDisplay 里有 map.json 判定）
+        values.append(new maps::MapInstancePage(inst));
         values.append(new InstanceSettingsPage(inst));
         values.append(new LogPage(inst));
         values.append(new VersionPage(inst));
@@ -69,8 +74,6 @@ class InstancePageProvider : protected QObject, public BasePageProvider {
         values.append(new ShaderPackPage(inst, inst->shaderPackList()));
         if (showNotes)
             values.append(new NotesPage(inst));
-        // 地图实例才有这一页（shouldDisplay 里有 map.json 判定）
-        values.append(new maps::MapInstancePage(inst));
         if (showWorlds)
             values.append(new WorldListPage(inst, inst->worldList()));
         if (showServers)

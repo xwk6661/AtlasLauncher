@@ -37,7 +37,6 @@
 
 #include <QWidget>
 #include "BaseInstance.h"
-#include "maps/MapSettingsWidget.h"
 #include "ui/pages/BasePage.h"
 #include "ui/widgets/MinecraftSettingsWidget.h"
 
@@ -45,7 +44,6 @@ class InstanceSettingsPage : public MinecraftSettingsWidget, public BasePage {
     Q_OBJECT
 
    public:
-    /// 构造函数在 .cpp 里：要拿到 `m_ui->settingsTabs` 才能插入「地图」页签
     explicit InstanceSettingsPage(MinecraftInstance* instance, QWidget* parent = nullptr);
     ~InstanceSettingsPage() override {}
     QString displayName() const override { return tr("设置"); }
@@ -55,11 +53,7 @@ class InstanceSettingsPage : public MinecraftSettingsWidget, public BasePage {
     {
         SettingsObject::Lock lock(m_instance->settings());
         saveSettings();
-        m_mapSettings->saveSettings();
         return true;
     }
     QString helpPage() const override { return "Instance-settings"; }
-
-   private:
-    maps::MapSettingsWidget* m_mapSettings = nullptr;
 };

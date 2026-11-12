@@ -1761,6 +1761,24 @@ void MainWindow::startTask(Task* task)
 
 void MainWindow::instanceChanged(const QModelIndex& current, [[maybe_unused]] const QModelIndex& previous)
 {
+    /**
+     * 「编辑实例」的入口位置：
+     *
+     * 地图卡片显示时，编辑入口在卡片里（`MapInstanceBar` 的「编辑实例」按钮，无图标），
+     * 原生操作栏里那条就摘掉 —— 同一件事摆两个按钮只会让人犹豫点哪个。
+     * 只动工具栏，不动 `QAction` 的 visible：File 菜单里的「编辑…」仍然可用，
+     * 快捷键（Ctrl+I）也不受影响。
+     */
+    auto setToolBarEdit = [this](bool hidden) {
+        const bool present = ui->instanceToolBar->actions().contains(ui->actionEditInstance);
+        if (hidden && present) {
+            ui->instanceToolBar->removeAction(ui->actionEditInstance);
+        } else if (!hidden && !present) {
+            // 原位插回去：.ui 里的顺序是 … 结束进程 / 分隔线 / 编辑 / 改变分组 …
+            ui->instanceToolBar->insertAction(ui->actionChangeInstGroup, ui->actionEditInstance);
+        }
+    };
+
     if (!current.isValid()) {
         APPLICATION->settings()->set("SelectedInstance", QString());
         if (m_mapBar != nullptr) {
@@ -1772,6 +1790,7 @@ void MainWindow::instanceChanged(const QModelIndex& current, [[maybe_unused]] co
         // 「地图信息区一直不出现」的原因）。
         if (m_mapBarAction != nullptr)
             m_mapBarAction->setVisible(false);
+        setToolBarEdit(false);
         ui->instanceToolBar->setMinimumWidth(140);
         ui->actionLaunchInstance->setVisible(true);
         selectionBad();
@@ -1810,6 +1829,9 @@ void MainWindow::instanceChanged(const QModelIndex& current, [[maybe_unused]] co
         // 卡片出现时把侧栏放宽到 AIO 那种比例（252px）：140px 装不下徽章行 + KV 行
         ui->instanceToolBar->setMinimumWidth(mapCardShown ? 240 : 140);
         ui->actionLaunchInstance->setVisible(!mapCardShown);
+        // 地图卡片自带「编辑实例」→ 原生那条让位；非地图实例（或没卡片）时恢复
+        // 只看卡片里是否真有那个按钮：只有存档、没有 map.json 的实例照样是原生入口
+        setToolBarEdit(m_mapBar != nullptr && m_mapBar->hasEditEntry());
 
         APPLICATION->settings()->set("SelectedInstance", m_selectedInstance->id());
 
@@ -1826,6 +1848,7 @@ void MainWindow::instanceChanged(const QModelIndex& current, [[maybe_unused]] co
         // 「地图信息区一直不出现」的原因）。
         if (m_mapBarAction != nullptr)
             m_mapBarAction->setVisible(false);
+        setToolBarEdit(false);
         ui->instanceToolBar->setMinimumWidth(140);
         ui->actionLaunchInstance->setVisible(true);
         selectionBad();

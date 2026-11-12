@@ -1181,7 +1181,7 @@ HallReview HallAPI::reviewFromJson(const QJsonObject& row) const
     review.speedrun = row.value(QStringLiteral("speedrun")).toBool(false);
     /**
      * 名字在解析时就地补：users 表 220/239 有 username（其余是真没填），
-     * 不补的话每个界面都得自己再查一遍 —— 之前信息页就是这样写死了「匿名玩家」。
+     * 不补的话每个界面都得自己再查一遍 —— 之前「地图」页就是这样写死了「匿名玩家」。
      */
     if (!review.userUuid.isEmpty())
         review.userName = m_userById.value(review.userUuid);

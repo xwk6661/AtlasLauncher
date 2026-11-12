@@ -28,7 +28,7 @@ namespace maps {
  *
  * 形态照 AIO 的 `starsHtml`：五颗星，每颗左半=半星、右半=整星；填充靠裁剪宽度实现。
  * 只读模式给右侧卡片用（AIO 的详情栏也是只读的 —— "看一眼再决定进不进"的地方
- * 不该有热区抢点击），可编辑模式给实例窗口的「信息」页用。
+ * 不该有热区抢点击），可编辑模式给实例窗口的「地图」页用。
  */
 class StarRatingWidget : public QWidget {
     Q_OBJECT

@@ -37,6 +37,7 @@ class MinecraftInstance;
 namespace maps {
 
 class HallAPI;
+class MapSettingsWidget;
 struct HallItem;
 
 namespace l10n {
@@ -47,7 +48,17 @@ class MapL10nTask;
 class StarRatingWidget;
 
 /**
- * 实例窗口里的「信息」页签：map.json 部分**只读**，「我的记录」可编辑。
+ * 实例窗口里的「地图」页（原「信息」页）：map.json 部分**只读**，「我的记录」可编辑。
+ *
+ * 四个页签：简介 / 评论 / 我的 / 启动。
+ *   · 简介、评论来自大厅本地库；
+ *   · 我的 = notes.json（玩家自己的数据）；
+ *   · 启动 = 实例级的地图启动设置（自动进图 / 退出即关 / 跳过实验性确认 / 进图延迟），
+ *     原来是「设置 → 地图」那个页签，2026-11-12 挪到这里 —— 打开实例窗口先看到图，
+ *     顺手就能改它怎么进游戏，不用先切到设置再找页签。
+ *
+ * 为什么叫「地图」不叫「信息」：这一页就是这张地图本身，名字跟「设置」「日志」
+ * 这些工具页并列时，"信息"太泛。
  *
  * 不列"世界目录"：一个地图对应一个实例，实例里只有它自己的 saves/<世界>，
  * 把「实例内目录 ↔ 压缩包内路径」这张表摆出来只会让人以为要手动搬目录。
@@ -71,6 +82,8 @@ class MapInstancePage : public QWidget, public BasePage {
     bool shouldDisplay() const override;
 
     void openedImpl() override;
+    /// 「启动」页签的设置写回实例（PageContainer 在关窗口时对所有页调用一次）
+    bool apply() override;
 
    private:
     void reload();
@@ -79,6 +92,8 @@ class MapInstancePage : public QWidget, public BasePage {
     // ── 「简介 / 评论」两个页签：读本地大厅库，没关联就说明原因 ──
     QWidget* buildAboutPage();
     QWidget* buildReviewsPage();
+    /// 「启动」页签：实例级地图启动设置（原「设置 → 地图」）
+    QWidget* buildLaunchPage();
     void refreshHallTabs();
     /// 简介页封面：先画占位、再异步换真图（拿不到就一直是占位，不留空白）
     void requestAboutCover(const QString& url, const QString& title);
@@ -145,6 +160,8 @@ class MapInstancePage : public QWidget, public BasePage {
     MinecraftInstance* m_instance = nullptr;
     MapMeta m_meta;
     MapNotes m_notes;
+    /// 非空 = 这个实例是地图实例，「启动」页签才存在
+    MapSettingsWidget* m_launchSettings = nullptr;
 
     QLineEdit* m_aliasEdit = nullptr;
     QPushButton* m_aliasSave = nullptr;

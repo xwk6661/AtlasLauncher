@@ -39,7 +39,7 @@ namespace maps {
  * 关闭方式是给游戏窗口发 `WM_CLOSE`（等同点右上角 ×，走游戏自己的退出流程），
  * 8 秒还没退才回退到启动器的强制结束。
  *
- * 为什么不用 Agent 判断：Agent 靠每版混淆符号表，本项目只带了 ≤1.19.4 的 6 张，
+ * 为什么不用 Agent 判断：Agent 靠每版混淆符号表，而符号表只覆盖到 1.19.4（59 张）；
  * 1.20+ 没有符号可用（AIO 的 1.20+ 方案同样是「quickPlay + 只拦截退出」）。
  */
 class MapQuitWatcher : public QObject {
