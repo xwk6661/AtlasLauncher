@@ -49,6 +49,13 @@ class DataVersionTable {
 
     bool isKnownVersion(const QString& id) const { return m_byVersion.contains(id); }
     std::optional<DataVersionEntry> entry(const QString& id) const;
+    /**
+     * 版本号 -> DataVersion；查不到时退回「不高于它的最近正式版」。
+     *
+     * 用在写 options.txt 的 `version:` 行上：**宁可写小，也不能写大** ——
+     * 写成比游戏自己更高的 DataVersion 会让数据修复器认为文件来自未来。
+     */
+    int dataVersionFor(const QString& id) const;
     /// DataVersion -> 版本号；查不到返回空串
     QString versionForDataVersion(int dataVersion) const;
     const QStringList& releases() const { return m_releases; }

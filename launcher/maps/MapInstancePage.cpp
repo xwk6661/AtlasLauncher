@@ -31,6 +31,7 @@
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QInputDialog>
 #include <QLabel>
 #include <QLineEdit>
 #include <QLocale>
@@ -710,14 +711,27 @@ QString MapInstancePage::worldRoot() const
 
 QWidget* MapInstancePage::buildL10nPage()
 {
-    m_l10nPage = new QWidget(this);
+    /**
+     * 版面按「从上到下一条流水线」排，而不是四张卡片平铺：
+     *   ① 这张图能不能汉化（结论）  ② 文本在哪（证据）
+     *   ③ 待译多少                 ④ 四步：扫 → 导 → 翻 → 写回
+     *   ⑤ 备份与恢复                ⑥ 已知限制（灰字，最下面）
+     *
+     * 半屏窗口下原来那版会把「已知限制」挤到看不见的地方，所以整页塞进滚动区。
+     */
+    auto* scroll = new QScrollArea(this);
+    scroll->setWidgetResizable(true);
+    scroll->setFrameShape(QFrame::NoFrame);
+    scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+
+    m_l10nPage = new QWidget(scroll);
     auto* layout = new QVBoxLayout(m_l10nPage);
-    layout->setContentsMargins(4, 8, 4, 4);
+    layout->setContentsMargins(4, 4, 4, 4);
     layout->setSpacing(10);
 
-    // ── 卡片 1：结论 ──
+    // ── ① 结论 ──
     QVBoxLayout* modeBody = nullptr;
-    layout->addWidget(ui::makeCard(m_l10nPage, tr("这张图能不能汉化"), &modeBody));
+    layout->addWidget(ui::makeCard(m_l10nPage, tr("能不能汉化"), &modeBody));
 
     m_l10nMode = new QLabel(tr("还没体检"), m_l10nPage);
     QFont modeFont = m_l10nMode->font();
@@ -726,20 +740,18 @@ QWidget* MapInstancePage::buildL10nPage()
     m_l10nMode->setFont(modeFont);
     modeBody->addWidget(m_l10nMode);
 
-    m_l10nDesc = new QLabel(tr("先摸清楚文本藏在哪：资源包的语言表、数据包里的函数、还是直接写在区块数据里。\n"
-                              "体检全程只读，不改存档、不联网。"),
-                            m_l10nPage);
+    m_l10nDesc = new QLabel(tr("体检只看不改：读一遍资源包、数据包和区块，数清有多少字要翻。"), m_l10nPage);
     m_l10nDesc->setWordWrap(true);
     m_l10nDesc->setTextInteractionFlags(Qt::TextSelectableByMouse);
     modeBody->addWidget(m_l10nDesc);
 
-    // ── 卡片 2：载体明细 ──
+    // ── ② 文本在哪 ──
     QVBoxLayout* carrierBody = nullptr;
     layout->addWidget(ui::makeCard(m_l10nPage, tr("文本在哪"), &carrierBody));
 
     auto* grid = new QGridLayout();
     grid->setHorizontalSpacing(12);
-    grid->setVerticalSpacing(8);
+    grid->setVerticalSpacing(6);
     grid->setColumnStretch(1, 1);
 
     const auto addRow = [&](int row, const QString& name) -> QLabel* {
@@ -756,62 +768,249 @@ QWidget* MapInstancePage::buildL10nPage()
     m_l10nRegion = addRow(2, tr("区块"));
     carrierBody->addLayout(grid);
 
-    // ── 卡片 3：待译与下一步 ──
+    // ── ③④ 待译与四步 ──
     QVBoxLayout* actionBody = nullptr;
-    layout->addWidget(ui::makeCard(m_l10nPage, tr("待译与下一步"), &actionBody));
+    layout->addWidget(ui::makeCard(m_l10nPage, tr("待译与写回"), &actionBody));
 
+    auto* totalRow = new QHBoxLayout();
+    totalRow->setSpacing(10);
     m_l10nTotal = new QLabel(tr("—"), m_l10nPage);
     QFont totalFont = m_l10nTotal->font();
     totalFont.setBold(true);
+    totalFont.setPointSizeF(totalFont.pointSizeF() * 1.1);
     m_l10nTotal->setFont(totalFont);
-    actionBody->addWidget(m_l10nTotal);
-
-    auto* buttonRow = new QHBoxLayout();
-    buttonRow->setSpacing(8);
-    m_l10nDeep = new QPushButton(tr("扫描全部区块"), m_l10nPage);
-    m_l10nDeep->setToolTip(tr("把 region / entities / data 全部读一遍，得到完整结论。\n"
-                              "大图要几十秒，可以随时取消。只读，不写任何文件。"));
-    m_l10nExport = new QPushButton(tr("导出待译文本…"), m_l10nPage);
-    m_l10nExport->setEnabled(false);
-    m_l10nExport->setToolTip(tr("导出成 strings.json（给程序）和 strings.csv（给 Excel 改）。\n"
-                                "先跑一次体检才有东西可导。"));
-    m_l10nTranslate = new QPushButton(tr("自动翻译…"), m_l10nPage);
-    m_l10nTranslate->setEnabled(false);
-    m_l10nTranslate->setToolTip(tr("用 设置 → 地图 → 汉化翻译 里配的 OpenAI 兼容接口，\n"
-                                   "把 strings.json 里还没翻的条目译成中文并写回。"));
-    m_l10nApply = new QPushButton(tr("生成汉化版（改存档）…"), m_l10nPage);
-    m_l10nApply->setEnabled(false);
-    m_l10nApply->setToolTip(tr("把译文写进**存档副本**：复制一份世界，只在副本上改文本。\n"
-                               "原存档一个字节都不动；改完会逐区块做结构比对，不一致的区块直接丢弃。\n"
-                               "生成完会问要不要用它替换本实例存档 —— 旧图先打包成 zip 备份，随时能还原。"));
-    buttonRow->addWidget(m_l10nDeep);
-    buttonRow->addWidget(m_l10nExport);
-    buttonRow->addWidget(m_l10nTranslate);
-    buttonRow->addWidget(m_l10nApply);
-    buttonRow->addStretch(1);
-    actionBody->addLayout(buttonRow);
-
+    totalRow->addWidget(m_l10nTotal);
+    totalRow->addStretch(1);
     m_l10nState = new QLabel(m_l10nPage);
-    m_l10nState->setWordWrap(true);
+    m_l10nState->setWordWrap(false);
     m_l10nState->setEnabled(false);
-    actionBody->addWidget(m_l10nState);
+    totalRow->addWidget(m_l10nState);
+    actionBody->addLayout(totalRow);
+
+    /**
+     * 四个按钮带序号：这四步有严格先后（没体检就没清单、没清单就没译文、没译文写不出去），
+     * 平铺成一行时玩家经常从第三个开始点，然后一脸疑惑为什么全是灰的。
+     */
+    const auto makeStep = [this](const QString& text, const QString& tip) {
+        auto* button = new QPushButton(text, m_l10nPage);
+        button->setToolTip(tip);
+        return button;
+    };
+    m_l10nDeep = makeStep(tr("① 扫描全部区块"),
+                          tr("把 region / entities / data 全读一遍，得到完整结论。\n"
+                             "大图要几十秒，随时可取消。只读，不写任何文件。"));
+    m_l10nExport = makeStep(tr("② 导出待译…"),
+                            tr("导出 strings.json（给程序用）和 strings.csv（给 Excel 改，带 BOM 不乱码）。\n"
+                               "先跑一次体检才有东西可导。"));
+    m_l10nExport->setEnabled(false);
+    m_l10nTranslate = makeStep(tr("③ 自动翻译…"),
+                               tr("用「设置 → 地图 → 汉化翻译」里配的 OpenAI 兼容接口，\n"
+                                  "把 strings.json 里还没翻的条目译成中文并就地写回。"));
+    m_l10nTranslate->setEnabled(false);
+    m_l10nApply = makeStep(tr("④ 生成汉化版…"),
+                           tr("把译文写进**存档副本**：先复制一份世界，只在副本上改文本。\n"
+                              "原存档一个字节都不动；改完逐区块做结构比对，对不上的区块直接丢弃。\n"
+                              "生成完会问要不要顶替本实例存档 —— 旧图先打包成 zip 备份。"));
+    m_l10nApply->setEnabled(false);
+
+    auto* stepRow1 = new QHBoxLayout();
+    stepRow1->setSpacing(8);
+    stepRow1->addWidget(m_l10nDeep, 1);
+    stepRow1->addWidget(m_l10nExport, 1);
+    actionBody->addLayout(stepRow1);
+
+    auto* stepRow2 = new QHBoxLayout();
+    stepRow2->setSpacing(8);
+    stepRow2->addWidget(m_l10nTranslate, 1);
+    stepRow2->addWidget(m_l10nApply, 1);
+    actionBody->addLayout(stepRow2);
+
+    auto* hint = new QLabel(tr("② 之后可以随时停下来：导出的是纯文本，改完再用 ④ 写回去也行。"), m_l10nPage);
+    hint->setWordWrap(true);
+    hint->setEnabled(false);
+    actionBody->addWidget(hint);
 
     connect(m_l10nDeep, &QPushButton::clicked, this, [this] { startL10nProbe(true); });
     connect(m_l10nExport, &QPushButton::clicked, this, &MapInstancePage::exportL10n);
     connect(m_l10nTranslate, &QPushButton::clicked, this, &MapInstancePage::translateL10n);
     connect(m_l10nApply, &QPushButton::clicked, this, &MapInstancePage::applyL10n);
 
-    // ── 已知限制：写在页面上，别让玩家自己撞 ──
+    // ── ⑤ 备份与恢复 ──
+    QVBoxLayout* backupBody = nullptr;
+    layout->addWidget(ui::makeCard(m_l10nPage, tr("备份与恢复"), &backupBody));
+
+    m_l10nBackupState = new QLabel(m_l10nPage);
+    m_l10nBackupState->setWordWrap(true);
+    m_l10nBackupState->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    backupBody->addWidget(m_l10nBackupState);
+
+    auto* backupRow = new QHBoxLayout();
+    backupRow->setSpacing(8);
+    m_l10nRestore = new QPushButton(tr("恢复原图…"), m_l10nPage);
+    m_l10nRestore->setToolTip(tr("把某份备份解回存档目录，顶掉当前的汉化版。\n"
+                                 "当前存档会先挪到旁边，解压成功才删 —— 恢复失败不会两头空。"));
+    m_l10nRestore->setEnabled(false);
+    m_l10nOpenBackups = new QPushButton(tr("打开备份目录"), m_l10nPage);
+    m_l10nOpenBackups->setEnabled(false);
+    backupRow->addWidget(m_l10nRestore);
+    backupRow->addWidget(m_l10nOpenBackups);
+    backupRow->addStretch(1);
+    backupBody->addLayout(backupRow);
+
+    connect(m_l10nRestore, &QPushButton::clicked, this, &MapInstancePage::restoreL10nBackup);
+    connect(m_l10nOpenBackups, &QPushButton::clicked, this, [this] {
+        const QString dir = l10nBackupDir();
+        if (!dir.isEmpty())
+            QDesktopServices::openUrl(QUrl::fromLocalFile(dir));
+    });
+
+    // ── ⑥ 已知限制（灰字，别抢主流程的注意力）──
     m_l10nNotes = new QLabel(m_l10nPage);
     m_l10nNotes->setWordWrap(true);
     m_l10nNotes->setEnabled(false);
-    m_l10nNotes->setText(tr("已知限制：1.12 及更早的命令方块里是裸字符串，暂不处理；\n"
-                            "图片化的文字（地图画、位图字体整段渲染）看不见；\n"
-                            "中文比英文宽，告示牌和书页可能被裁 —— 工具只能报警，不会自动缩排。"));
+    m_l10nNotes->setText(tr("已知限制：1.12 及更早的命令方块里是裸字符串，暂不处理；图片化的文字（地图画、位图字体）看不见；\n"
+                            "中文比英文宽，告示牌和书页可能被裁 —— 工具只报警，不会自动缩排。"));
     layout->addWidget(m_l10nNotes);
 
     layout->addStretch(1);
-    return m_l10nPage;
+    scroll->setWidget(m_l10nPage);
+    refreshL10nBackups();
+    return scroll;
+}
+
+QString MapInstancePage::l10nBackupDir() const
+{
+    if (m_instance == nullptr)
+        return {};
+    return FS::PathCombine(m_instance->instanceRoot(), QStringLiteral("l10n"), QStringLiteral("backups"));
+}
+
+void MapInstancePage::refreshL10nBackups()
+{
+    if (m_l10nBackupState == nullptr)
+        return;
+
+    const QString dir = l10nBackupDir();
+    const auto backups = l10n::listBackups(dir);
+    const bool available = m_instance != nullptr && !backups.isEmpty();
+    if (m_l10nRestore != nullptr)
+        m_l10nRestore->setEnabled(available);
+    if (m_l10nOpenBackups != nullptr)
+        m_l10nOpenBackups->setEnabled(m_instance != nullptr && QDir(dir).exists());
+
+    if (backups.isEmpty()) {
+        m_l10nBackupState->setText(tr("还没有备份。用 ④ 顶替存档时，旧图会自动打包成 zip 放在这里，随时能恢复。"));
+        return;
+    }
+
+    const auto& newest = backups.first();
+    m_l10nBackupState->setText(tr("共 %1 份备份，最近一份：%2（%3）")
+                                   .arg(QLocale().toString(backups.size()))
+                                   .arg(newest.modified.toString(QStringLiteral("yyyy-MM-dd HH:mm")))
+                                   .arg(QLocale().formattedDataSize(newest.bytes)));
+}
+
+void MapInstancePage::restoreL10nBackup()
+{
+    if (m_instance == nullptr)
+        return;
+
+    const QString world = worldRoot();
+    if (world.isEmpty() || !QFileInfo(world).isDir()) {
+        CustomMessageBox::selectable(this, tr("找不到存档"), tr("这个实例没有可用的存档目录。"), QMessageBox::Critical)->show();
+        return;
+    }
+    // 和替换一样：游戏开着的时候动存档目录会撞 session.lock / region 占用
+    if (m_instance->isRunning()) {
+        CustomMessageBox::selectable(this, tr("游戏正在运行"), tr("先关掉游戏再恢复存档。"),
+                                     QMessageBox::Warning)
+            ->show();
+        return;
+    }
+
+    const auto backups = l10n::listBackups(l10nBackupDir());
+    if (backups.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("没有备份"), tr("备份目录里还没有 zip。"),
+                                     QMessageBox::Information)
+            ->show();
+        return;
+    }
+
+    const auto name = [](const l10n::BackupEntry& entry) {
+        return QStringLiteral("%1  ·  %2")
+            .arg(entry.modified.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")),
+                 QLocale().formattedDataSize(entry.bytes));
+    };
+
+    l10n::BackupEntry chosen = backups.first();
+    if (backups.size() > 1) {
+        QStringList items;
+        items.reserve(backups.size());
+        for (const auto& entry : backups)
+            items.append(name(entry));
+
+        bool ok = false;
+        const QString picked =
+            QInputDialog::getItem(this, tr("恢复原图"), tr("选一份备份（新的在上面）："), items, 0, false, &ok);
+        if (!ok)
+            return;
+        const int index = items.indexOf(picked);
+        if (index < 0)
+            return;
+        chosen = backups.at(index);
+    }
+
+    QMessageBox box(this);
+    box.setWindowTitle(tr("恢复原图"));
+    box.setIcon(QMessageBox::Question);
+    box.setTextFormat(Qt::PlainText);
+    box.setText(tr("会用这份备份顶掉当前的存档：\n%1\n\n当前存档：%2\n\n"
+                   "解压成功才会删掉当前的存档；中途失败会把当前存档挪回原位。\n\n继续吗？")
+                    .arg(QDir::toNativeSeparators(chosen.path), QDir::toNativeSeparators(world)));
+    auto* yesButton = box.addButton(tr("恢复"), QMessageBox::AcceptRole);
+    auto* noButton = box.addButton(tr("取消"), QMessageBox::RejectRole);
+    box.setDefaultButton(noButton);
+    box.exec();
+    if (box.clickedButton() != yesButton)
+        return;
+
+    auto task = std::make_unique<l10n::MapL10nRestoreTask>(world, chosen.path);
+    QString failure;
+    connect(task.get(), &Task::failed, this, [&failure](const QString& reason) { failure = reason; });
+
+    ProgressDialog dialog(this);
+    dialog.showSkipButton();
+    dialog.execWithTask(task.get());
+
+    if (!failure.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("恢复失败"), failure, QMessageBox::Critical)->show();
+        return;
+    }
+
+    const auto restoreStats = task->stats();
+    CustomMessageBox::selectable(
+        this, tr("已恢复"),
+        tr("已从备份还原这个实例的存档：\n%1\n\n解出 %2 个文件；世界目录：%3\n\n"
+           "之前那份体检结果已经不对应现在这张图了，需要的话重新体检一次。")
+            .arg(QDir::toNativeSeparators(restoreStats.backupPath))
+            .arg(QLocale().toString(restoreStats.files))
+            .arg(restoreStats.worldFolder),
+        QMessageBox::Information)
+        ->show();
+
+    // 存档换回去了：体检结果与「生成汉化版」的中间产物都过期
+    m_l10nResult = l10n::ProbeResult{};
+    m_l10nFastDone = false;
+    if (m_l10nMode != nullptr)
+        m_l10nMode->setText(tr("还没体检"));
+    if (m_l10nTotal != nullptr)
+        m_l10nTotal->setText(tr("—"));
+    for (QLabel* value : { m_l10nPack, m_l10nDatapack, m_l10nRegion }) {
+        if (value != nullptr)
+            value->setText(tr("—"));
+    }
+    setL10nBusy(false);
+    refreshL10nBackups();
 }
 
 void MapInstancePage::setL10nBusy(bool busy)
@@ -1286,6 +1485,8 @@ void MapInstancePage::replaceWithL10nCopy(const QString& newWorldRoot)
     if (m_l10nState != nullptr)
         m_l10nState->setText(tr("已替换成汉化版，旧存档备份在 %1。重新体检可以看到新的待译条数。")
                                  .arg(QDir::toNativeSeparators(replaceStats.backupPath)));
+    // 刚多了一份备份：「恢复原图」那边要立刻能点到
+    refreshL10nBackups();
 }
 
 void MapInstancePage::reload()
@@ -1296,6 +1497,8 @@ void MapInstancePage::reload()
     m_meta = MapMeta::load(m_instance->instanceRoot());
     m_notes = MapNotes::load(m_instance->instanceRoot());
     applyNotesToUi();
+    // 备份可能有增删（上一次替换、或者玩家自己在资源管理器里放了 zip），每次进来对一眼
+    refreshL10nBackups();
 
     // 「汉化」页：第一次打开实例时静默跑一次快检（只读资源包与数据包，毫秒级）。
     // reload() 会被多次调用（存笔记、切页签），所以只跑一次；区块扫描永远要玩家自己点。

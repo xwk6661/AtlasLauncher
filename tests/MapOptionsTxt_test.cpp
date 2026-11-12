@@ -15,7 +15,9 @@
  *  You should have received a copy of the GNU General Public License
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
+#include <QFile>
 #include <QStringList>
+#include <QTemporaryDir>
 #include <QTest>
 
 #include <maps/MapOptionsTxt.h>
@@ -196,6 +198,152 @@ class MapOptionsTxtTest : public QObject {
         }
         QVERIFY(detected.has_value());
         QCOMPARE(int(*detected), expected);
+    }
+
+    /**
+     * `version:` 行：缺了它游戏会整份丢弃 options.txt（NumberFormatException），
+     * 首屏退回无障碍引导、quickPlay 进不去图。所以它必须在第一行，且不能被写成两行。
+     */
+    void versionStampGoesFirstOnlyForModern()
+    {
+        QStringList lines{ QStringLiteral("lang:zh_cn"), QStringLiteral("key_key.sneak:key.keyboard.left.control") };
+        QVERIFY(putVersionStamp(lines, Format::Modern, 4556));
+        QCOMPARE(lines.at(0), QStringLiteral("version:4556"));
+        QCOMPARE(lines.size(), 3);
+
+        // 幂等：再写一次不算改动，也不会多出一行
+        QVERIFY(!putVersionStamp(lines, Format::Modern, 4556));
+        QCOMPARE(lines.size(), 3);
+
+        // 已经有了但要改值：搬到第一行，不留重复
+        lines.append(QStringLiteral("fov:0.5"));
+        lines.append(QStringLiteral("version:999"));
+        // 上面那行是故意的（模拟被别家启动器拼过的文件）
+        QVERIFY(putVersionStamp(lines, Format::Modern, 4556));
+        QCOMPARE(lines.count(QStringLiteral("version:4556")), 1);
+        QCOMPARE(lines.count(QStringLiteral("version:999")), 0);
+        QCOMPARE(lines.at(0), QStringLiteral("version:4556"));
+
+        // 1.8 里没有这个键：一行都不写
+        QStringList legacy{ QStringLiteral("lang:zh_CN") };
+        QVERIFY(!putVersionStamp(legacy, Format::Legacy, 4556));
+        QCOMPARE(legacy.size(), 1);
+
+        // 拿不到 DataVersion 时也不写（写错值比不写更糟）
+        QStringList unknown{ QStringLiteral("lang:zh_cn") };
+        QVERIFY(!putVersionStamp(unknown, Format::Modern, -1));
+        QCOMPARE(unknown.size(), 1);
+    }
+
+    void onboardingIsTurnedOffWhenAsked()
+    {
+        QStringList lines{ QStringLiteral("fov:0.5") };
+        Defaults defaults;
+        defaults.skipAccessibilityOnboarding = true;
+
+        QCOMPARE(applyDefaults(lines, Format::Modern, defaults), 1);
+        QCOMPARE(lines.at(1), QStringLiteral("onboardAccessibility:false"));
+        QCOMPARE(applyDefaults(lines, Format::Modern, defaults), 0);
+
+        QStringList already{ QStringLiteral("onboardAccessibility:true") };
+        QVERIFY(disableOnboarding(already));
+        QCOMPARE(already, QStringList({ QStringLiteral("onboardAccessibility:false") }));
+        QVERIFY(!disableOnboarding(already));
+    }
+
+    void repairFileFixesLegacyWrittenFiles()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("options.txt"));
+
+        // 导入流程曾经写过的东西：中文 + key.keyboard.*，但没有 version:
+        {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            file.write("lang:zh_cn\n"
+                       "key_key.sneak:key.keyboard.left.control\n"
+                       "key_key.sprint:key.keyboard.left.shift\n"
+                       "resourcePacks:[\"vanilla\"]\n");
+        }
+
+        const auto first = repairOptionsTxt(path, QStringLiteral("1.21.10"), 4556, true);
+        QVERIFY2(first.error.isEmpty(), qPrintable(first.error));
+        QVERIFY(first.changed);
+        QVERIFY(first.version);
+        QVERIFY(first.onboarding);
+
+        QStringList lines;
+        {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            lines = QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        }
+        QCOMPARE(lines.at(0), QStringLiteral("version:4556"));
+        QVERIFY(lines.contains(QStringLiteral("lang:zh_cn")));
+        QVERIFY(lines.contains(QStringLiteral("key_key.sneak:key.keyboard.left.control")));
+        QVERIFY(lines.contains(QStringLiteral("onboardAccessibility:false")));
+
+        // 幂等
+        const auto second = repairOptionsTxt(path, QStringLiteral("1.21.10"), 4556, true);
+        QVERIFY(second.error.isEmpty());
+        QVERIFY(!second.changed);
+
+        // 1.8 的实例不碰 version，但引导页同样关掉（1.8 不认这个键，多一行无害）
+        const auto legacy = repairOptionsTxt(path, QStringLiteral("1.8.9"), 0, false);
+        QVERIFY(legacy.error.isEmpty());
+        QVERIFY(!legacy.version);
+    }
+
+
+    /// 从没被游戏读过的那份文件（没有 version:）：语言与键位一起补回来
+    void repairRestoresDefaultsOnlyWhenNeverRead()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("options.txt"));
+
+        {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Truncate));
+            file.write("lang:en_us\nkey_key.sneak:key.keyboard.left.shift\n");
+        }
+
+        Defaults restore;
+        restore.setChinese = true;
+        restore.swapSprintSneak = true;
+        const auto result = repairOptionsTxt(path, QStringLiteral("1.21.10"), 4556, true, restore);
+        QVERIFY(result.error.isEmpty());
+        QVERIFY(!result.hadVersion);
+        QVERIFY(result.changed);
+        QVERIFY(result.defaults);
+
+        QStringList lines;
+        {
+            QFile file(path);
+            QVERIFY(file.open(QIODevice::ReadOnly));
+            lines = QString::fromUtf8(file.readAll()).split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        }
+        QVERIFY(lines.contains(QStringLiteral("lang:zh_cn")));
+        QVERIFY(lines.contains(QStringLiteral("key_key.sneak:key.keyboard.left.control")));
+
+        // 已经带 version 的文件（玩家自己动过）不再补默认值
+        Defaults restore2;
+        restore2.setChinese = true;
+        const auto again = repairOptionsTxt(path, QStringLiteral("1.21.10"), 4556, false, restore2);
+        QVERIFY(again.hadVersion);
+        QVERIFY(!again.defaults);
+        QVERIFY(!again.changed);
+    }
+
+    void repairFileReportsMissingFile()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const auto result = repairOptionsTxt(dir.filePath(QStringLiteral("options.txt")), QStringLiteral("1.21.10"), 4556, true);
+        QVERIFY(result.missing);
+        QVERIFY(!result.changed);
+        QVERIFY(result.error.isEmpty());  // 新实例本来就没有 options.txt，不算错
     }
 };
 

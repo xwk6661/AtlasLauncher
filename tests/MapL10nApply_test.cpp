@@ -25,6 +25,7 @@
 #include <QTest>
 
 #include <archive/ArchiveReader.h>
+#include <archive/ArchiveWriter.h>
 #include <maps/MapL10nApply.h>
 #include <maps/MapL10nProbe.h>
 
@@ -151,6 +152,86 @@ class MapL10nApplyTest : public QObject {
 
         // 临时挪开的旧目录要清掉，不然每次替换都留一份 67 MB
         const auto leftovers = QDir(saves).entryList(QStringList{ QStringLiteral("MapWorld.old-*") }, QDir::Dirs);
+        QVERIFY2(leftovers.isEmpty(), qPrintable(leftovers.join(QLatin1Char(','))));
+    }
+
+    /**
+     * 恢复原图：备份 zip → 解回世界目录。
+     *
+     * 这条链路是「汉化写坏了怎么办」的唯一退路，必须验证：
+     *   · 备份里的文件原样回来（汉化版被顶掉）；
+     *   · 当前那份先挪开、成功后才删（不留 `MapWorld.old-*` 垃圾）；
+     *   · 备份里没有 level.dat 时拒绝动手。
+     */
+    void restorePutsBackupBackAndKeepsNothing()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        const QString saves = dir.filePath(QStringLiteral("saves"));
+        const QString world = QDir(saves).filePath(QStringLiteral("MapWorld"));
+        QVERIFY(QDir().mkpath(saves));
+        QVERIFY(copyFixtureTo(world));
+
+        const QString backupDir = dir.filePath(QStringLiteral("backups"));
+
+        // 先用"汉化版"顶替一次，正好得到一份真备份
+        const QString l10nWorld = dir.filePath(QStringLiteral("staged/MapWorld"));
+        QVERIFY(copyFixtureTo(l10nWorld));
+        QVERIFY(writeFile(QDir(l10nWorld).filePath(QStringLiteral("zh-marker.txt")), "translated"));
+        QVERIFY(writeFile(QDir(l10nWorld).filePath(QStringLiteral("level.dat")), "patched-level"));
+        const auto replaced = replaceWorldWithBackup(world, l10nWorld, backupDir);
+        QVERIFY2(replaced.ok(), qPrintable(replaced.error));
+        QVERIFY(QFileInfo::exists(QDir(world).filePath(QStringLiteral("zh-marker.txt"))));
+
+        const auto backups = listBackups(backupDir);
+        QCOMPARE(backups.size(), 1);
+        QCOMPARE(backups.first().path, replaced.backupPath);
+        QVERIFY(backups.first().bytes > 0);
+
+        // 还原：汉化版标记要消失，原始 level.dat 要回来
+        const auto restored = restoreWorldFromBackup(world, backups.first().path);
+        QVERIFY2(restored.ok(), qPrintable(restored.error));
+        QCOMPARE(restored.worldFolder, QStringLiteral("MapWorld"));
+        QVERIFY(restored.files >= 6);
+        QVERIFY(!QFileInfo::exists(QDir(world).filePath(QStringLiteral("zh-marker.txt"))));
+        QVERIFY(QFileInfo::exists(QDir(world).filePath(QStringLiteral("level.dat"))));
+        QVERIFY(QFileInfo::exists(QDir(world).filePath(QStringLiteral("region/r.0.0.mca"))));
+        QVERIFY(!QFileInfo::exists(QDir(world).filePath(QStringLiteral("level.dat.restore-marker"))));
+
+        // 临时目录与挪开的旧目录都不该留下
+        const auto leftovers = QDir(saves).entryList(QStringList{ QStringLiteral("MapWorld.*") }, QDir::Dirs | QDir::Files);
+        QVERIFY2(leftovers.isEmpty(), qPrintable(leftovers.join(QLatin1Char(','))));
+    }
+
+    void restoreRefusesZipWithoutLevelDat()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+
+        const QString world = dir.filePath(QStringLiteral("saves/MapWorld"));
+        QVERIFY(copyFixtureTo(world));
+        const QByteArray before = fileHash(QDir(world).filePath(QStringLiteral("level.dat")));
+
+        // 一份"不像世界"的 zip
+        const QString zip = dir.filePath(QStringLiteral("backups/broken.zip"));
+        QVERIFY(FS::ensureFilePathExists(zip));
+        {
+            MMCZip::ArchiveWriter writer(zip);
+            QVERIFY(writer.open().has_value());
+            const QString junk = dir.filePath(QStringLiteral("junk.txt"));
+            QVERIFY(writeFile(junk, "not a world"));
+            QVERIFY(writer.addFile(junk, QStringLiteral("junk.txt")).has_value());
+            QVERIFY(writer.close().has_value());
+        }
+
+        const auto restored = restoreWorldFromBackup(world, zip);
+        QVERIFY(!restored.ok());
+        QVERIFY(restored.error.contains(QStringLiteral("level.dat")));
+        // 原世界一个字节没动
+        QCOMPARE(fileHash(QDir(world).filePath(QStringLiteral("level.dat"))), before);
+        const auto leftovers =
+            QDir(dir.filePath(QStringLiteral("saves"))).entryList(QStringList{ QStringLiteral("MapWorld.*") }, QDir::Dirs);
         QVERIFY2(leftovers.isEmpty(), qPrintable(leftovers.join(QLatin1Char(','))));
     }
 

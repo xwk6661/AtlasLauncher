@@ -17,7 +17,9 @@
  */
 #include "MapOptionsTxt.h"
 
+#include <QFile>
 #include <QRegularExpression>
+#include <QSaveFile>
 
 namespace maps::options {
 namespace {
@@ -25,6 +27,9 @@ namespace {
 const QString LANGUAGE_KEY = QStringLiteral("lang");
 const QString SNEAK_KEY = QStringLiteral("key_key.sneak");
 const QString SPRINT_KEY = QStringLiteral("key_key.sprint");
+const QString VERSION_KEY = QStringLiteral("version");
+const QString ONBOARD_KEY = QStringLiteral("onboardAccessibility");
+const QString FULLSCREEN_KEY = QStringLiteral("fullscreen");
 
 /// 找 `key:` 开头的行；找不到返回 -1
 int findLine(const QStringList& lines, const QString& key)
@@ -50,6 +55,20 @@ bool put(QStringList& lines, const QString& key, const QString& value)
         return false;
     lines[index] = line;
     return true;
+}
+
+/// 和 put 一样，但写不出现在末尾：`version` 必须留在第一行（MC 自己也是这么写的）。
+/// 文件被别家工具拼过时可能出现多行同名键，这里一并清掉，保证只剩一行。
+bool putFront(QStringList& lines, const QString& key, const QString& value)
+{
+    const QString prefix = key + QLatin1Char(':');
+    const QStringList before = lines;
+    for (int i = lines.size() - 1; i >= 0; --i) {
+        if (lines.at(i).startsWith(prefix))
+            lines.removeAt(i);
+    }
+    lines.prepend(key + QLatin1Char(':') + value);
+    return lines != before;
 }
 
 }  // namespace
@@ -98,6 +117,11 @@ int applyDefaults(QStringList& lines, Format format, const Defaults& defaults)
         if (put(lines, SPRINT_KEY, sprintValue(format)))
             ++changed;
     }
+    if (defaults.skipAccessibilityOnboarding && disableOnboarding(lines))
+        ++changed;
+    if (defaults.setFullscreen && put(lines, FULLSCREEN_KEY, defaults.fullscreen ? QStringLiteral("true")
+                                                                                 : QStringLiteral("false")))
+        ++changed;
     return changed;
 }
 
@@ -121,6 +145,71 @@ std::optional<Format> detectFormat(const QStringList& lines)
     if (sawLegacy)
         return Format::Legacy;
     return std::nullopt;
+}
+
+bool putVersionStamp(QStringList& lines, Format format, int dataVersion)
+{
+    // 1.12 及更早没有这个键；1.13 起才由游戏自己写
+    if (format != Format::Modern || dataVersion <= 0)
+        return false;
+    return putFront(lines, VERSION_KEY, QString::number(dataVersion));
+}
+
+bool disableOnboarding(QStringList& lines)
+{
+    return put(lines, ONBOARD_KEY, QStringLiteral("false"));
+}
+
+RepairResult repairOptionsTxt(const QString& path, const QString& mcVersion, int dataVersion, bool fixOnboarding,
+                              const Defaults& restoreDefaults)
+{
+    RepairResult result;
+
+    QFile in(path);
+    if (!in.exists()) {
+        result.missing = true;
+        return result;
+    }
+    if (!in.open(QIODevice::ReadOnly)) {
+        result.error = QStringLiteral("无法读取 options.txt：%1").arg(in.errorString());
+        return result;
+    }
+    const QString text = QString::fromUtf8(in.readAll());
+    in.close();
+
+    QStringList lines = text.split(QLatin1Char('\n'));
+    while (!lines.isEmpty() && lines.last().trimmed().isEmpty())
+        lines.removeLast();
+
+    auto format = formatForVersion(mcVersion);
+    if (!format)
+        format = detectFormat(lines);
+    if (!format)
+        return result;  // 判不出代：一行都不碰（写错一代比不写更糟）
+
+    result.hadVersion = findLine(lines, VERSION_KEY) >= 0;
+    result.version = putVersionStamp(lines, *format, dataVersion);
+    if (fixOnboarding)
+        result.onboarding = disableOnboarding(lines);
+    // 从没被游戏读过的那份文件：当初写进去的中文/键位已经丢了，顺手补回来
+    if (!result.hadVersion && !restoreDefaults.isEmpty())
+        result.defaults = applyDefaults(lines, *format, restoreDefaults) > 0;
+    result.changed = result.version || result.onboarding || result.defaults;
+    if (!result.changed)
+        return result;
+
+    QSaveFile out(path);
+    if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        result.error = QStringLiteral("无法写入 options.txt：%1").arg(out.errorString());
+        return result;
+    }
+    out.write(lines.join(QLatin1Char('\n')).toUtf8());
+    out.write("\n");
+    if (!out.commit()) {
+        result.error = QStringLiteral("无法写入 options.txt：%1").arg(out.errorString());
+        return result;
+    }
+    return result;
 }
 
 }  // namespace maps::options

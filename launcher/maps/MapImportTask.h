@@ -127,6 +127,7 @@ class MapImportTask : public InstanceTask {
      */
     bool m_optionsSetChinese = false;
     bool m_optionsSwapSprintSneak = false;
+    bool m_optionsFullscreen = true;
 
     QString m_primaryWorldFolder;
     /// 已解出的世界目录（失败回滚用）

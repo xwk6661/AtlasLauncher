@@ -58,14 +58,23 @@ QString sneakValue(Format format);
 /// 同上，`key_key.sprint` 的值
 QString sprintValue(Format format);
 
-/// 导入时要写进 options.txt 的东西（对应设置页的两个开关）
+/// 导入时要写进 options.txt 的东西（对应设置页的开关）
 struct Defaults {
     /// 把语言设成简体中文
     bool setChinese = false;
     /// 对调 Shift / Ctrl（Shift 奔跑、Ctrl 蹲下）
     bool swapSprintSneak = false;
+    /// 关掉「无障碍引导」首屏 —— 它是 quickPlay 的死路，见下方 repairOptionsTxt 的说明
+    bool skipAccessibilityOnboarding = false;
+    /// 写 `fullscreen:`（地图实例默认全屏进图，见 MapSettingsWidget 里的说明）
+    bool setFullscreen = false;
+    /// 配合 setFullscreen 的值
+    bool fullscreen = true;
 
-    bool isEmpty() const { return !setChinese && !swapSprintSneak; }
+    bool isEmpty() const
+    {
+        return !setChinese && !swapSprintSneak && !skipAccessibilityOnboarding && !setFullscreen;
+    }
 };
 
 /**
@@ -83,5 +92,57 @@ int applyDefaults(QStringList& lines, Format format, const Defaults& defaults);
  * 都没有则返回 `nullopt`（新实例的 options.txt 本来就不存在，这条兜底多半用不上）。
  */
 std::optional<Format> detectFormat(const QStringList& lines);
+
+/**
+ * 补/修首行的 `version:<DataVersion>`。
+ *
+ * **这一行是启动失败的元凶，不是装饰。** MC 1.13 起会在 options.txt 第一行写
+ * `version:<DataVersion>`；**缺这一行时数据修复器把整份文件当成"最老的格式"**，
+ * 于是 `OptionsKeyLwjgl3Fix` 会把 `key_key.*` 的值当数字键码 `Integer.parseInt` 一把 ——
+ * 而我们写的正是 `key.keyboard.left.control`，直接
+ *
+ *     java.lang.NumberFormatException: For input string: "key.keyboard.left.control"
+ *     [Render thread/ERROR]: Failed to load options
+ *
+ * 结果：**整份设置全丢**（中文语言、Shift/Ctrl 互换一起没），并且 `onboardAccessibility`
+ * 回到默认 `true`，游戏第一屏变成无障碍引导 —— 那一页会把 `--quickPlaySingleplayer`
+ * 挡在外面，玩家看到的就是「点进去没有反应」（2026-11-12 复现）。
+ *
+ * 只有 Modern 需要：1.8 的 options.txt 里没有这个键，写了反而多一条 `Skipping bad option`。
+ *
+ * @param dataVersion 该实例的 DataVersion（取不到就传 <=0，函数什么都不做）
+ * @return 是否真的改了
+ */
+bool putVersionStamp(QStringList& lines, Format format, int dataVersion);
+
+/// 把 `onboardAccessibility` 写成 `false`（键不存在就追加）；返回是否真的改了
+bool disableOnboarding(QStringList& lines);
+
+/// 一次读-改-写 options.txt 的结果
+struct RepairResult {
+    bool missing = false;    ///< 文件不存在（新实例，本来就没有 —— 不算错）
+    bool changed = false;    ///< 是否落盘
+    bool version = false;    ///< 补了 version
+    bool onboarding = false; ///< 关了无障碍引导
+    bool defaults = false;   ///< 补回了语言 / 键位 / 全屏
+    /// 修之前文件里有没有 `version:`。没有 = 这份文件是我们自己写的，
+    /// 而且游戏从没成功读进去过（读进去就会把 version 写回来）。
+    bool hadVersion = true;
+    QString error;           ///< 非空 = 读写失败
+};
+
+/**
+ * 就地修一份 options.txt：补 `version`、按需关掉无障碍引导。
+ *
+ * 幂等 —— 已经是好的文件再跑一遍返回 `changed == false`。
+ * 拿不准版本（`formatForVersion` 与 `detectFormat` 都给不出结论）时一行都不碰。
+ *
+ * @param restoreDefaults 只在「文件里没有 version」时应用：那种文件是导入流程写的、
+ *        游戏一次都没读成功过（读成功就会把 version 写回来），说明当初写进去的
+ *        中文与键位已经跟着 `Failed to load options` 一起丢了 —— 正好补回去。
+ *        玩家自己动过的文件（有 version）一律不碰。
+ */
+RepairResult repairOptionsTxt(const QString& path, const QString& mcVersion, int dataVersion, bool fixOnboarding,
+                              const Defaults& restoreDefaults = {});
 
 }  // namespace maps::options

@@ -48,6 +48,7 @@
 
 #include "FileSystem.h"
 #include "MapL10nProbe.h"
+#include "MMCZip.h"
 #include "archive/ArchiveWriter.h"
 
 namespace maps::l10n {
@@ -801,7 +802,7 @@ ReplaceStats replaceWorldWithBackup(const QString& worldRoot, const QString& new
         for (const auto& [source, dest] : files) {
             auto added = writer.addFile(source, dest);
             if (!added) {
-                writer.close();
+                (void)writer.close();
                 QFile::remove(stats.backupPath);
                 stats.error = tr("备份失败（%1）：%2").arg(dest, added.error());
                 return stats;
@@ -899,6 +900,146 @@ void MapL10nReplaceTask::executeTask()
 }
 
 void MapL10nReplaceTask::onReplaceFinished()
+{
+    if (m_aborted.load()) {
+        emitAborted();
+        return;
+    }
+    if (!m_stats.error.isEmpty()) {
+        emitFailed(m_stats.error);
+        return;
+    }
+    emitSucceeded();
+}
+
+// ────────────────────────── 从备份还原 ──────────────────────────
+
+QList<BackupEntry> listBackups(const QString& backupDir)
+{
+    QList<BackupEntry> entries;
+    QDir dir(backupDir);
+    if (!dir.exists())
+        return entries;
+
+    // QDir::Time 让最新的排在最前：「恢复原图」最常要的就是刚才那一次
+    const auto files = dir.entryInfoList({ QStringLiteral("*.zip") }, QDir::Files, QDir::Time);
+    entries.reserve(files.size());
+    for (const auto& info : files) {
+        entries.append(BackupEntry{ info.absoluteFilePath(), info.lastModified(), info.size() });
+    }
+    return entries;
+}
+
+RestoreStats restoreWorldFromBackup(const QString& worldRoot, const QString& backupPath,
+                                    const std::function<bool(int done, int total)>& progress)
+{
+    RestoreStats stats;
+    stats.backupPath = backupPath;
+    stats.worldFolder = QFileInfo(worldRoot).fileName();
+
+    if (!QFileInfo::exists(backupPath)) {
+        stats.error = tr("备份文件不存在：%1").arg(backupPath);
+        return stats;
+    }
+    if (!QFileInfo(worldRoot).isDir()) {
+        stats.error = tr("存档目录不存在：%1").arg(worldRoot);
+        return stats;
+    }
+    if (progress && !progress(0, 1)) {
+        stats.error = tr("已取消。");
+        return stats;
+    }
+
+    const QString stamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd-HHmmss"));
+    const QString scratch = worldRoot + QStringLiteral(".restore-") + stamp;
+    if (QFileInfo::exists(scratch))
+        FS::deletePath(scratch);
+
+    // 解压到世界目录旁边（同一个卷，后面才有得 rename）。MMCZip 这一层不回调进度，
+    // 所以进度条只在「开始 / 完成」两头动，中间靠状态文字说明。
+    auto extracted = MMCZip::extractDir(backupPath, scratch);
+    if (!extracted) {
+        FS::deletePath(scratch);
+        stats.error = tr("解压备份失败：%1").arg(extracted.error());
+        return stats;
+    }
+    stats.files = int(extracted->size());
+
+    // 没有 level.dat 的目录会被游戏当成新世界重建 —— 宁可报错也不能让它就位
+    if (!QFile::exists(FS::PathCombine(scratch, QStringLiteral("level.dat")))) {
+        FS::deletePath(scratch);
+        stats.error = tr("这份备份里没有 level.dat，不像是世界存档，已放弃。");
+        return stats;
+    }
+    if (progress && !progress(1, 1)) {
+        FS::deletePath(scratch);
+        stats.error = tr("已取消，存档没有改动。");
+        return stats;
+    }
+
+    // ── 解压好了才开始动目录 ──
+    const QString oldMoved = worldRoot + QStringLiteral(".old-") + stamp;
+    if (QFileInfo::exists(oldMoved))
+        FS::deletePath(oldMoved);
+
+    if (!FS::move(worldRoot, oldMoved)) {
+        FS::deletePath(scratch);
+        stats.error = tr("无法把当前存档挪开（可能正被游戏占用）。");
+        return stats;
+    }
+    if (!FS::move(scratch, worldRoot)) {
+        if (!FS::move(oldMoved, worldRoot))
+            stats.error = tr("还原失败，且当前存档没能挪回原位！\n当前存档在：%1").arg(oldMoved);
+        else
+            stats.error = tr("还原失败，当前存档已还原。");
+        FS::deletePath(scratch);
+        return stats;
+    }
+
+    FS::deletePath(oldMoved);
+    return stats;
+}
+
+MapL10nRestoreTask::MapL10nRestoreTask(QString worldRoot, QString backupPath)
+    : m_worldRoot(std::move(worldRoot))
+    , m_backupPath(std::move(backupPath))
+{
+    setAbortable(true);
+    setAbortButtonText(tr("取消"));
+    connect(&m_watcher, &QFutureWatcher<void>::finished, this, &MapL10nRestoreTask::onRestoreFinished);
+}
+
+bool MapL10nRestoreTask::abort()
+{
+    if (!canAbort() || !isRunning())
+        return false;
+    m_aborted.store(true);
+    return true;
+}
+
+void MapL10nRestoreTask::executeTask()
+{
+    setStatus(tr("正在解压备份…"));
+    setProgress(0, 0);
+
+    m_watcher.setFuture(QtConcurrent::run(QThreadPool::globalInstance(), [this] {
+        m_stats = restoreWorldFromBackup(m_worldRoot, m_backupPath, [this](int done, int total) {
+            if (m_aborted.load())
+                return false;
+            QMetaObject::invokeMethod(
+                this,
+                [this, done, total] {
+                    setProgress(done, total);
+                    if (done >= total)
+                        setStatus(tr("正在就位存档目录…"));
+                },
+                Qt::QueuedConnection);
+            return true;
+        });
+    }));
+}
+
+void MapL10nRestoreTask::onRestoreFinished()
 {
     if (m_aborted.load()) {
         emitAborted();

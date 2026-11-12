@@ -76,6 +76,7 @@ class MapSettingsWidget : public QWidget {
     QLineEdit* m_libraryDir = nullptr;
     QCheckBox* m_optionsChinese = nullptr;
     QCheckBox* m_optionsSprintSneak = nullptr;
+    QCheckBox* m_optionsFullscreen = nullptr;
     QLineEdit* m_l10nApiBase = nullptr;
     QLineEdit* m_l10nApiKey = nullptr;
     QLineEdit* m_l10nModel = nullptr;

@@ -110,6 +110,12 @@ class MapInstancePage : public QWidget, public BasePage {
     void applyL10n();
     /// 用汉化版副本顶替本实例存档：旧存档先打包成 zip 备份（不删实例，随时可还原）
     void replaceWithL10nCopy(const QString& newWorldRoot);
+    /// 备份目录（`<实例>/l10n/backups`）
+    QString l10nBackupDir() const;
+    /// 把「有几份备份」刷到界面上
+    void refreshL10nBackups();
+    /// 从备份还原原图（当前存档先挪开，成功后才删）
+    void restoreL10nBackup();
 
     QWidget* m_l10nPage = nullptr;
     QLabel* m_l10nMode = nullptr;
@@ -120,10 +126,13 @@ class MapInstancePage : public QWidget, public BasePage {
     QLabel* m_l10nRegion = nullptr;
     QLabel* m_l10nState = nullptr;
     QLabel* m_l10nNotes = nullptr;
+    QLabel* m_l10nBackupState = nullptr;
     QPushButton* m_l10nDeep = nullptr;
     QPushButton* m_l10nExport = nullptr;
     QPushButton* m_l10nTranslate = nullptr;
     QPushButton* m_l10nApply = nullptr;
+    QPushButton* m_l10nRestore = nullptr;
+    QPushButton* m_l10nOpenBackups = nullptr;
     l10n::MapL10nTask* m_l10nTask = nullptr;
     /// 最近一次体检结果：导出待译清单要用（切页签不会丢）
     l10n::ProbeResult m_l10nResult;

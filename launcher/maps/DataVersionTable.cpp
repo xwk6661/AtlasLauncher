@@ -115,6 +115,19 @@ QString DataVersionTable::versionForDataVersion(int dataVersion) const
     return m_byDataVersion.value(dataVersion);
 }
 
+int DataVersionTable::dataVersionFor(const QString& id) const
+{
+    if (const auto exact = entry(id))
+        return exact->dataVersion;
+    // 退一步：不高于它的最近正式版（快照 / 认不出的写法走这里）
+    const QString nearest = nearestReleaseAtOrBelow(id);
+    if (nearest.isEmpty())
+        return -1;
+    if (const auto fallback = entry(nearest))
+        return fallback->dataVersion;
+    return -1;
+}
+
 std::optional<std::array<int, 3>> DataVersionTable::parseReleaseKey(const QString& id)
 {
     static const QRegularExpression release(QStringLiteral("^(\\d{1,2})\\.(\\d{1,2})(?:\\.(\\d{1,2}))?$"));

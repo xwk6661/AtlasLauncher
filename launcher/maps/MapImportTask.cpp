@@ -77,6 +77,7 @@ MapImportTask::MapImportTask(QString archivePath, MapScanResult scan, MapImportO
         const auto settings = app->settings();
         m_optionsSetChinese = settings->get("MapOptionsForceChinese").toBool();
         m_optionsSwapSprintSneak = settings->get("MapOptionsSwapSprintSneak").toBool();
+        m_optionsFullscreen = settings->get("MapStartFullscreen").toBool();
     }
 }
 
@@ -374,6 +375,12 @@ Result<> MapImportTask::applyOptionsDefaults()
     options::Defaults defaults;
     defaults.setChinese = m_optionsSetChinese;
     defaults.swapSprintSneak = m_optionsSwapSprintSneak;
+    // 首屏无障碍引导会把 quickPlay 挡在外面（2026-11-12 复现），地图实例一律关掉
+    defaults.skipAccessibilityOnboarding = true;
+    // 全屏：地图本来就是"一张图一个世界"，全屏是它的正常形态；顺带绕开
+    // "窗口模式一片白"那类 DWM 合成问题（见 05 文档 §6）
+    defaults.setFullscreen = m_optionsFullscreen;
+    defaults.fullscreen = true;
 
     if (packs.isEmpty() && defaults.isEmpty())
         return {};
@@ -418,8 +425,15 @@ Result<> MapImportTask::applyOptionsDefaults()
         auto format = options::formatForVersion(m_mcVersion);
         if (!format)
             format = options::detectFormat(lines);
-        if (format && options::applyDefaults(lines, *format, defaults) > 0)
-            touched = true;
+        if (format) {
+            // `version:` 必须一起写：没有它，游戏把整份文件当 1.12 之前的老格式去修复，
+            // 我们刚写进去的 `key.keyboard.*` 会让 Integer.parseInt 抛异常，整份设置作废
+            // （含刚设好的中文），首屏还退回无障碍引导 —— 图就进不去了。
+            if (options::putVersionStamp(lines, *format, DataVersionTable::instance().dataVersionFor(m_mcVersion)))
+                touched = true;
+            if (options::applyDefaults(lines, *format, defaults) > 0)
+                touched = true;
+        }
     }
 
     if (!touched)

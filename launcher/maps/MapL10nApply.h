@@ -159,4 +159,67 @@ class MapL10nReplaceTask : public Task {
     QFutureWatcher<void> m_watcher;
 };
 
+// ────────────────────────── 从备份还原 ──────────────────────────
+
+/// 备份目录里的一份 zip
+struct BackupEntry {
+    QString path;
+    QDateTime modified;
+    qint64 bytes = 0;
+};
+
+/**
+ * 列 `backupDir` 下的 `*.zip`，**新的在前**。
+ *
+ * 名字是 `replaceWorldWithBackup` 生成的 `<世界目录>-<yyyyMMdd-HHmmss>.zip`；
+ * 这里只按修改时间排，不去解析名字（玩家手动放进去的 zip 也能用）。
+ */
+QList<BackupEntry> listBackups(const QString& backupDir);
+
+struct RestoreStats {
+    QString backupPath;
+    QString worldFolder;
+    int files = 0;
+    QString error;
+
+    bool ok() const { return error.isEmpty(); }
+};
+
+/**
+ * 把一份备份 zip 解回世界目录（「恢复原图」）。
+ *
+ * 和替换同样的纪律 —— 任何一步失败都不留下半个世界：
+ *   1. 先解到世界目录旁边的临时目录，**必须有 level.dat** 才继续；
+ *   2. 当前世界（通常已经是汉化版）改名挪开，临时目录改名就位；就位失败就把旧的改回来；
+ *   3. 成功后才删掉挪开的那个目录。
+ *
+ * @param progress 解压阶段回调（已完成, 总数）；返回 false 取消（此时世界还没被碰过）
+ */
+RestoreStats restoreWorldFromBackup(const QString& worldRoot, const QString& backupPath,
+                                    const std::function<bool(int done, int total)>& progress = {});
+
+/// 把 `restoreWorldFromBackup` 包成任务（解压几百 MB 不能写在 UI 线程里）
+class MapL10nRestoreTask : public Task {
+    Q_OBJECT
+
+   public:
+    MapL10nRestoreTask(QString worldRoot, QString backupPath);
+    ~MapL10nRestoreTask() override = default;
+
+    void executeTask() override;
+    bool abort() override;
+
+    const RestoreStats& stats() const { return m_stats; }
+
+   private slots:
+    void onRestoreFinished();
+
+   private:
+    QString m_worldRoot;
+    QString m_backupPath;
+    std::atomic<bool> m_aborted{ false };
+    RestoreStats m_stats;
+    QFutureWatcher<void> m_watcher;
+};
+
 }  // namespace maps::l10n

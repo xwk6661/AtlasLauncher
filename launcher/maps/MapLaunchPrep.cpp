@@ -28,12 +28,64 @@
 #include "BaseInstance.h"
 #include "DataVersionTable.h"
 #include "FileSystem.h"
+#include "MapOptionsTxt.h"
 #include "minecraft/MinecraftInstance.h"
+#include "minecraft/PackProfile.h"
 #include "settings/SettingsObject.h"
 
 namespace maps {
 
 namespace {
+
+/**
+ * 启动前修一次 `options.txt`（见 `maps/MapOptionsTxt.h` 里 `repairOptionsTxt` 的说明）。
+ *
+ * 两条都要在这里修，因为导入流程只会照顾**新**实例：
+ *   · `version:` 行缺失 —— 2026-11-12 之前导入的实例全是这样，游戏读设置时抛
+ *     `NumberFormatException`，整份 options.txt（中文语言、Shift/Ctrl 互换）作废；
+ *   · `onboardAccessibility:true` —— 设置读挂之后游戏写回的默认值就是 true，
+ *     下一次启动会先弹「无障碍引导」，**quickPlay 被它挡住**，玩家点了启动也没进图。
+ *
+ * 只在开了「自动进图」的实例上关引导：关掉自动进图的实例，首屏本来就是主菜单，
+ * 没必要动玩家的无障碍设置。
+ */
+void repairOptionsFile(MinecraftInstance* instance, QString mcVersion)
+{
+    if (mcVersion.isEmpty()) {
+        // map.json 没有版本（老实例）时退回组件版本；两者都没有就只能放弃
+        if (auto* profile = instance->getPackProfile())
+            mcVersion = profile->getComponentVersion(QStringLiteral("net.minecraft"));
+    }
+    if (mcVersion.isEmpty())
+        return;
+
+    const QString path = FS::PathCombine(instance->gameRoot(), QStringLiteral("options.txt"));
+    const int dataVersion = DataVersionTable::instance().dataVersionFor(mcVersion);
+    const bool fixOnboarding = instance->settings()->get("MapAutoEnter").toBool();
+
+    // 只在「文件从没被游戏读过」时补回中文与键位（见 repairOptionsTxt 的参数说明）。
+    // 这三项是**全局**设置：实例的 SettingsObject 里没有它们（不像 MapAutoEnter 有
+    // registerOverride），从 instance->settings() 读只会拿到空值 → false。
+    options::Defaults restoreDefaults;
+    if (const auto* app = APPLICATION) {
+        const auto settings = app->settings();
+        restoreDefaults.setChinese = settings->get("MapOptionsForceChinese").toBool();
+        restoreDefaults.swapSprintSneak = settings->get("MapOptionsSwapSprintSneak").toBool();
+    }
+    restoreDefaults.skipAccessibilityOnboarding = fixOnboarding;
+
+    const auto result = options::repairOptionsTxt(path, mcVersion, dataVersion, fixOnboarding, restoreDefaults);
+    if (!result.error.isEmpty()) {
+        // 不挡启动：读不出来的设置游戏自己会重建一份，只是设置会回默认
+        qWarning() << "Map launch: options.txt 修复失败" << path << result.error;
+        return;
+    }
+    if (result.changed) {
+        qDebug() << "Map launch: 修正 options.txt" << path << "version=" << dataVersion << "补version=" << result.version
+                 << "关引导页=" << result.onboarding << "补默认值=" << result.defaults << "修之前有version=" << result.hadVersion
+                 << "设置快照 中文=" << restoreDefaults.setChinese << "键位=" << restoreDefaults.swapSprintSneak;
+    }
+}
 
 // 「这个版本能不能 quickPlay」在正常流程里靠实例解析后的 traits 判断。但 Application::launch()
 // 走的是「刚启动、组件还没解析完」的时刻，那一刻 traits() 是空的——于是 1.21.1 会被误判成
@@ -279,6 +331,12 @@ MapLaunchPrep::Plan MapLaunchPrep::prepareForLaunch(MinecraftInstance* instance,
 
     QString error;
     const auto meta = MapMeta::load(instance->instanceRoot(), &error);
+
+    // 修 options.txt：必须在游戏进程启动之前 —— 游戏只在启动那一刻读一次文件。
+    // 版本优先用 map.json 里的判定结果：**冷启动时组件还没解析完**，PackProfile 里
+    // 拿不到 `net.minecraft` 的版本号（2026-11-12 实测，"实例组件尚未解析"那条日志）。
+    repairOptionsFile(instance, meta.version.mcVersion);
+
     if (meta.worlds.isEmpty()) {
         plan.track = Track::Plain;
         plan.reason = error.isEmpty() ? QStringLiteral("map.json 里没有记录世界目录，无法自动进图") : error;
