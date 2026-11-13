@@ -184,7 +184,7 @@ class HallRow : public QWidget {
             chipRow->setSpacing(4);
             for (const auto& chipText : chips) {
                 auto* chip = new QLabel(chipText, this);
-                chip->setStyleSheet(ui::chipStyle(ui::mutedTextColor()));
+                chip->setStyleSheet(ui::chipStyle(ui::bodyTextColor()));
                 chipRow->addWidget(chip);
             }
             chipRow->addStretch(1);

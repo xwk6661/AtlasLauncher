@@ -69,6 +69,13 @@ inline QColor accentColor()
     return QApplication::palette().color(QPalette::Highlight);
 }
 
+/// 正文色（palette WindowText）。中性徽章用它而不是次要色：
+/// 11px 的灰字放在 12% 灰底上，亮色主题只有 2:1 出头，读不清。
+inline QColor bodyTextColor()
+{
+    return QApplication::palette().color(QPalette::WindowText);
+}
+
 /// 次要文字色（等价于 AIO 的 --text-3）
 inline QColor mutedTextColor()
 {

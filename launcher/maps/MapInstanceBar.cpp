@@ -358,7 +358,7 @@ void MapInstanceBar::showMapCard(MinecraftInstance* instance)
     addChip(entry.loaderVersion.isEmpty()
                 ? entry.loaderName
                 : QStringLiteral("%1 %2").arg(entry.loaderName, entry.loaderVersion),
-            ui::mutedTextColor());
+            ui::bodyTextColor());
     // 置信度（LOW / HIGH）只留在导入确认与实例「地图」页；侧栏是日常操作区，不摆判定细节
 
     // 世界下拉：一包多世界才出现
@@ -445,7 +445,7 @@ void MapInstanceBar::showWorldCard(MinecraftInstance* instance, const QStringLis
     addChip(entry.loaderVersion.isEmpty()
                 ? entry.loaderName
                 : QStringLiteral("%1 %2").arg(entry.loaderName, entry.loaderVersion),
-            ui::mutedTextColor());
+            ui::bodyTextColor());
 
     for (const auto& world : worlds)
         m_worldCombo->addItem(world, world);
