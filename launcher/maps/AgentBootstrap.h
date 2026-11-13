@@ -120,8 +120,15 @@ class AgentBootstrap : public QObject {
 
     static ArgsResult buildAgentArgs(const AgentSymbolTable& table, const AgentOptions& options);
 
-    /// 把 `-javaagent:<jar>=<args>` 追加进实例的 JvmArgs（JvmArgs 是追加语义，不会顶掉内存/GC 参数）
-    static Result<> injectIntoJvmArgs(MinecraftInstance* instance, const QString& agentArgs);
+    /**
+     * 记录一条运行时注入的 `-javaagent`（quickboot，≤1.19.4 直连用）。
+     *
+     * 落点是实例的**运行时属性** `mapsJavaAgents`，不写 `JvmArgs`、不落盘：
+     * `JvmArgs` 是 override 设置，`OverrideJavaArgs=false` 时实例里写的值根本读不到
+     * （quickboot 与 introskip 都栽过，见 06 §18）。真正拼进命令行的是
+     * `MinecraftInstance::extraArguments()`。
+     */
+    static Result<> injectAgent(MinecraftInstance* instance, const QString& agentArgs);
 
     /// 1.20+：注入 introskip agent（把确认页那道闸门改成直接加载世界）
     static Result<> injectIntroSkip(MinecraftInstance* instance, const IntroSkipRule& rule, const QString& logPath);

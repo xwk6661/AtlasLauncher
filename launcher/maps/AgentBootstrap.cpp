@@ -344,7 +344,7 @@ void setMapAgent(MinecraftInstance* instance, const QString& jarPath, const QStr
 
 }  // namespace
 
-Result<> AgentBootstrap::injectIntoJvmArgs(MinecraftInstance* instance, const QString& agentArgs)
+Result<> AgentBootstrap::injectAgent(MinecraftInstance* instance, const QString& agentArgs)
 {
     if (instance == nullptr)
         return std::unexpected{ QStringLiteral("实例为空，无法注入 Agent") };

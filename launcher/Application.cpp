@@ -818,8 +818,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         // 写法随版本分叉，见 maps/MapOptionsTxt.h
         m_settings->registerSetting("MapOptionsForceChinese", true);
         m_settings->registerSetting("MapOptionsSwapSprintSneak", true);
-        // 地图实例默认全屏进图：地图是「一张图一个世界」，全屏才是正常形态；
-        // 顺带绕开有些机器上「窗口模式整片白」的 DWM 合成问题（05 文档 §6.21）
+        // 地图实例默认全屏进图：地图是「一张图一个世界」，全屏才是正常形态
+        // （曾被用来绕开「窗口模式整片白」，该问题 2026-11-13 已解决，见 05 文档 §6）
         m_settings->registerSetting("MapStartFullscreen", true);
         // 汉化：自动翻译走 OpenAI 兼容接口（Base URL 可以指到任何兼容网关）
         m_settings->registerSetting("MapL10nApiBase", QStringLiteral("https://api.openai.com/v1"));

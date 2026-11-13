@@ -288,7 +288,7 @@ Result<> MapLaunchPrep::prepare(MinecraftInstance* instance, const MapMeta& meta
 
             // quickPlay 与 Agent 二选一：老版本不认这个设置，留着反而会误导
             instance->settings()->set("JoinWorldOnLaunch", QString());
-            const auto injected = AgentBootstrap::injectIntoJvmArgs(instance, args.args);
+            const auto injected = AgentBootstrap::injectAgent(instance, args.args);
             if (!injected) {
                 plan.track = Track::Plain;
                 plan.reason = injected.error();

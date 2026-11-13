@@ -79,7 +79,7 @@
 
 ## 代码地图
 
-新代码在 `launcher/maps/`（**45 个 .cpp + 50 个 .h，约 2.5 万行**；逐文件清单见
+新代码在 `launcher/maps/`（**45 个 .cpp + 51 个 .h，约 2.5 万行**；逐文件清单见
 [05 §4.1](05-进度与遗留.md)）、`launcher/ResourcePaths`
 与 `launcher/net/DownloadSource`（换源）；
 `launcher/net/{Request,FileSink}` 与 `Application` 为下载能力有较大改动（续传 / 看门狗 / 重试 / 连接池 / 分片），
@@ -93,7 +93,7 @@
 | **地图库** | `MapLibrary`（`map-library.json`：分类 / 元数据 / 已安装判定）· `MapLibraryPanel`（分类栏固定 132px + 列表 + 拖拽归类 + 自定义分类管理）。位置：添加实例 → 导入 → 地图存档导入下方 |
 | **启动** | `MapLaunchPrep`（选轨道 / 统一准备点）· `AgentBootstrap`（符号表 → `-javaagent`）· `MapWindowFocus`（把前台交给游戏窗口） |
 | **大厅** | `HallAPI` · `HallTypes` · `HallProxy` · `BrowserFetch` · `HallDialog` · `MapHallPage` |
-| **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（「地图」页）· `MapGalleryPage/Window` · `MapReviewCard`（评论卡）· `MapInfoCard`（信息卡工厂）· `MapCoverLoader`（封面）· `OptiFineDialog` · `StarRatingWidget` · `MapTheme` |
+| **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（「地图」页）· `MapGalleryPage/Window` · `MapReviewCard`（评论卡）· `MapInfoCard`（信息卡工厂）· `MapCoverLoader`（封面）· `OptiFineDialog` · `StarRatingWidget` · `MapTheme`（颜色）· `MapStyle`（尺度：间距 / 字体层级 / 主次按钮 / 表格） |
 | **模组** | `ModPresets`（预设数据 + 双平台解析 + 依赖）· `ModPresetDialog`（安装 / 编辑）· `ModSearchDialog`（搜索添加） |
 | **设置** | `MapSettingsWidget`（内容体）· `MapPage`（全局「地图」）· `MapResourcePage`（全局「资源」）· `ResourceStore`（迁移）· `launcher/ResourcePaths`（路径解析） |
 | **退出** | `MapQuitWatcher`（1.20+ 读日志关游戏） |

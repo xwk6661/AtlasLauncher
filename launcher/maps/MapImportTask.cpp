@@ -377,8 +377,9 @@ Result<> MapImportTask::applyOptionsDefaults()
     defaults.swapSprintSneak = m_optionsSwapSprintSneak;
     // 首屏无障碍引导会把 quickPlay 挡在外面（2026-11-12 复现），地图实例一律关掉
     defaults.skipAccessibilityOnboarding = true;
-    // 全屏：地图本来就是"一张图一个世界"，全屏是它的正常形态；顺带绕开
-    // "窗口模式一片白"那类 DWM 合成问题（见 05 文档 §6）
+    // 全屏：地图本来就是"一张图一个世界"，全屏是它的正常形态。
+    // （2026-11-12 曾用它绕过本机「窗口模式一片白」，该问题已于 11-13 解决，
+    //   这里不再作为规避手段，只是玩家可关的默认偏好。）
     defaults.setFullscreen = m_optionsFullscreen;
     defaults.fullscreen = true;
 
