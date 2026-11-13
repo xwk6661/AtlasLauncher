@@ -42,6 +42,7 @@
 
 #include "InstanceList.h"
 #include "MapTheme.h"
+#include "MapStyle.h"
 #include "minecraft/MinecraftInstance.h"
 
 namespace maps {
@@ -279,7 +280,8 @@ void MapGalleryPage::buildUi()
     auto* detail = new QWidget(splitter);
     detail->setFixedWidth(250);
     auto* detailLayout = new QVBoxLayout(detail);
-    detailLayout->setContentsMargins(10, 10, 10, 10);
+    detailLayout->setContentsMargins(ui::kPageMargin, ui::kPageMargin, ui::kPageMargin, ui::kPageMargin);
+    detailLayout->setSpacing(ui::kSpaceS);
 
     m_cover = new QLabel(detail);
     m_cover->setFixedSize(230, 129);  // 16:9
@@ -288,23 +290,23 @@ void MapGalleryPage::buildUi()
     detailLayout->addWidget(m_cover);
 
     m_title = new QLabel(detail);
-    QFont titleFont = m_title->font();
-    titleFont.setPointSizeF(titleFont.pointSizeF() * 1.15);
-    titleFont.setBold(true);
-    m_title->setFont(titleFont);
+    m_title->setFont(ui::pageTitleFont(m_title->font()));
     m_title->setWordWrap(true);
     detailLayout->addWidget(m_title);
 
     m_badge = new QLabel(detail);
     m_badge->setWordWrap(true);
+    m_badge->setFont(ui::metaFont(m_badge->font()));
     detailLayout->addWidget(m_badge);
 
     m_confidence = new QLabel(detail);
     m_confidence->setWordWrap(true);
+    m_confidence->setFont(ui::metaFont(m_confidence->font()));
     detailLayout->addWidget(m_confidence);
 
     m_stats = new QLabel(detail);
     m_stats->setWordWrap(true);
+    m_stats->setFont(ui::metaFont(m_stats->font()));
     detailLayout->addWidget(m_stats);
 
     m_evidence = new QLabel(detail);
@@ -318,10 +320,11 @@ void MapGalleryPage::buildUi()
 
     detailLayout->addStretch(1);
 
-    m_launchButton = new QPushButton(tr("进入地图"), detail);
-    m_launchButton->setMinimumHeight(34);
+    m_launchButton = ui::makePrimaryButton(tr("进入地图"), detail);
     m_openButton = new QPushButton(tr("打开实例"), detail);
     auto* importButton = new QPushButton(tr("导入地图…"), detail);
+    ui::applySecondaryButton(m_openButton);
+    ui::applySecondaryButton(importButton);
 
     detailLayout->addWidget(m_launchButton);
     detailLayout->addWidget(m_openButton);

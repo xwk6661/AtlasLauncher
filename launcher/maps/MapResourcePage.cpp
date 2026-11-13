@@ -38,6 +38,7 @@
 
 #include "Application.h"
 #include "FileSystem.h"
+#include "MapStyle.h"
 #include "ResourcePaths.h"
 #include "ResourceStore.h"
 #include "settings/SettingsObject.h"
@@ -109,12 +110,12 @@ class CandidateDialog : public QDialog {
 MapResourcePage::MapResourcePage(QWidget* parent) : QWidget(parent)
 {
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(8, 8, 8, 8);
-    layout->setSpacing(10);
+    layout->setContentsMargins(ui::pageMargins());
+    layout->setSpacing(ui::kSpaceM);
 
     auto* box = new QGroupBox(tr("资源库位置"), this);
     auto* boxLayout = new QVBoxLayout(box);
-    boxLayout->setSpacing(8);
+    boxLayout->setSpacing(ui::kSpaceS);
 
     auto* intro = new QLabel(
         tr("Minecraft 的三样公共资源 —— 游戏资源（assets）、运行库（libraries）、"
@@ -131,6 +132,8 @@ MapResourcePage::MapResourcePage(QWidget* parent) : QWidget(parent)
     m_dir->setText(APPLICATION->settings()->get("SharedResourceDir").toString());
     auto* browseButton = new QPushButton(tr("浏览…"), box);
     auto* detectButton = new QPushButton(tr("检测本机…"), box);
+    ui::applySecondaryButton(browseButton);
+    ui::applySecondaryButton(detectButton);
     dirRow->addWidget(m_dir, 1);
     dirRow->addWidget(browseButton);
     dirRow->addWidget(detectButton);
@@ -143,7 +146,7 @@ MapResourcePage::MapResourcePage(QWidget* parent) : QWidget(parent)
     boxLayout->addWidget(m_migrate);
 
     auto* actionRow = new QHBoxLayout();
-    m_apply = new QPushButton(tr("应用资源库"), box);
+    m_apply = ui::makePrimaryButton(tr("应用资源库"), box);
     m_apply->setToolTip(tr("迁移并切换路径。改完需要重启启动器才生效（资源路径在启动时就固定了）。"));
     actionRow->addWidget(m_apply);
     actionRow->addStretch(1);
@@ -158,6 +161,7 @@ MapResourcePage::MapResourcePage(QWidget* parent) : QWidget(parent)
 
     m_current = new QLabel(this);
     m_current->setWordWrap(true);
+    m_current->setFont(ui::metaFont(m_current->font()));
     m_current->setEnabled(false);
     layout->addWidget(m_current);
     layout->addStretch(1);
@@ -227,10 +231,10 @@ void MapResourcePage::applyNow()
     progress.close();
 
     if (errors.isEmpty()) {
-        m_status->setStyleSheet(QString());
-        m_status->setText(tr("✓ 已迁移到 %1。**重启启动器**后生效（资源路径在启动时固定）。").arg(QDir::toNativeSeparators(root)));
+        m_status->setStyleSheet(QStringLiteral("color: %1;").arg(ui::successColorName()));
+        m_status->setText(tr("已迁移到 %1。「重启启动器」后生效（资源路径在启动时固定）。").arg(QDir::toNativeSeparators(root)));
     } else {
-        m_status->setStyleSheet(QStringLiteral("color: #d08a2c;"));
+        m_status->setStyleSheet(QStringLiteral("color: %1;").arg(ui::warningColorName()));
         m_status->setText(tr("有 %1 项没完成：\n· %2").arg(errors.size()).arg(errors.join(QStringLiteral("\n· "))));
     }
     refreshStatus();

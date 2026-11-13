@@ -24,6 +24,7 @@
 #include <QSizePolicy>
 #include <QVBoxLayout>
 
+#include "MapStyle.h"
 #include "MapTheme.h"
 
 namespace maps::ui {
@@ -37,17 +38,15 @@ QFrame* makeCard(QWidget* parent, const QString& title, QVBoxLayout** bodyOut)
     card->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Maximum);
 
     auto* outer = new QVBoxLayout(card);
-    outer->setContentsMargins(12, 10, 12, 12);
-    outer->setSpacing(8);
+    outer->setContentsMargins(cardMargins());
+    outer->setSpacing(kSpaceS + 2);
     if (!title.isEmpty()) {
         auto* head = new QLabel(title, card);
-        QFont headFont = head->font();
-        headFont.setBold(true);
-        head->setFont(headFont);
+        head->setFont(cardTitleFont(head->font()));
         outer->addWidget(head);
     }
     auto* body = new QVBoxLayout();
-    body->setSpacing(6);
+    body->setSpacing(kSpaceS);
     outer->addLayout(body);
     if (bodyOut != nullptr)
         *bodyOut = body;

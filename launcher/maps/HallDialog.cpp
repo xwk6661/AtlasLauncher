@@ -39,6 +39,7 @@
 #include "Application.h"
 #include "HallAPI.h"
 #include "MapCoverLoader.h"
+#include "MapStyle.h"
 #include "settings/SettingsObject.h"
 
 namespace maps {
@@ -53,8 +54,11 @@ HallDialog::HallDialog(QWidget* parent) : QDialog(parent)
     m_api->setEndpoint(APPLICATION->settings()->get("MapHallEndpoint").toString());
 
     auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(ui::kSpaceL, ui::kSpaceL, ui::kSpaceL, ui::kSpaceL);
+    layout->setSpacing(ui::kSpaceS);
 
     auto* searchRow = new QHBoxLayout();
+    searchRow->setSpacing(ui::kSpaceS);
     m_searchEdit = new QLineEdit(this);
     m_searchEdit->setPlaceholderText(tr("搜索地图名 / 系列 / 活动（留空 = 最新发布）"));
     auto* searchButton = new QPushButton(tr("搜索"), this);
@@ -64,6 +68,7 @@ HallDialog::HallDialog(QWidget* parent) : QDialog(parent)
 
     // 筛选与排序：值全部来自站方数据（facets），不写死枚举
     auto* filterRow = new QHBoxLayout();
+    filterRow->setSpacing(ui::kSpaceS);
     m_sortCombo = new QComboBox(this);
     m_sortCombo->addItem(tr("最新发布"), QStringLiteral("release_desc"));
     m_sortCombo->addItem(tr("评分最高"), QStringLiteral("rating_desc"));
@@ -98,6 +103,9 @@ HallDialog::HallDialog(QWidget* parent) : QDialog(parent)
     // 封面缩略图：固定 16:9，行高跟着放大一点
     m_table->setIconSize(QSize(72, 40));
     m_table->verticalHeader()->setDefaultSectionSize(46);
+    m_table->setShowGrid(false);
+    m_table->horizontalHeader()->setMinimumHeight(32);
+    m_table->horizontalHeader()->setHighlightSections(false);
     layout->addWidget(m_table, 1);
 
     m_loadMore = new QPushButton(tr("加载更多…"), this);

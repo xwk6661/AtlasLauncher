@@ -30,8 +30,10 @@
 class QLabel;
 class QLineEdit;
 class QPlainTextEdit;
+class QHBoxLayout;
 class QTabWidget;
 class QPushButton;
+class QVBoxLayout;
 class MinecraftInstance;
 
 namespace maps {
@@ -98,6 +100,8 @@ class MapInstancePage : public QWidget, public BasePage {
     /// 简介页封面：先画占位、再异步换真图（拿不到就一直是占位，不留空白）
     void requestAboutCover(const QString& url, const QString& title);
     void applyAboutCover(const QImage& image);
+    /// 简介页右侧的键值列：一次重建，字段顺序固定，值可换行
+    void setAboutFacts(const QList<QPair<QString, QString>>& facts);
     void pickHallMap();
     void linkTo(const HallItem& item);
     void ensureHallApi();
@@ -174,7 +178,9 @@ class MapInstancePage : public QWidget, public BasePage {
     QLabel* m_noteState = nullptr;
 
     QLabel* m_title = nullptr;
-    QLabel* m_badge = nullptr;
+    /// 版本 / 加载器 / 置信度：一行彩色小徽章，比 "1.16.5 · 置信度 HIGH" 这种长句好扫
+    QWidget* m_badgeBox = nullptr;
+    QHBoxLayout* m_badgeRow = nullptr;
     QLabel* m_archive = nullptr;
     QLabel* m_stats = nullptr;
     QLabel* m_evidence = nullptr;
@@ -188,7 +194,9 @@ class MapInstancePage : public QWidget, public BasePage {
     QVBoxLayout* m_aboutLayout = nullptr;
     /// 简介页顶部：封面在左、基本信息在右（2026-11-02 按用户要求排版）
     QLabel* m_aboutCover = nullptr;
-    QLabel* m_aboutInfo = nullptr;
+    /// 右侧「系列 / 作者 / 难度…」的键值列（每次详情回来重建）
+    QWidget* m_aboutInfo = nullptr;
+    QVBoxLayout* m_aboutInfoLayout = nullptr;
     /// 当前封面 URL：异步回图时用它判断是不是这张图，避免快速切图串味
     QString m_aboutCoverUrl;
     QLabel* m_aboutState = nullptr;

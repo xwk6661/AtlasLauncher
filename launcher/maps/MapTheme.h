@@ -75,35 +75,50 @@ inline QColor mutedTextColor()
     return QApplication::palette().color(QPalette::Disabled, QPalette::WindowText);
 }
 
-/// 小徽章（AIO 的 .badge：高 17px、2px 圆角、mono 字、半透明底）
+/// 小徽章（版本 / 加载器 / 置信度）：矮、圆角、单行，靠色相区分而不是靠粗体
 inline QString chipStyle(const QColor& foreground)
 {
-    return QStringLiteral("padding: 0px 5px; border-radius: 2px; font-size: 11px;"
-                          "background: rgba(%1, %2, %3, 40); color: %4;")
+    return QStringLiteral("padding: 1px 6px; border-radius: 4px; font-size: 11px;"
+                          "background: rgba(%1, %2, %3, 36); color: %4;"
+                          "border: 1px solid rgba(%1, %2, %3, 90);")
         .arg(foreground.red())
         .arg(foreground.green())
         .arg(foreground.blue())
         .arg(foreground.name());
 }
 
-/// 分组标题（AIO 的 .section-head：上方细线 + 小字 + 次要色）
+/// 分组标题：上方细线 + 小字 + 次要色（侧栏里用来分段，不抢主标题）
 inline QString sectionHeaderStyle()
 {
-    return QStringLiteral("border-top: 1px solid rgba(127, 127, 127, 55); padding-top: 6px;"
-                          "margin-top: 4px; font-size: 11px;");
+    return QStringLiteral("border-top: 1px solid rgba(127, 127, 127, 50); padding-top: 8px;"
+                          "margin-top: 6px; font-size: 11px; font-weight: 600; color: %1;")
+        .arg(mutedTextColor().name());
 }
 
-/// 卡片外观（评论、实例「我的」页共用）：半透明底 + 1px 边框 + 6px 圆角，亮/暗主题通用
+/// 卡片外观（评论、实例「地图」页共用）：半透明底 + 1px 边框 + 8px 圆角，亮/暗主题通用
 inline QString cardStyle()
 {
-    return QStringLiteral("QFrame#mapCard { background: rgba(127, 127, 127, 16);"
-                          " border: 1px solid rgba(127, 127, 127, 58); border-radius: 6px; }");
+    return QStringLiteral("QFrame#mapCard { background: rgba(127, 127, 127, 14);"
+                          " border: 1px solid rgba(127, 127, 127, 48); border-radius: 8px; }");
 }
 
 /// 提示条（风险 / 缺依赖）用的颜色名，可直接塞进 QSS
 inline QString noticeColorName()
 {
     return isDarkTheme() ? QStringLiteral("#ef9a9a") : QStringLiteral("#c62828");
+}
+
+/// 「要注意但不致命」的提示色（未完成的迁移、部分解析失败）：
+/// 与置信度 Medium 同一档橙，避免再引入一套写死的色号。
+inline QString warningColorName()
+{
+    return confidenceColor(Confidence::Medium).name();
+}
+
+/// 成功提示色（与置信度 High 同一档绿）
+inline QString successColorName()
+{
+    return confidenceColor(Confidence::High).name();
 }
 
 }  // namespace maps::ui

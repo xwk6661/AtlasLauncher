@@ -21,6 +21,7 @@
 #include <QDialogButtonBox>
 #include <QFileInfo>
 #include <QFormLayout>
+#include <QFrame>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
@@ -33,6 +34,7 @@
 #include "DataVersionTable.h"
 #include "MapTextUtils.h"
 #include "MapTheme.h"
+#include "MapStyle.h"
 #include "MapVersionDetector.h"
 
 namespace maps {
@@ -43,7 +45,11 @@ MapImportDialog::MapImportDialog(const MapScanResult& scan, QWidget* parent) : Q
     setMinimumWidth(560);
 
     auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(ui::kSpaceL, ui::kSpaceL, ui::kSpaceL, ui::kSpaceL);
+    layout->setSpacing(ui::kSpaceM);
     auto* form = new QFormLayout();
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    form->setVerticalSpacing(ui::kSpaceS);
 
     const QString stem = QFileInfo(scan.archivePath).completeBaseName();
     m_nameEdit = new QLineEdit(this);
@@ -81,6 +87,7 @@ MapImportDialog::MapImportDialog(const MapScanResult& scan, QWidget* parent) : Q
 
     m_confidenceLabel = new QLabel(this);
     m_confidenceLabel->setWordWrap(true);
+    m_confidenceLabel->setFont(ui::cardTitleFont(m_confidenceLabel->font()));
     layout->addWidget(m_confidenceLabel);
 
     m_summaryLabel = new QLabel(this);
@@ -90,12 +97,18 @@ MapImportDialog::MapImportDialog(const MapScanResult& scan, QWidget* parent) : Q
     m_evidenceList = new QListWidget(this);
     m_evidenceList->setSelectionMode(QAbstractItemView::NoSelection);
     m_evidenceList->setMaximumHeight(180);
-    layout->addWidget(new QLabel(tr("判定依据"), this));
+    m_evidenceList->setFrameShape(QFrame::NoFrame);
+    layout->addWidget(ui::makeSeparator(this));
+    auto* evidenceTitle = new QLabel(tr("判定依据"), this);
+    evidenceTitle->setStyleSheet(ui::sectionHeaderStyle());
+    layout->addWidget(evidenceTitle);
     layout->addWidget(m_evidenceList);
 
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     m_okButton = buttons->button(QDialogButtonBox::Ok);
     m_okDefaultText = m_okButton->text();
+    ui::applyPrimaryButton(m_okButton);
+    ui::applySecondaryButton(buttons->button(QDialogButtonBox::Cancel));
     layout->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);

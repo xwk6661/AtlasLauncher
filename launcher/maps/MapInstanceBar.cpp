@@ -41,6 +41,7 @@
 #include "ModPresetDialog.h"
 #include "MapNotes.h"
 #include "MapRepository.h"
+#include "MapStyle.h"
 #include "MapTheme.h"
 #include "StarRatingWidget.h"
 #include "minecraft/MinecraftInstance.h"
@@ -110,8 +111,8 @@ MapInstanceBar::MapInstanceBar(QWidget* parent) : QWidget(parent)
 void MapInstanceBar::buildUi()
 {
     auto* layout = new QVBoxLayout(this);
-    layout->setContentsMargins(2, 2, 2, 4);
-    layout->setSpacing(6);
+    layout->setContentsMargins(4, 4, 4, 6);
+    layout->setSpacing(8);
 
     // ── 中文名（AIO 的 .detail-alias：次要色、居中、不抢主标题） ──
     m_alias = new QLabel(this);
@@ -126,18 +127,15 @@ void MapInstanceBar::buildUi()
     m_chipBox = new QWidget(this);
     m_chipRow = new QHBoxLayout(m_chipBox);
     m_chipRow->setContentsMargins(0, 0, 0, 0);
-    m_chipRow->setSpacing(3);
+    m_chipRow->setSpacing(4);
     // 首尾各一个 stretch：只有两侧都有弹性空间，chips 才会居中（原来只加尾巴 → 左对齐）
     m_chipRow->addStretch(1);
     m_chipRow->addStretch(1);
     layout->addWidget(m_chipBox);
 
     // ── 主操作（AIO 的 .side-actions 第一行） ──
-    m_launch = new QPushButton(tr("▶  进入地图"), this);
-    m_launch->setMinimumHeight(30);
-    QFont launchFont = m_launch->font();
-    launchFont.setBold(true);
-    m_launch->setFont(launchFont);
+    // 侧栏里唯一的强调色按钮：整块界面上「点一下就能进图」这件事只该有一个视觉落点。
+    m_launch = ui::makePrimaryButton(tr("进入地图"), this);
     connect(m_launch, &QPushButton::clicked, this, [this] {
         if (m_instanceId.isEmpty())
             return;
@@ -157,6 +155,7 @@ void MapInstanceBar::buildUi()
     m_presets->setToolTip(tr("按这个实例的 Minecraft 版本与加载器，一次装好一组常用模组。\n"
                              "安装前可以逐条取消勾选，版本由 Modrinth 现查。"));
     m_presets->setVisible(false);
+    ui::applySecondaryButton(m_presets);
     connect(m_presets, &QPushButton::clicked, this, [this] {
         if (m_instance != nullptr)
             ModPresetDialog::run(m_instance, this);
@@ -166,6 +165,7 @@ void MapInstanceBar::buildUi()
     m_edit = new QPushButton(tr("编辑实例"), this);
     m_edit->setToolTip(tr("打开实例窗口的「地图」页：简介 / 评论 / 我的记录 / 启动设置。"));
     m_edit->setVisible(false);
+    ui::applySecondaryButton(m_edit);
     connect(m_edit, &QPushButton::clicked, this, [this] {
         if (m_instance != nullptr)
             APPLICATION->showInstanceWindow(m_instance, QStringLiteral("map"));
@@ -205,9 +205,9 @@ void MapInstanceBar::buildUi()
     m_rowsBox = new QWidget(this);
     m_rows = new QGridLayout(m_rowsBox);
     m_rows->setContentsMargins(0, 0, 0, 0);
-    m_rows->setHorizontalSpacing(8);
-    m_rows->setVerticalSpacing(3);
-    m_rows->setColumnMinimumWidth(0, 52);
+    m_rows->setHorizontalSpacing(10);
+    m_rows->setVerticalSpacing(5);
+    m_rows->setColumnMinimumWidth(0, 56);
     m_rows->setColumnStretch(1, 1);
     // 垂直方向按 sizeHint 当最小值：侧栏高度不够时，宁可让下面的原生按钮少一点空间，
     // 也不要把这里每行的字压扁（Minimum 策略决定了网格不会被分到更小的空间）
@@ -283,7 +283,7 @@ void MapInstanceBar::refreshLaunchButton(bool running)
         m_launch->setText(tr("游戏运行中…"));
         m_launch->setEnabled(false);
     } else {
-        m_launch->setText(tr("▶  进入地图"));
+        m_launch->setText(tr("进入地图"));
         m_launch->setEnabled(true);
     }
 }

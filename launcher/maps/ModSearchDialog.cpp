@@ -27,6 +27,8 @@
 #include <QTableWidget>
 #include <QVBoxLayout>
 
+#include "MapStyle.h"
+
 namespace maps {
 
 ModSearchDialog::ModSearchDialog(const QString& gameVersion, const QString& loader, QWidget* parent)
@@ -41,8 +43,11 @@ ModSearchDialog::ModSearchDialog(const QString& gameVersion, const QString& load
 void ModSearchDialog::buildUi()
 {
     auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(ui::kSpaceL, ui::kSpaceL, ui::kSpaceL, ui::kSpaceL);
+    layout->setSpacing(ui::kSpaceS);
 
     auto* searchRow = new QHBoxLayout();
+    searchRow->setSpacing(ui::kSpaceS);
     m_provider = new QComboBox(this);
     m_provider->addItem(tr("Modrinth"), QString::fromLatin1(modprovider::MODRINTH));
     m_provider->addItem(tr("CurseForge"), QString::fromLatin1(modprovider::CURSEFORGE));
@@ -68,20 +73,25 @@ void ModSearchDialog::buildUi()
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    m_table->setAlternatingRowColors(true);
+    ui::tuneTable(m_table, 30);
     layout->addWidget(m_table, 1);
 
     m_status = new QLabel(this);
     m_status->setWordWrap(true);
+    m_status->setFont(ui::metaFont(m_status->font()));
     layout->addWidget(m_status);
 
     auto* actions = new QHBoxLayout();
     actions->addStretch(1);
     auto* close = new QPushButton(tr("关闭"), this);
+    ui::applySecondaryButton(close);
     connect(close, &QPushButton::clicked, this, &QDialog::reject);
     actions->addWidget(close);
 
     m_add = new QPushButton(tr("添加选中的"), this);
     m_add->setEnabled(false);
+    ui::applyPrimaryButton(m_add);
     connect(m_add, &QPushButton::clicked, this, &ModSearchDialog::accept);
     actions->addWidget(m_add);
     layout->addLayout(actions);

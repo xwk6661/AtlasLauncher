@@ -63,6 +63,7 @@
 #include "MapRepository.h"
 #include "MapFeatures.h"
 #include "MapInfoCard.h"
+#include "MapStyle.h"
 #include "MapL10nApply.h"
 #include "MapL10nExport.h"
 #include "MapL10nProbe.h"
@@ -88,16 +89,33 @@ constexpr int ABOUT_COVER_H = 225;
 MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) : QWidget(parent), m_instance(instance)
 {
     auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
 
-    m_title = new QLabel(this);
-    QFont titleFont = m_title->font();
-    titleFont.setBold(true);
-    titleFont.setPointSizeF(titleFont.pointSizeF() * 1.3);
-    m_title->setFont(titleFont);
-    layout->addWidget(m_title);
+    /**
+     * 页头：标题 + 一行徽章，下面一条细线把页头和页签分开。
+     *
+     * 以前标题下面是一句 "1.16.5 · 置信度 HIGH" 的长文本，扫起来要在标点里找字段；
+     * 改成彩色小徽章之后，版本 / 加载器 / 置信度各自成一个视觉块，
+     * 与右侧地图卡片的写法一致。
+     */
+    auto* header = new QWidget(this);
+    auto* headerLayout = new QVBoxLayout(header);
+    headerLayout->setContentsMargins(ui::kPageMargin, ui::kPageMargin, ui::kPageMargin, ui::kSpaceS);
+    headerLayout->setSpacing(ui::kSpaceS);
 
-    m_badge = new QLabel(this);
-    layout->addWidget(m_badge);
+    m_title = ui::makePageTitle(QString(), header);
+    headerLayout->addWidget(m_title);
+
+    m_badgeBox = new QWidget(header);
+    m_badgeRow = new QHBoxLayout(m_badgeBox);
+    m_badgeRow->setContentsMargins(0, 0, 0, 0);
+    m_badgeRow->setSpacing(ui::kSpaceXS);
+    m_badgeRow->addStretch(1);
+    headerLayout->addWidget(m_badgeBox);
+
+    layout->addWidget(header);
+    layout->addWidget(ui::makeSeparator(this));
 
     /**
      * 「我的」页容器：下面的内容**直接建进这一页**。
@@ -115,8 +133,8 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
      */
     auto* minePage = new QWidget(this);
     auto* mineLayout = new QVBoxLayout(minePage);
-    mineLayout->setContentsMargins(4, 8, 4, 4);
-    mineLayout->setSpacing(10);
+    mineLayout->setContentsMargins(ui::pageMargins());
+    mineLayout->setSpacing(ui::kSpaceM);
 
     // ── 卡片 1：我的记录（notes.json）：中文名 / 我的评分 / 笔记 ──
     // 与 map.json 分开存：那是"这张图是什么"，这是"我怎么看这张图"（照 AIO 的 UserNote）。
@@ -246,14 +264,18 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
     evidenceBody->addWidget(m_evidence);
 
     auto* buttons = new QHBoxLayout();
-    buttons->setSpacing(6);
+    buttons->setSpacing(ui::kSpaceS);
     auto* openInstance = new QPushButton(tr("打开实例目录"), this);
     auto* openArchive = new QPushButton(tr("打开压缩包所在目录"), this);
     auto* reinstall = new QPushButton(tr("重装地图…"), this);
+    ui::applySecondaryButton(openInstance);
+    ui::applySecondaryButton(openArchive);
+    ui::applySecondaryButton(reinstall);
     buttons->addWidget(openInstance);
     buttons->addWidget(openArchive);
     buttons->addWidget(reinstall);
     buttons->addStretch(1);
+    mineLayout->addSpacing(ui::kSpaceXS);
     mineLayout->addLayout(buttons);
     mineLayout->addStretch(1);
 
@@ -360,37 +382,69 @@ QWidget* MapInstancePage::buildLaunchPage()
 }
 
 QWidget* MapInstancePage::buildAboutPage()
-{    m_aboutPage = new QWidget(this);
+{
+    m_aboutPage = new QWidget(this);
     m_aboutLayout = new QVBoxLayout(m_aboutPage);
-    m_aboutLayout->setContentsMargins(4, 4, 4, 4);
-    m_aboutLayout->setSpacing(8);
+    m_aboutLayout->setContentsMargins(ui::pageMargins());
+    m_aboutLayout->setSpacing(ui::kSpaceM);
 
     /**
      * 顶部一条「封面在左、基本信息在右」：
      * 站上简介页的封面是 16:9 大图，放左边当视觉锚点；作者/版本/难度/长度这些
-     * 短字段放右侧，竖排一列比横着铺开更好扫（2026-11-02 用户要求）。
+     * 短字段放右侧，竖排的键值列比横着铺开更好扫（2026-11-02 用户要求）。
+     *
+     * 信息列改成 QGridLayout 之后：字段名次要色、值正常色、值可换行，
+     * 长作者名单不会再把整行挤成一句话。
      */
     auto* hero = new QHBoxLayout();
     hero->setContentsMargins(0, 0, 0, 0);
-    hero->setSpacing(14);
-    // 整组（封面 + 信息）在页面里水平居中，封面相对信息列垂直居中（用户反馈：以前贴着左边、上下不齐）
+    hero->setSpacing(ui::kSpaceL);
+    // 整组（封面 + 信息）在页面里水平居中
     hero->addStretch(1);
 
     m_aboutCover = new QLabel(m_aboutPage);
     m_aboutCover->setFixedSize(ABOUT_COVER_W, ABOUT_COVER_H);
     m_aboutCover->setAlignment(Qt::AlignCenter);
-    m_aboutCover->setStyleSheet(QStringLiteral("border: 1px solid rgba(127, 127, 127, 55);"));
+    m_aboutCover->setStyleSheet(QStringLiteral("border: 1px solid rgba(127, 127, 127, 48); border-radius: 6px;"));
     m_aboutCover->setPixmap(MapCoverLoader::placeholderCover(QStringLiteral("?"), ABOUT_COVER_W, ABOUT_COVER_H));
-    hero->addWidget(m_aboutCover, 0, Qt::AlignVCenter);
+    hero->addWidget(m_aboutCover, 0, Qt::AlignTop);
 
-    m_aboutInfo = new QLabel(m_aboutPage);
-    m_aboutInfo->setWordWrap(true);
-    m_aboutInfo->setAlignment(Qt::AlignTop | Qt::AlignLeft);
-    m_aboutInfo->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    auto* infoColumn = new QWidget(m_aboutPage);
+    auto* infoLayout = new QVBoxLayout(infoColumn);
+    infoLayout->setContentsMargins(0, 0, 0, 0);
+    infoLayout->setSpacing(ui::kSpaceM);
+
+    m_aboutInfo = new QWidget(infoColumn);
+    m_aboutInfoLayout = new QVBoxLayout(m_aboutInfo);
+    m_aboutInfoLayout->setContentsMargins(0, 0, 0, 0);
+    m_aboutInfoLayout->setSpacing(ui::kSpaceS);
     // 给信息列一个稳定的宽度区间：太窄字段会折行，太宽整组就不像"一块"了
-    m_aboutInfo->setMinimumWidth(340);
+    m_aboutInfo->setMinimumWidth(320);
     m_aboutInfo->setMaximumWidth(560);
-    hero->addWidget(m_aboutInfo, 0);
+    infoLayout->addWidget(m_aboutInfo);
+
+    auto* linkRow = new QHBoxLayout();
+    linkRow->setSpacing(ui::kSpaceS);
+    m_aboutLinkButton = new QPushButton(tr("关联到 CTM 地图…"), m_aboutPage);
+    ui::applySecondaryButton(m_aboutLinkButton);
+    connect(m_aboutLinkButton, &QPushButton::clicked, this, &MapInstancePage::pickHallMap);
+    m_aboutUnlinkButton = new QPushButton(tr("解除关联"), m_aboutPage);
+    ui::applySecondaryButton(m_aboutUnlinkButton);
+    m_aboutUnlinkButton->setVisible(false);
+    connect(m_aboutUnlinkButton, &QPushButton::clicked, this, [this] {
+        if (m_instance == nullptr)
+            return;
+        MapHallLink::clear(m_instance->instanceRoot());
+        m_link = MapHallLink{};
+        refreshHallTabs();
+    });
+    linkRow->addWidget(m_aboutLinkButton);
+    linkRow->addWidget(m_aboutUnlinkButton);
+    linkRow->addStretch(1);
+    infoLayout->addLayout(linkRow);
+    infoLayout->addStretch(1);
+
+    hero->addWidget(infoColumn, 0);
     hero->addStretch(1);
     m_aboutLayout->addLayout(hero);
 
@@ -410,22 +464,6 @@ QWidget* MapInstancePage::buildAboutPage()
     m_aboutState->setAlignment(Qt::AlignTop | Qt::AlignLeft);
     descBody->addWidget(m_aboutState);
 
-    auto* linkRow = new QHBoxLayout();
-    m_aboutLinkButton = new QPushButton(tr("关联到 CTM 地图…"), m_aboutPage);
-    connect(m_aboutLinkButton, &QPushButton::clicked, this, &MapInstancePage::pickHallMap);
-    m_aboutUnlinkButton = new QPushButton(tr("解除关联"), m_aboutPage);
-    m_aboutUnlinkButton->setVisible(false);
-    connect(m_aboutUnlinkButton, &QPushButton::clicked, this, [this] {
-        if (m_instance == nullptr)
-            return;
-        MapHallLink::clear(m_instance->instanceRoot());
-        m_link = MapHallLink{};
-        refreshHallTabs();
-    });
-    linkRow->addWidget(m_aboutLinkButton);
-    linkRow->addWidget(m_aboutUnlinkButton);
-    linkRow->addStretch(1);
-    m_aboutLayout->addLayout(linkRow);
     m_aboutLayout->addStretch(1);
 
     // 封面放大到 400×225 之后，窗口拉窄时「封面 + 信息列」会顶出可视区（最低约 760px）。
@@ -467,15 +505,46 @@ void MapInstancePage::applyAboutCover(const QImage& image)
                                         ABOUT_COVER_W, ABOUT_COVER_H));
 }
 
+void MapInstancePage::setAboutFacts(const QList<QPair<QString, QString>>& facts)
+{
+    if (m_aboutInfoLayout == nullptr)
+        return;
+
+    ui::clearLayout(m_aboutInfoLayout);
+    if (facts.isEmpty())
+        return;
+
+    // 两列：字段名次要色、值正常色并允许换行。比原来"<b>键</b>：值<br/>"堆成一段好扫得多，
+    // 长作者名单也不会把后面的字段挤到看不见。
+    auto* grid = new QGridLayout();
+    grid->setContentsMargins(0, 0, 0, 0);
+    grid->setHorizontalSpacing(ui::kSpaceM + 2);
+    grid->setVerticalSpacing(ui::kSpaceS);
+    grid->setColumnStretch(1, 1);
+
+    int row = 0;
+    for (const auto& fact : facts) {
+        grid->addWidget(ui::makeKeyLabel(fact.first, m_aboutInfo), row, 0, Qt::AlignTop);
+        auto* value = new QLabel(fact.second, m_aboutInfo);
+        value->setWordWrap(true);
+        value->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        grid->addWidget(value, row, 1);
+        ++row;
+    }
+    m_aboutInfoLayout->addLayout(grid);
+}
+
 QWidget* MapInstancePage::buildReviewsPage()
 {
     m_reviewsPage = new QWidget(this);
     auto* outer = new QVBoxLayout(m_reviewsPage);
-    outer->setContentsMargins(4, 4, 4, 4);
-    outer->setSpacing(4);
+    outer->setContentsMargins(ui::pageMargins());
+    outer->setSpacing(ui::kSpaceS);
 
     m_reviewsState = new QLabel(m_reviewsPage);
     m_reviewsState->setWordWrap(true);
+    m_reviewsState->setFont(ui::metaFont(m_reviewsState->font()));
+    m_reviewsState->setStyleSheet(QStringLiteral("color: %1;").arg(ui::mutedTextColor().name()));
     outer->addWidget(m_reviewsState);
 
     auto* scroll = new QScrollArea(m_reviewsPage);
@@ -484,8 +553,8 @@ QWidget* MapInstancePage::buildReviewsPage()
     scroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     auto* body = new QWidget(scroll);
     m_reviewsLayout = new QVBoxLayout(body);
-    m_reviewsLayout->setContentsMargins(0, 0, 4, 0);
-    m_reviewsLayout->setSpacing(10);
+    m_reviewsLayout->setContentsMargins(0, 0, ui::kSpaceS, 0);
+    m_reviewsLayout->setSpacing(ui::kSpaceM);
     m_reviewsLayout->addStretch(1);
     scroll->setWidget(body);
     outer->addWidget(scroll, 1);
@@ -511,11 +580,11 @@ void MapInstancePage::ensureHallApi()
     connect(m_hall, &HallAPI::detailDone, this, [this](const HallDetail& detail) {
         if (detail.item.slug != m_hallSlug || m_aboutState == nullptr)
             return;
-        QStringList lines;
+        QList<QPair<QString, QString>> facts;
         const auto& item = detail.item;
-        const auto add = [&lines](const QString& key, const QString& value) {
+        const auto add = [&facts](const QString& key, const QString& value) {
             if (!value.isEmpty())
-                lines.append(QStringLiteral("<b>%1</b>：%2").arg(key.toHtmlEscaped(), value.toHtmlEscaped()));
+                facts.append({ key, value });
         };
         add(tr("系列"), item.series);
         add(tr("作者"), item.author);
@@ -532,7 +601,7 @@ void MapInstancePage::ensureHallApi()
             add(tr("游玩人数"), QString::number(item.plays));
         add(tr("发布"), item.releaseDate);
 
-        m_aboutInfo->setText(lines.join(QStringLiteral("<br/>")));
+        setAboutFacts(facts);
         const QString description = detail.description.trimmed();
         m_aboutState->setText(description.isEmpty() ? tr("（站上没写简介）")
                                                     : description.toHtmlEscaped().replace("\n", "<br/>"));
@@ -677,8 +746,7 @@ void MapInstancePage::refreshHallTabs()
         if (!suggestion.isEmpty())
             text += tr("\n\n本地库里有一张《%1》看起来就是它 —— 点下面的按钮即可关联。").arg(suggestion);
         m_aboutState->setText(text);
-        if (m_aboutInfo != nullptr)
-            m_aboutInfo->clear();
+        setAboutFacts({});
         requestAboutCover({}, m_title->text().isEmpty() ? m_instance->name() : m_title->text());
         m_aboutLinkButton->setText(suggestion.isEmpty() ? tr("关联到 CTM 地图…") : tr("关联到《%1》").arg(suggestion));
         // 按钮点击时如果已经有建议，直接用它（先把所有旧连接断干净，别越连越多）
@@ -718,15 +786,14 @@ void MapInstancePage::refreshHallTabs()
                                  "打开「添加实例 → CTM 地图」点一次「下载地图库」即可。")
                                   .arg(m_link.title));
         if (m_aboutInfo != nullptr)
-            m_aboutInfo->clear();
+            setAboutFacts({});
         requestAboutCover({}, m_link.title);
         m_reviewsState->setText(tr("还没有本地地图库，暂时没有评论可显示。"));
         return;
     }
 
     m_aboutState->setText(tr("正在读取《%1》的简介…").arg(m_link.title));
-    if (m_aboutInfo != nullptr)
-        m_aboutInfo->clear();
+    setAboutFacts({});
     requestAboutCover({}, m_link.title);
     m_hall->detail(m_link.slug);
 
@@ -769,8 +836,8 @@ QWidget* MapInstancePage::buildL10nPage()
 
     m_l10nPage = new QWidget(scroll);
     auto* layout = new QVBoxLayout(m_l10nPage);
-    layout->setContentsMargins(4, 4, 4, 4);
-    layout->setSpacing(10);
+    layout->setContentsMargins(ui::pageMargins());
+    layout->setSpacing(ui::kSpaceM);
 
     // ── ① 结论 ──
     QVBoxLayout* modeBody = nullptr;
@@ -1661,13 +1728,38 @@ void MapInstancePage::reload()
 
     m_title->setText(m_meta.title.isEmpty() ? m_instance->name() : m_meta.title);
 
-    QStringList badge{ m_meta.version.mcVersion };
-    if (!m_meta.loader.type.isEmpty() && m_meta.loader.type != QLatin1String("vanilla")) {
-        badge.append(m_meta.loader.version.isEmpty() ? m_meta.loader.type
-                                                     : QStringLiteral("%1 %2").arg(m_meta.loader.type, m_meta.loader.version));
+    // 版本 / 加载器 / 置信度：三个小徽章，色相分别取自强调色、次要色与置信度色。
+    // 清空时连 stretch 一起删，重建后补回来（否则第二次刷新会越堆越多）。
+    if (m_badgeRow != nullptr) {
+        while (QLayoutItem* item = m_badgeRow->takeAt(0)) {
+            if (auto* widget = item->widget())
+                widget->deleteLater();
+            delete item;
+        }
+        int chipCount = 0;
+        const auto addChip = [this, &chipCount](const QString& text, const QColor& color) {
+            if (text.isEmpty())
+                return;
+            auto* chip = new QLabel(text, m_badgeBox);
+            chip->setStyleSheet(ui::chipStyle(color));
+            chip->setToolTip(text);
+            m_badgeRow->addWidget(chip);
+            ++chipCount;
+        };
+        addChip(m_meta.version.mcVersion, ui::accentColor());
+        if (!m_meta.loader.type.isEmpty() && m_meta.loader.type != QLatin1String("vanilla")) {
+            addChip(m_meta.loader.version.isEmpty()
+                        ? m_meta.loader.type
+                        : QStringLiteral("%1 %2").arg(m_meta.loader.type, m_meta.loader.version),
+                    ui::mutedTextColor());
+        }
+        // 版本都判不出来时不摆一个 "置信度 LOW" 的空徽章：非地图实例这一页也会构造
+        if (!m_meta.version.mcVersion.isEmpty())
+            addChip(tr("置信度 %1").arg(confidenceToString(m_meta.version.confidence)),
+                    ui::confidenceColor(m_meta.version.confidence));
+        m_badgeBox->setVisible(chipCount > 0);
+        m_badgeRow->addStretch(1);
     }
-    badge.append(tr("置信度 %1").arg(confidenceToString(m_meta.version.confidence)));
-    m_badge->setText(badge.join(QStringLiteral(" · ")));
 
     /**
      * 导入即移动（2026-11-02 起）：压缩包只有库里一份，`libraryCopy` 就是本体。

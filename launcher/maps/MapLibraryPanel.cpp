@@ -18,6 +18,7 @@
 #include "MapLibraryPanel.h"
 
 #include "MapTheme.h"
+#include "MapStyle.h"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -141,14 +142,12 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
 {
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(0, 0, 0, 0);
-    root->setSpacing(6);
+    root->setSpacing(ui::kSpaceS);
 
     auto* header = new QHBoxLayout;
-    header->setSpacing(8);
+    header->setSpacing(ui::kSpaceS);
     auto* title = new QLabel(tr("本地地图库"), this);
-    QFont titleFont = title->font();
-    titleFont.setBold(true);
-    title->setFont(titleFont);
+    title->setFont(ui::cardTitleFont(title->font()));
     header->addWidget(title);
 
     m_summary = new QLabel(this);
@@ -159,19 +158,22 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
 
     auto* openButton = new QPushButton(tr("目录"), this);
     openButton->setToolTip(tr("打开地图库目录（重装用的备份就放在这里）"));
+    ui::applySecondaryButton(openButton);
     header->addWidget(openButton);
 
     auto* refreshButton = new QPushButton(tr("刷新"), this);
+    ui::applySecondaryButton(refreshButton);
     header->addWidget(refreshButton);
 
     m_importButton = new QPushButton(tr("导入选中"), this);
     m_importButton->setEnabled(false);
+    ui::applySecondaryButton(m_importButton);
     header->addWidget(m_importButton);
 
     root->addLayout(header);
 
     auto* body = new QHBoxLayout;
-    body->setSpacing(8);
+    body->setSpacing(ui::kSpaceM);
 
     // 左侧分类栏容器：固定宽度 132px，防止挤占右侧表格（解决 8.1）
     auto* catContainer = new QWidget(this);
@@ -182,6 +184,8 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
 
     m_categories = new CategoryList(this);
     m_categories->setFixedWidth(132);
+    // 与右侧表格一样去掉原生边框：两者并排时，一个有线一个没线会显得歪
+    m_categories->setFrameShape(QFrame::NoFrame);
     m_categories->setAcceptDrops(true);
     m_categories->setDragDropMode(QAbstractItemView::DropOnly);
     m_categories->setSelectionMode(QAbstractItemView::SingleSelection);
@@ -227,10 +231,11 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     m_table->setShowGrid(false);
     m_table->setDragEnabled(true);
     m_table->setDragDropMode(QAbstractItemView::DragOnly);
-    m_table->setMinimumHeight(190);
+    m_table->setMinimumHeight(220);
     m_table->setMinimumWidth(0);
     m_table->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_table->setToolTip(tr("拖动行到左侧分类即可归类；双击直接导入"));
+    ui::tuneTable(m_table);
     body->addWidget(m_table, 1);
 
     root->addLayout(body, 1);

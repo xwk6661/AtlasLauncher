@@ -37,6 +37,7 @@
 #include "HallAPI.h"
 #include "HallProxy.h"
 #include "MapTheme.h"
+#include "MapStyle.h"
 #include "minecraft/MinecraftInstance.h"
 #include "settings/SettingsObject.h"
 
@@ -61,8 +62,8 @@ MapSettingsWidget::MapSettingsWidget(MinecraftInstance* instance, QWidget* paren
 
     auto* body = new QWidget(scroll);
     auto* layout = new QVBoxLayout(body);
-    layout->setContentsMargins(8, 8, 8, 8);
-    layout->setSpacing(10);
+    layout->setContentsMargins(ui::pageMargins());
+    layout->setSpacing(ui::kSpaceM);
 
     buildBehaviorGroup(body, layout);
     if (m_instance == nullptr)
@@ -81,7 +82,7 @@ void MapSettingsWidget::buildBehaviorGroup(QWidget* parent, QVBoxLayout* layout)
     m_behaviorBox->setCheckable(m_instance != nullptr);
 
     auto* boxLayout = new QVBoxLayout(m_behaviorBox);
-    boxLayout->setSpacing(6);
+    boxLayout->setSpacing(ui::kSpaceS);
 
     m_autoEnter = new QCheckBox(tr("启动时自动跳过主菜单，直接进入这张图的存档"), m_behaviorBox);
     m_autoEnter->setToolTip(tr("关掉后 Agent 仍会注入（退出判定要用），只是不替玩家进存档；\n"
@@ -98,6 +99,8 @@ void MapSettingsWidget::buildBehaviorGroup(QWidget* parent, QVBoxLayout* layout)
 
     auto* form = new QFormLayout();
     form->setContentsMargins(0, 0, 0, 0);
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+    form->setVerticalSpacing(ui::kSpaceS);
     m_enterDelay = new QSpinBox(m_behaviorBox);
     m_enterDelay->setRange(0, 60);
     m_enterDelay->setSuffix(tr(" 秒"));
@@ -145,10 +148,8 @@ void MapSettingsWidget::buildGlobalGroups(QWidget* parent, QVBoxLayout* layout)
                                         "1.12 及更早写的是数字键码（29 / 42），1.13 起写 key.keyboard.*。"));
     m_optionsFullscreen = new QCheckBox(tr("以全屏进入地图"), optionsBox);
     m_optionsFullscreen->setToolTip(tr("写进 options.txt 的 fullscreen。\n\n"
-                                       "地图是「一张图就是一个世界」，全屏才是它本来的样子；\n"
-                                       "而且有些机器上窗口模式会只显示一片白（DWM 合成的问题，\n"
-                                       "全屏不受影响）—— 开着这一项可以直接绕过去。\n\n"
-                                       "进游戏后按 F11 随时能切回窗口。"));
+                                       "地图是「一张图就是一个世界」，全屏才是它本来的样子。\n"
+                                       "这一项只是新建实例时的初始值，进游戏后按 F11 随时能切回窗口。"));
     optionsLayout->addWidget(m_optionsChinese);
     optionsLayout->addWidget(m_optionsSprintSneak);
     optionsLayout->addWidget(m_optionsFullscreen);

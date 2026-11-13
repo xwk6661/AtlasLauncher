@@ -18,6 +18,7 @@
 #include "ModPresetDialog.h"
 
 #include "ModSearchDialog.h"
+#include "MapStyle.h"
 
 #include "modplatform/packwiz/Packwiz.h"
 
@@ -148,24 +149,30 @@ ModPresetDialog::ModPresetDialog(MinecraftInstance* instance, QWidget* parent) :
 void ModPresetDialog::buildUi()
 {
     auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(ui::kSpaceL, ui::kSpaceL, ui::kSpaceL, ui::kSpaceL);
+    layout->setSpacing(ui::kSpaceS);
 
     auto* presetRow = new QHBoxLayout();
+    presetRow->setSpacing(ui::kSpaceS);
     presetRow->addWidget(new QLabel(tr("预设："), this));
     m_presetCombo = new QComboBox(this);
     m_presetCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     presetRow->addWidget(m_presetCombo, 1);
 
     auto* editButton = new QPushButton(tr("管理预设…"), this);
+    ui::applySecondaryButton(editButton);
     connect(editButton, &QPushButton::clicked, this, &ModPresetDialog::editPresets);
     presetRow->addWidget(editButton);
     layout->addLayout(presetRow);
 
     m_target = new QLabel(this);
+    m_target->setFont(ui::metaFont(m_target->font()));
     m_target->setEnabled(false);
     layout->addWidget(m_target);
 
     m_description = new QLabel(this);
     m_description->setWordWrap(true);
+    m_description->setFont(ui::metaFont(m_description->font()));
     m_description->setEnabled(false);
     layout->addWidget(m_description);
 
@@ -175,14 +182,17 @@ void ModPresetDialog::buildUi()
     m_table->verticalHeader()->setVisible(false);
     m_table->setSelectionMode(QAbstractItemView::NoSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_table->setAlternatingRowColors(true);
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     m_table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    ui::tuneTable(m_table, 32);
     layout->addWidget(m_table, 1);
 
     m_status = new QLabel(this);
     m_status->setWordWrap(true);
+    m_status->setFont(ui::metaFont(m_status->font()));
     layout->addWidget(m_status);
 
     auto* actionRow = new QHBoxLayout();
@@ -202,20 +212,25 @@ void ModPresetDialog::buildUi()
     });
     actionRow->addWidget(m_selectAll);
     actionRow->addWidget(m_selectNone);
+    ui::applySecondaryButton(m_selectAll);
+    ui::applySecondaryButton(m_selectNone);
 
     m_browse = new QPushButton(tr("自己挑…"), this);
     m_browse->setToolTip(tr("打开原生模组浏览器：搜索、看详情、逐版本挑选。"));
+    ui::applySecondaryButton(m_browse);
     connect(m_browse, &QPushButton::clicked, this, &ModPresetDialog::openModBrowser);
     actionRow->addWidget(m_browse);
 
     actionRow->addStretch(1);
 
     auto* close = new QPushButton(tr("关闭"), this);
+    ui::applySecondaryButton(close);
     connect(close, &QPushButton::clicked, this, &QDialog::reject);
     actionRow->addWidget(close);
 
     m_installButton = new QPushButton(tr("安装勾选的模组"), this);
     m_installButton->setDefault(true);
+    ui::applyPrimaryButton(m_installButton);
     connect(m_installButton, &QPushButton::clicked, this, &ModPresetDialog::install);
     actionRow->addWidget(m_installButton);
     layout->addLayout(actionRow);
@@ -626,18 +641,23 @@ ModPresetEditorDialog::ModPresetEditorDialog(const QString& gameVersion, const Q
     resize(620, 560);
 
     auto* layout = new QVBoxLayout(this);
+    layout->setContentsMargins(ui::kSpaceL, ui::kSpaceL, ui::kSpaceL, ui::kSpaceL);
+    layout->setSpacing(ui::kSpaceS);
 
     auto* presetRow = new QHBoxLayout();
+    presetRow->setSpacing(ui::kSpaceS);
     presetRow->addWidget(new QLabel(tr("预设："), this));
     m_presetCombo = new QComboBox(this);
     m_presetCombo->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     presetRow->addWidget(m_presetCombo, 1);
 
     auto* addButton = new QPushButton(tr("新建"), this);
+    ui::applySecondaryButton(addButton);
     connect(addButton, &QPushButton::clicked, this, &ModPresetEditorDialog::addPreset);
     presetRow->addWidget(addButton);
 
     auto* removeButton = new QPushButton(tr("删除"), this);
+    ui::applySecondaryButton(removeButton);
     connect(removeButton, &QPushButton::clicked, this, &ModPresetEditorDialog::removeCurrent);
     presetRow->addWidget(removeButton);
     layout->addLayout(presetRow);
@@ -670,12 +690,14 @@ ModPresetEditorDialog::ModPresetEditorDialog(const QString& gameVersion, const Q
         this);
     hint->setWordWrap(true);
     hint->setTextFormat(Qt::RichText);
+    hint->setFont(ui::metaFont(hint->font()));
     hint->setEnabled(false);
     layout->addWidget(hint);
 
     auto* searchRow = new QHBoxLayout();
     auto* searchButton = new QPushButton(tr("搜索并添加…"), this);
     searchButton->setToolTip(tr("从 Modrinth 或 CurseForge 搜索，勾选后把条目追加到下面的列表。"));
+    ui::applySecondaryButton(searchButton);
     connect(searchButton, &QPushButton::clicked, this, [this] {
         ModSearchDialog dialog(m_gameVersion, m_instanceLoader, this);
         if (dialog.exec() != QDialog::Accepted)
@@ -712,6 +734,8 @@ ModPresetEditorDialog::ModPresetEditorDialog(const QString& gameVersion, const Q
     auto* buttons = new QDialogButtonBox(this);
     auto* save = buttons->addButton(tr("保存"), QDialogButtonBox::AcceptRole);
     auto* close = buttons->addButton(tr("关闭"), QDialogButtonBox::RejectRole);
+    ui::applyPrimaryButton(save);
+    ui::applySecondaryButton(close);
     connect(save, &QPushButton::clicked, this, &ModPresetEditorDialog::saveCurrent);
     connect(close, &QPushButton::clicked, this, &QDialog::accept);
     layout->addWidget(buttons);

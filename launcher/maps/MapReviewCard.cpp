@@ -27,6 +27,7 @@
 #include <algorithm>
 
 #include "HallTypes.h"
+#include "MapStyle.h"
 #include "MapTextUtils.h"
 #include "MapTheme.h"
 
@@ -41,19 +42,17 @@ QWidget* makeReviewCard(QWidget* parent, const HallReview& review, QLabel** name
     card->setStyleSheet(ui::cardStyle());
 
     auto* layout = new QVBoxLayout(card);
-    layout->setContentsMargins(10, 8, 10, 10);
-    layout->setSpacing(6);
+    layout->setContentsMargins(12, 10, 12, 12);
+    layout->setSpacing(ui::kSpaceS);
 
     // 首行只放名字 + 星级：日期/时长另起一行，窄面板下才不会被挤出横向滚动条
     auto* head = new QHBoxLayout();
     head->setContentsMargins(0, 0, 0, 0);
-    head->setSpacing(6);
+    head->setSpacing(ui::kSpaceS);
 
     const QString displayName = review.userName.isEmpty() ? QObject::tr("匿名玩家") : review.userName;
     auto* name = new QLabel(displayName, card);
-    QFont nameFont = name->font();
-    nameFont.setBold(true);
-    name->setFont(nameFont);
+    name->setFont(ui::cardTitleFont(name->font()));
     head->addWidget(name);
     if (nameLabel != nullptr)
         *nameLabel = name;
@@ -77,10 +76,7 @@ QWidget* makeReviewCard(QWidget* parent, const HallReview& review, QLabel** name
     if (!trailing.isEmpty()) {
         auto* meta = new QLabel(trailing.join(QStringLiteral(" · ")), card);
         meta->setEnabled(false);
-        QFont metaFont = meta->font();
-        if (metaFont.pointSizeF() > 0)
-            metaFont.setPointSizeF(metaFont.pointSizeF() * 0.92);
-        meta->setFont(metaFont);
+        meta->setFont(ui::metaFont(meta->font()));
         layout->addWidget(meta);
     }
 

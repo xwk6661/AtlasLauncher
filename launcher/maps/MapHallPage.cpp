@@ -59,6 +59,7 @@
 #include "MapNotes.h"
 #include "minecraft/MinecraftInstance.h"
 #include "MapTheme.h"
+#include "MapStyle.h"
 #include "MapInfoCard.h"
 #include "MapReviewCard.h"
 #include "MapTextUtils.h"
@@ -146,7 +147,7 @@ class HallRow : public QWidget {
     explicit HallRow(const HallItem& item, QWidget* parent = nullptr) : QWidget(parent)
     {
         auto* layout = new QHBoxLayout(this);
-        layout->setContentsMargins(9, 8, 9, 8);
+        layout->setContentsMargins(12, 10, 12, 10);
         layout->setSpacing(12);
 
         m_cover = new QLabel(this);
@@ -159,12 +160,9 @@ class HallRow : public QWidget {
         auto* text = new QVBoxLayout();
         text->setSpacing(3);
 
-        // 标题：AIO 用 fs-lg + 强字重；这里同样加粗、不换行（过长的省略）
+        // 标题：强字重、不换行（过长的省略）
         auto* title = new QLabel(item.title, this);
-        QFont titleFont = title->font();
-        titleFont.setBold(true);
-        titleFont.setPointSizeF(titleFont.pointSizeF() * 1.05);
-        title->setFont(titleFont);
+        title->setFont(ui::cardTitleFont(title->font()));
         title->setWordWrap(false);
         title->setTextInteractionFlags(Qt::NoTextInteraction);
         text->addWidget(title);
@@ -186,9 +184,7 @@ class HallRow : public QWidget {
             chipRow->setSpacing(4);
             for (const auto& chipText : chips) {
                 auto* chip = new QLabel(chipText, this);
-                chip->setStyleSheet(QStringLiteral(
-                    "border: 1px solid rgba(127,127,127,70); border-radius: 2px; padding: 0px 4px; font-size: 11px;"));
-                chip->setEnabled(false);
+                chip->setStyleSheet(ui::chipStyle(ui::mutedTextColor()));
                 chipRow->addWidget(chip);
             }
             chipRow->addStretch(1);
@@ -516,8 +512,8 @@ void MapHallPage::buildUi()
     auto* detail = new QWidget(splitter);
     detail->setMinimumWidth(320);
     auto* detailLayout = new QVBoxLayout(detail);
-    detailLayout->setContentsMargins(8, 2, 2, 2);
-    detailLayout->setSpacing(6);
+    detailLayout->setContentsMargins(10, 6, 4, 4);
+    detailLayout->setSpacing(ui::kSpaceS);
 
     /**
      * 头部：缩略图 + 标题，横排。
@@ -541,22 +537,20 @@ void MapHallPage::buildUi()
     headText->setSpacing(2);
 
     m_title = new QLabel(detail);
-    QFont titleFont = m_title->font();
-    titleFont.setBold(true);
-    titleFont.setPointSizeF(titleFont.pointSizeF() * 1.15);
-    m_title->setFont(titleFont);
+    m_title->setFont(ui::pageTitleFont(m_title->font()));
     m_title->setWordWrap(true);
     headText->addWidget(m_title);
 
     m_subtitle = new QLabel(detail);
     m_subtitle->setWordWrap(true);
-    m_subtitle->setEnabled(false);
+    m_subtitle->setFont(ui::metaFont(m_subtitle->font()));
+    m_subtitle->setStyleSheet(QStringLiteral("color: %1;").arg(ui::mutedTextColor().name()));
     headText->addWidget(m_subtitle);
 
     m_statBox = new QWidget(detail);
     m_statRow = new QHBoxLayout(m_statBox);
     m_statRow->setContentsMargins(0, 0, 0, 0);
-    m_statRow->setSpacing(4);
+    m_statRow->setSpacing(ui::kSpaceS);
     m_statRow->addStretch(1);
     headText->addWidget(m_statBox);
     headText->addStretch(1);
@@ -574,7 +568,7 @@ void MapHallPage::buildUi()
      */
     auto* about = new QWidget(m_tabs);
     auto* aboutLayout = new QVBoxLayout(about);
-    aboutLayout->setContentsMargins(4, 6, 4, 4);
+    aboutLayout->setContentsMargins(ui::pageMargins());
     aboutLayout->setSpacing(0);
 
     auto* aboutScroll = new QScrollArea(about);
@@ -584,14 +578,14 @@ void MapHallPage::buildUi()
 
     auto* aboutBody = new QWidget(aboutScroll);
     auto* aboutBodyLayout = new QVBoxLayout(aboutBody);
-    aboutBodyLayout->setContentsMargins(0, 0, 4, 0);
-    aboutBodyLayout->setSpacing(10);
+    aboutBodyLayout->setContentsMargins(0, 0, ui::kSpaceS, 0);
+    aboutBodyLayout->setSpacing(ui::kSpaceM);
 
     QVBoxLayout* factsBody = nullptr;
     aboutBodyLayout->addWidget(ui::makeCard(aboutBody, tr("基本信息"), &factsBody));
     m_factsGrid = new QGridLayout();
-    m_factsGrid->setHorizontalSpacing(10);
-    m_factsGrid->setVerticalSpacing(4);
+    m_factsGrid->setHorizontalSpacing(ui::kSpaceM);
+    m_factsGrid->setVerticalSpacing(ui::kSpaceS);
     m_factsGrid->setColumnStretch(1, 1);
     factsBody->addLayout(m_factsGrid);
 
@@ -611,8 +605,8 @@ void MapHallPage::buildUi()
 
     auto* reviewsTab = new QWidget(m_tabs);
     auto* reviewsLayout = new QVBoxLayout(reviewsTab);
-    reviewsLayout->setContentsMargins(4, 4, 4, 4);
-    reviewsLayout->setSpacing(4);
+    reviewsLayout->setContentsMargins(ui::pageMargins());
+    reviewsLayout->setSpacing(ui::kSpaceS);
 
     auto* reviewsScroll = new QScrollArea(reviewsTab);
     reviewsScroll->setWidgetResizable(true);
@@ -621,8 +615,8 @@ void MapHallPage::buildUi()
     reviewsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     m_reviewBox = new QWidget(reviewsScroll);
     m_reviewLayout = new QVBoxLayout(m_reviewBox);
-    m_reviewLayout->setContentsMargins(0, 0, 4, 0);
-    m_reviewLayout->setSpacing(10);
+    m_reviewLayout->setContentsMargins(0, 0, ui::kSpaceS, 0);
+    m_reviewLayout->setSpacing(ui::kSpaceM);
     m_reviewLayout->addStretch(1);
     reviewsScroll->setWidget(m_reviewBox);
     reviewsLayout->addWidget(reviewsScroll, 1);
@@ -638,7 +632,7 @@ void MapHallPage::buildUi()
     // 「我的」：与实例「地图 → 我的」同款卡片列表，内容随选中项重建
     auto* mineTab = new QWidget(m_tabs);
     auto* mineLayout = new QVBoxLayout(mineTab);
-    mineLayout->setContentsMargins(4, 6, 4, 4);
+    mineLayout->setContentsMargins(ui::pageMargins());
     mineLayout->setSpacing(0);
 
     auto* mineScroll = new QScrollArea(mineTab);
@@ -648,8 +642,8 @@ void MapHallPage::buildUi()
 
     m_mineBody = new QWidget(mineScroll);
     m_mineLayout = new QVBoxLayout(m_mineBody);
-    m_mineLayout->setContentsMargins(0, 0, 4, 0);
-    m_mineLayout->setSpacing(10);
+    m_mineLayout->setContentsMargins(0, 0, ui::kSpaceS, 0);
+    m_mineLayout->setSpacing(ui::kSpaceM);
     mineScroll->setWidget(m_mineBody);
     mineLayout->addWidget(mineScroll, 1);
 
