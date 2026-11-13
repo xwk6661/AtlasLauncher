@@ -26,6 +26,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QGroupBox>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
@@ -33,26 +34,89 @@
 #include <QMessageBox>
 #include <QProgressDialog>
 #include <QPushButton>
+#include <QResizeEvent>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 
 #include "Application.h"
 #include "FileSystem.h"
+#include "MapInfoCard.h"
 #include "MapStyle.h"
 #include "ResourcePaths.h"
 #include "ResourceStore.h"
 #include "settings/SettingsObject.h"
 
 namespace maps {
+
+/// 一行「根目录」/「路径」用的标签：宽度不够时从中间省略。
+/// 直接 setText 整条路径会把布局撑到几千像素，窗口一窄就换行、把页面顶得很高。
+class ElidedLabel : public QLabel {
+   public:
+    explicit ElidedLabel(QWidget* parent = nullptr) : QLabel(parent)
+    {
+        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+        setMinimumWidth(0);
+        setTextInteractionFlags(Qt::TextSelectableByMouse);
+    }
+
+    void setPath(const QString& path)
+    {
+        m_path = QDir::toNativeSeparators(path);
+        setToolTip(m_path);
+        updateText();
+    }
+
+   protected:
+    void resizeEvent(QResizeEvent* event) override
+    {
+        QLabel::resizeEvent(event);
+        updateText();
+    }
+
+   private:
+    void updateText()
+    {
+        const int available = width() - contentsMargins().left() - contentsMargins().right();
+        const QString elided =
+            available > 0 ? fontMetrics().elidedText(m_path, Qt::ElideMiddle, available) : m_path;
+        // 只在结果变化时 setText：resize 里无条件写文本会触发一次多余的布局重算
+        if (elided != text())
+            QLabel::setText(elided);
+    }
+
+    QString m_path;
+};
+
 namespace {
 
-QString describeState(const QString& name)
+/// 三个资源目录各自的状态。**只回答"在不在、能不能用"**，
+/// 路径由页面上方的「根目录」统一交代，不再每行重复四五十个字符。
+struct ResourceState {
+    QString name;
+    QString state;
+    QString path;
+    bool ready = false;
+    bool missing = false;
+};
+
+ResourceState describeState(const QString& name)
 {
+    ResourceState out;
+    out.name = name;
     const QString dir = resource::dirFor(name);
-    const QString where = QDir::toNativeSeparators(dir);
-    if (!QFileInfo::exists(dir))
-        return QObject::tr("未创建（%1）").arg(where);
-    return QObject::tr("%1（%2）").arg(QFileInfo(dir).isDir() ? QObject::tr("已就绪") : QObject::tr("不是目录"), where);
+    out.path = QDir::cleanPath(QFileInfo(dir).absolutePath());
+
+    const QFileInfo info(dir);
+    if (!info.exists()) {
+        out.state = QObject::tr("未创建");
+        out.missing = true;
+    } else if (!info.isDir()) {
+        out.state = QObject::tr("不是目录");
+    } else {
+        out.state = QObject::tr("已就绪");
+        out.ready = true;
+    }
+    return out;
 }
 
 /// 「本机还有哪些目录可以复用」：勾选一个就填进路径框
@@ -113,22 +177,27 @@ MapResourcePage::MapResourcePage(QWidget* parent) : QWidget(parent)
     layout->setContentsMargins(ui::pageMargins());
     layout->setSpacing(ui::kSpaceM);
 
+    // ── 位置 ──
+    // 说明只留「是什么 + 有什么用」，细节（三个目录各装什么）收进 tooltip：
+    // 设置页的第一眼应该看见控件，而不是先读一段四行的散文。
     auto* box = new QGroupBox(tr("资源库位置"), this);
     auto* boxLayout = new QVBoxLayout(box);
     boxLayout->setSpacing(ui::kSpaceS);
 
-    auto* intro = new QLabel(
-        tr("Minecraft 的三样公共资源 —— 游戏资源（assets）、运行库（libraries）、"
-           "Mojang 官方 Java 运行时（java，首次进图时那 400 多个 jvm.dll 就是它）—— 默认都放在启动器数据目录里。\n"
-           "把这里指到别的盘（或指向本机已有的 .minecraft / 别的启动器目录），点「应用资源库」就会把这些文件"
-           "真的搬过去，之后启动器直接读新位置：换启动器不用重新下载，也不占系统盘。"),
-        box);
+    auto* intro = new QLabel(tr("Minecraft 的三份公共资源默认放在数据目录里。指到别的盘、或本机已有的 "
+                                ".minecraft 目录，就能复用资源、不占系统盘。"),
+                             box);
     intro->setWordWrap(true);
+    intro->setToolTip(tr("assets：音效、语言、材质索引\n"
+                         "libraries：Java 类库，以及每个版本的 client jar\n"
+                         "java：Mojang 官方 Java 运行时（首次进图时那 400 多个 jvm.dll 就是它）"));
     boxLayout->addWidget(intro);
 
     auto* dirRow = new QHBoxLayout();
+    dirRow->setSpacing(ui::kSpaceS);
     m_dir = new QLineEdit(box);
-    m_dir->setPlaceholderText(tr("留空 = 启动器数据目录（%1）").arg(QDir::toNativeSeparators(APPLICATION->dataRoot())));
+    m_dir->setPlaceholderText(tr("留空 = 使用数据目录"));
+    m_dir->setToolTip(tr("当前数据目录：%1").arg(QDir::toNativeSeparators(APPLICATION->dataRoot())));
     m_dir->setText(APPLICATION->settings()->get("SharedResourceDir").toString());
     auto* browseButton = new QPushButton(tr("浏览…"), box);
     auto* detectButton = new QPushButton(tr("检测本机…"), box);
@@ -139,31 +208,58 @@ MapResourcePage::MapResourcePage(QWidget* parent) : QWidget(parent)
     dirRow->addWidget(detectButton);
     boxLayout->addLayout(dirRow);
 
-    m_migrate = new QCheckBox(tr("把数据目录里已有的资源搬到目标目录"), box);
+    m_migrate = new QCheckBox(tr("把现有资源一并搬过去"), box);
     m_migrate->setChecked(true);
-    m_migrate->setToolTip(tr("勾选 = 直接迁移（同盘瞬间完成，跨盘会复制后删源）；\n"
-                             "不勾 = 只切换路径，旧数据留在数据目录里自己处理。"));
+    m_migrate->setToolTip(tr("勾选 = 迁移（同盘瞬间完成，跨盘复制后删源）；\n"
+                             "不勾 = 只切换路径，旧数据留在原处自己处理。"));
     boxLayout->addWidget(m_migrate);
 
     auto* actionRow = new QHBoxLayout();
+    actionRow->setSpacing(ui::kSpaceM);
     m_apply = ui::makePrimaryButton(tr("应用资源库"), box);
     m_apply->setToolTip(tr("迁移并切换路径。改完需要重启启动器才生效（资源路径在启动时就固定了）。"));
     actionRow->addWidget(m_apply);
-    actionRow->addStretch(1);
+    auto* applyHint = new QLabel(tr("只点「确定」不会搬文件；应用后需重启启动器"), box);
+    applyHint->setFont(ui::metaFont(applyHint->font()));
+    applyHint->setStyleSheet(QStringLiteral("color: %1;").arg(ui::mutedTextColor().name()));
+    actionRow->addWidget(applyHint, 1);
     boxLayout->addLayout(actionRow);
 
     m_status = new QLabel(box);
     m_status->setWordWrap(true);
     m_status->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_status->setVisible(false);
     boxLayout->addWidget(m_status);
 
     layout->addWidget(box);
 
-    m_current = new QLabel(this);
-    m_current->setWordWrap(true);
-    m_current->setFont(ui::metaFont(m_current->font()));
-    m_current->setEnabled(false);
-    layout->addWidget(m_current);
+    // ── 当前状态 ──
+    // 根目录只说一次，三行只列「名字 + 状态」；只有某个目录确实不在根目录下时，
+    // 才在第三列补上它自己的路径。原来一行里重复三遍同一个长前缀，读起来全是斜杠。
+    auto* statusBox = new QGroupBox(tr("当前状态"), this);
+    auto* statusLayout = new QVBoxLayout(statusBox);
+    statusLayout->setSpacing(ui::kSpaceS);
+
+    auto* rootRow = new QHBoxLayout();
+    rootRow->setSpacing(ui::kSpaceS);
+    auto* rootKey = new QLabel(tr("根目录"), statusBox);
+    rootKey->setStyleSheet(QStringLiteral("color: %1;").arg(ui::mutedTextColor().name()));
+    rootKey->setFixedWidth(72);
+    rootRow->addWidget(rootKey);
+    m_rootPath = new ElidedLabel(statusBox);
+    rootRow->addWidget(m_rootPath, 1);
+    statusLayout->addLayout(rootRow);
+
+    m_statusBody = new QWidget(statusBox);
+    m_statusGrid = new QGridLayout(m_statusBody);
+    m_statusGrid->setContentsMargins(0, 0, 0, 0);
+    m_statusGrid->setHorizontalSpacing(ui::kSpaceM);
+    m_statusGrid->setVerticalSpacing(ui::kSpaceXS);
+    m_statusGrid->setColumnMinimumWidth(0, 72);
+    m_statusGrid->setColumnStretch(2, 1);
+    statusLayout->addWidget(m_statusBody);
+
+    layout->addWidget(statusBox);
     layout->addStretch(1);
 
     connect(browseButton, &QPushButton::clicked, this, &MapResourcePage::browse);
@@ -175,10 +271,40 @@ MapResourcePage::MapResourcePage(QWidget* parent) : QWidget(parent)
 
 void MapResourcePage::refreshStatus()
 {
-    QStringList lines;
-    for (const QString& name : ResourceStore::managedNames())
-        lines << QStringLiteral("%1：%2").arg(name, describeState(name));
-    m_current->setText(tr("当前：%1").arg(lines.join(QStringLiteral("　·　"))));
+    if (m_statusGrid == nullptr)
+        return;
+
+    ui::clearLayout(m_statusGrid);
+
+    QString root = APPLICATION->settings()->get("SharedResourceDir").toString().trimmed();
+    if (root.isEmpty())
+        root = APPLICATION->dataRoot();
+    root = QDir::cleanPath(root);
+    if (m_rootPath != nullptr)
+        m_rootPath->setPath(root);
+
+    int row = 0;
+    for (const QString& name : ResourceStore::managedNames()) {
+        const ResourceState state = describeState(name);
+
+        auto* nameLabel = new QLabel(state.name, m_statusBody);
+        m_statusGrid->addWidget(nameLabel, row, 0, Qt::AlignVCenter);
+
+        const QColor color = state.ready ? QColor(ui::successColorName())
+                                         : state.missing ? ui::mutedTextColor() : QColor(ui::warningColorName());
+        auto* stateLabel = new QLabel(QStringLiteral("<span style='color:%1'>●</span> %2")
+                                          .arg(color.name(), state.state.toHtmlEscaped()),
+                                      m_statusBody);
+        m_statusGrid->addWidget(stateLabel, row, 1, Qt::AlignVCenter);
+
+        // 只有不在根目录下才显示独立路径；正常情况下三行加起来也只占一列宽度
+        if (state.path != root) {
+            auto* pathLabel = new ElidedLabel(m_statusBody);
+            pathLabel->setPath(state.path);
+            m_statusGrid->addWidget(pathLabel, row, 2, Qt::AlignVCenter);
+        }
+        ++row;
+    }
 }
 
 void MapResourcePage::browse()
@@ -209,6 +335,8 @@ void MapResourcePage::applyNow()
     APPLICATION->settings()->set("SharedResourceDir", root);
 
     if (root.isEmpty()) {
+        m_status->setStyleSheet(QString());
+        m_status->setVisible(true);
         m_status->setText(tr("已改回数据目录（重启启动器后生效）。之前迁移出去的文件没有搬回来，需要的话手动移回。"));
         refreshStatus();
         return;
@@ -231,9 +359,11 @@ void MapResourcePage::applyNow()
     progress.close();
 
     if (errors.isEmpty()) {
+        m_status->setVisible(true);
         m_status->setStyleSheet(QStringLiteral("color: %1;").arg(ui::successColorName()));
         m_status->setText(tr("已迁移到 %1。「重启启动器」后生效（资源路径在启动时固定）。").arg(QDir::toNativeSeparators(root)));
     } else {
+        m_status->setVisible(true);
         m_status->setStyleSheet(QStringLiteral("color: %1;").arg(ui::warningColorName()));
         m_status->setText(tr("有 %1 项没完成：\n· %2").arg(errors.size()).arg(errors.join(QStringLiteral("\n· "))));
     }

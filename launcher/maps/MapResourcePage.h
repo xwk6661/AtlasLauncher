@@ -22,11 +22,14 @@
 #include "ui/pages/BasePage.h"
 
 class QCheckBox;
+class QGridLayout;
 class QLabel;
 class QLineEdit;
 class QPushButton;
 
 namespace maps {
+
+class ElidedLabel;
 
 /**
  * 全局设置的「资源」页：把 assets / libraries / java 三个目录指到别的盘或别的启动器。
@@ -58,7 +61,10 @@ class MapResourcePage : public QWidget, public BasePage {
     QCheckBox* m_migrate = nullptr;
     QPushButton* m_apply = nullptr;
     QLabel* m_status = nullptr;
-    QLabel* m_current = nullptr;
+    /// 「当前状态」三行：名称 / 状态 / 路径（路径只在它不在根目录下时才出现）
+    QGridLayout* m_statusGrid = nullptr;
+    QWidget* m_statusBody = nullptr;
+    ElidedLabel* m_rootPath = nullptr;
 };
 
 }  // namespace maps
