@@ -69,6 +69,8 @@ class MapImportDialog : public QDialog {
     QLineEdit* m_loaderVersionEdit = nullptr;
     QListWidget* m_evidenceList = nullptr;
     QLabel* m_confidenceLabel = nullptr;
+    /// 实验性设置 / 缺模组这类「导入前必须知道」的警告，单独一行，别和统计数字挤在一起
+    QLabel* m_warningLabel = nullptr;
     QLabel* m_summaryLabel = nullptr;
     QPushButton* m_okButton = nullptr;
     /// Ok 按钮的默认文案（判定不出时会被换成「请先选择版本」，之后要能换回来）

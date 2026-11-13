@@ -17,6 +17,7 @@
  */
 #pragma once
 
+#include <QCoreApplication>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -54,6 +55,26 @@ inline Confidence confidenceFromString(const QString& value)
     if (value.compare(QLatin1String("MEDIUM"), Qt::CaseInsensitive) == 0)
         return Confidence::Medium;
     return Confidence::Low;
+}
+
+/**
+ * 给人看的置信度：高 / 中 / 低。
+ *
+ * `map.json`、日志、文档里仍然写 HIGH / MEDIUM / LOW（那是判定结果的原值，
+ * 也是 `decidedBy` 那套约定的一部分）；只有界面显示换成中文，
+ * 免得中文界面里突然冒出一个 "HIGH" 让人以为是版本号。
+ */
+inline QString confidenceLabel(Confidence confidence)
+{
+    switch (confidence) {
+        case Confidence::High:
+            return QCoreApplication::translate("maps", "高");
+        case Confidence::Medium:
+            return QCoreApplication::translate("maps", "中");
+        case Confidence::Low:
+            break;
+    }
+    return QCoreApplication::translate("maps", "低");
 }
 
 

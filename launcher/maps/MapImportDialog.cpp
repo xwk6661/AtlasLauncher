@@ -25,6 +25,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QLocale>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
@@ -90,8 +91,16 @@ MapImportDialog::MapImportDialog(const MapScanResult& scan, QWidget* parent) : Q
     m_confidenceLabel->setFont(ui::cardTitleFont(m_confidenceLabel->font()));
     layout->addWidget(m_confidenceLabel);
 
+    m_warningLabel = new QLabel(this);
+    m_warningLabel->setWordWrap(true);
+    m_warningLabel->setStyleSheet(QStringLiteral("color: %1;").arg(ui::warningColorName()));
+    m_warningLabel->setVisible(false);
+    layout->addWidget(m_warningLabel);
+
     m_summaryLabel = new QLabel(this);
     m_summaryLabel->setWordWrap(true);
+    m_summaryLabel->setFont(ui::metaFont(m_summaryLabel->font()));
+    m_summaryLabel->setStyleSheet(QStringLiteral("color: %1;").arg(ui::mutedTextColor().name()));
     layout->addWidget(m_summaryLabel);
 
     m_evidenceList = new QListWidget(this);
@@ -194,35 +203,37 @@ void MapImportDialog::updateEvidence()
     const auto& world = m_scan.worlds.at(index);
     const auto confidence = world.version.confidence;
 
-    m_confidenceLabel->setText(tr("置信度：%1").arg(confidenceToString(confidence)));
+    m_confidenceLabel->setText(tr("置信度：%1").arg(confidenceLabel(confidence)));
+    m_confidenceLabel->setToolTip(tr("判定结果原值：%1。\n不确定就手动选一个版本；判不出来时不会允许导入。")
+                                      .arg(confidenceToString(confidence)));
     m_confidenceLabel->setStyleSheet(
         QStringLiteral("color: %1; font-weight: bold;").arg(ui::confidenceColor(confidence).name()));
 
-    QStringList extra;
+    // 警告与统计分开：警告是「导入前必须知道」，统计是「这包有多大」，
+    // 原来两段挤在一个富文本里，没警告时还会多出一个空段落。
+    QStringList warnings;
     if (!world.level.enabledFeatures.isEmpty()) {
-        extra.append(tr("⚠ 存档带实验性设置：%1（游戏打开时会自己弹一次确认框）")
-                         .arg(world.level.enabledFeatures.join(QStringLiteral(", "))));
+        warnings.append(tr("⚠ 存档带实验性设置：%1（游戏打开时会自己弹一次确认框）")
+                            .arg(world.level.enabledFeatures.join(QStringLiteral(", "))));
     }
     // 判据只能是 Forge 写进 level.dat 的模组清单；作者用什么客户端保存过不算
-    if (!world.level.requiredMods.isEmpty() && m_scan.bundledMods().isEmpty())
-        extra.append(tr("⚠ 存档声明依赖 %1 个模组，但压缩包里没有 mods/ —— 需要自备对应模组")
-                         .arg(world.level.requiredMods.size()));
-    if (!extra.isEmpty())
-        extra.append(QString());
+    if (!world.level.requiredMods.isEmpty() && m_scan.bundledMods().isEmpty()) {
+        warnings.append(tr("⚠ 存档声明依赖 %1 个模组，但压缩包里没有 mods/ —— 需要自备对应模组")
+                            .arg(world.level.requiredMods.size()));
+    }
+    warnings.append(world.version.warnings);
 
-    // 这段是富文本：世界名/模组 id 里的 & 和 < 必须转义，否则标签会被吃掉
-    QStringList escaped = extra;
-    escaped.append(world.version.warnings);
-    for (auto& line : escaped)
+    QStringList escapedWarnings = warnings;
+    for (auto& line : escapedWarnings)
         line = line.toHtmlEscaped();
+    m_warningLabel->setText(escapedWarnings.join(QStringLiteral("<br/>")));
+    m_warningLabel->setVisible(!escapedWarnings.isEmpty());
 
-    m_summaryLabel->setText(QStringLiteral("<p>%1</p><p>%2</p>")
-                                .arg(escaped.join(QStringLiteral("<br/>")),
-                                     tr("%1 个文件 · %2 MiB · 材质包 %3 · 模组 %4")
-                                         .arg(world.fileCount)
-                                         .arg(QString::number(world.sizeBytes / 1024.0 / 1024.0, 'f', 1))
-                                         .arg(m_scan.resourcePacks().size())
-                                         .arg(m_scan.bundledMods().size())));
+    m_summaryLabel->setText(tr("%1 个文件 · %2 MiB · 材质包 %3 · 模组 %4")
+                                .arg(QLocale().toString(static_cast<qlonglong>(world.fileCount)))
+                                .arg(QString::number(world.sizeBytes / 1024.0 / 1024.0, 'f', 1))
+                                .arg(m_scan.resourcePacks().size())
+                                .arg(m_scan.bundledMods().size()));
 
     m_evidenceList->clear();
     for (const auto& item : world.version.evidence) {

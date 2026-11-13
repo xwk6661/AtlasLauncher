@@ -740,11 +740,10 @@ void MapInstancePage::refreshHallTabs()
         const QString suggestion = MapHallLink::suggestSlugFor(m_title->text().isEmpty()
                                                                   ? m_instance->name()
                                                                   : m_title->text());
-        QString text = tr("这个实例还没关联到 CTM 地图。\n\n"
-                          "关联之后，这里会显示这张图在站上的简介、评分和玩家评论；\n"
-                          "关联只写一个 hall-link.json，不会改动存档或实例配置。");
+        QString text = tr("还没关联到 CTM 地图 —— 关联后这里会显示站上的简介、评分和玩家评论。\n"
+                          "不会改存档，只写一个 hall-link.json。");
         if (!suggestion.isEmpty())
-            text += tr("\n\n本地库里有一张《%1》看起来就是它 —— 点下面的按钮即可关联。").arg(suggestion);
+            text += tr("\n本地库里有一张《%1》看着就是它，点下面的按钮即可关联。").arg(suggestion);
         m_aboutState->setText(text);
         setAboutFacts({});
         requestAboutCover({}, m_title->text().isEmpty() ? m_instance->name() : m_title->text());
@@ -1755,7 +1754,7 @@ void MapInstancePage::reload()
         }
         // 版本都判不出来时不摆一个 "置信度 LOW" 的空徽章：非地图实例这一页也会构造
         if (!m_meta.version.mcVersion.isEmpty())
-            addChip(tr("置信度 %1").arg(confidenceToString(m_meta.version.confidence)),
+            addChip(tr("置信度 %1").arg(confidenceLabel(m_meta.version.confidence)),
                     ui::confidenceColor(m_meta.version.confidence));
         m_badgeBox->setVisible(chipCount > 0);
         m_badgeRow->addStretch(1);

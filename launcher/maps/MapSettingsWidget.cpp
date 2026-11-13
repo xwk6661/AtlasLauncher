@@ -84,7 +84,7 @@ void MapSettingsWidget::buildBehaviorGroup(QWidget* parent, QVBoxLayout* layout)
     auto* boxLayout = new QVBoxLayout(m_behaviorBox);
     boxLayout->setSpacing(ui::kSpaceS);
 
-    m_autoEnter = new QCheckBox(tr("启动时自动跳过主菜单，直接进入这张图的存档"), m_behaviorBox);
+    m_autoEnter = new QCheckBox(tr("启动后直接进入地图（跳过主菜单）"), m_behaviorBox);
     m_autoEnter->setToolTip(tr("关掉后 Agent 仍会注入（退出判定要用），只是不替玩家进存档；\n"
                                "1.20+ 的版本关闭后不再带 --quickPlaySingleplayer。"));
     m_safeExit = new QCheckBox(tr("在游戏里退出存档后自动关闭游戏"), m_behaviorBox);
@@ -154,11 +154,11 @@ void MapSettingsWidget::buildGlobalGroups(QWidget* parent, QVBoxLayout* layout)
     optionsLayout->addWidget(m_optionsSprintSneak);
     optionsLayout->addWidget(m_optionsFullscreen);
 
-    auto* optionsHint = new QLabel(tr("只在新建实例时写一次，之后你在游戏里怎么改都不会被覆盖。\n"
-                                      "版本判不出来时这两项一律跳过（写错一代会让蹲/跑静默失效）。"),
-                                   optionsBox);
+    auto* optionsHint = new QLabel(tr("只在新建实例时写一次，之后在游戏里怎么改都不会被覆盖。"), optionsBox);
     optionsHint->setWordWrap(true);
     optionsHint->setEnabled(false);
+    optionsHint->setToolTip(tr("版本判不出来时，语言与键位一律跳过 ——\n"
+                               "两代写法互不兼容，写错会让蹲/跑静默回到默认键位。"));
     optionsLayout->addWidget(optionsHint);
     layout->addWidget(optionsBox);
 
