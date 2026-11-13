@@ -4,13 +4,14 @@
 把 [`Minecraft-AIO`](E:/llmUsage/Minecraft-AIO)（mcml v0.33.0，Electron + TypeScript）的
 「以地图为中心」搬到了原生 Qt 上 —— **点地图卡片直接进图，版本由程序推断**。
 
-> **状态（2026-11-12 23:45，以 [05](05-进度与遗留.md) 为准）**：构建通过 · 测试 `415 passed / 0 failed / 13 skipped`
-> （非提权实测，31 个套件 / 428 项；开开发者模式后那 7 项符号链接用例才会真正执行，skip 降到 6）·
+> **状态（2026-11-13 23:45，以 [05](05-进度与遗留.md) 为准）**：构建通过 · 测试 `422 passed / 0 failed / 6 skipped`
+> （本机有符号链接权限，31 个套件 / 428 项；无权限时为 `415 / 13`，差的 7 项是符号链接用例）·
 > M0、M2、M5 完成，M1 / M3 / M4 代码落地但仍有真机验收缺口，M6 主链路完成但**已隐藏** ·
 > 真机已过「1.20+ 进图与自动关游戏」「≤1.19.4 Agent 进图与安全退出（1.8.9 / 1.12 Forge / 1.16.5）」
 > 「大文件分片 + 续传 / 看门狗」「本地离线优先启动」「本地地图库」，真机反馈 4 条全部闭环（[05 §8](05-进度与遗留.md)）·
 > 导入时写 `options.txt` 的语言与键位（[06 §55](06-变更记录.md)）·
 > 汉化（M6）链路完整、7 张真实地图与参考实现对表通过，但**2026-11-12 起界面整体隐藏**（[06 §63](06-变更记录.md)、[07](07-一键汉化方案.md)）·
+> 「地图」相关页面已统一到一套排版令牌（[06 §66](06-变更记录.md)），资源页/导入对话框的叙述性文案已收口（§67、§68）·
 > Agent 符号表 60 张，逐槽位对真实 client jar 校验（[`agent-matrix.md`](agent-matrix.md)）· 分支 `feature/map-launcher`
 
 ---
@@ -102,8 +103,9 @@
 
 资源：`launcher/resources/maps/dataversion.json`（483 个版本）、`launcher/resources/agents/`
 （`quickboot.jar` + `introskip.jar` + **60 张符号表**，由 `tools/agent_symbol_audit.py` 对着真实 jar 复核）。
-测试：31 个套件、428 项，非提权实测 `415 passed / 0 failed / 13 skipped`（开开发者模式后 skip 降到 6，
-差的就是 `FileSystem_test` 那 7 项符号链接用例）。地图相关的有 `MapArchiveScan`（17 + 2 项门控）、
+测试：31 个套件、428 项。本机（有符号链接权限）实测 `422 passed / 0 failed / 6 skipped`；
+无符号链接权限时是 `415 / 13`，差的 7 项就是 `FileSystem_test` 的符号链接用例 ——
+两种口径总数都是 428，明细见 [03 §5](03-环境与构建.md)。地图相关的有 `MapArchiveScan`（17 + 2 项门控）、
 `MapOptionsTxt`（32）、`MapL10nProbe`（29 + 1 项门控）、`MapL10nTranslate`（7）、
 `MapL10nApply`（15 + 3 项门控）、`ModPresets`（14）、`DownloadSource`（12）、`RequestRetry`（23）。
 
