@@ -677,12 +677,14 @@ void MapLibraryPanel::rebuildTable()
             QString childName = grouped ? item.variantSummary() : item.displayName();
             if (grouped) {
                 // 同组里两个都是"原版"（多版本的同语言包）时，补一个版本号区分
-                int sameLabel = 0;
+                // 同组里两行标签一样（例如两个包都是「原版」）时，用版本号区分；
+                // 但**只有版本确实不同才加**——否则会得到两行「简中 · 1.21.9」，白噪声
+                QSet<QString> details;
                 for (const auto& other : list) {
                     if (other.variantSummary() == item.variantSummary())
-                        ++sameLabel;
+                        details.insert(other.mapVersion.isEmpty() ? other.mcVersion : other.mapVersion);
                 }
-                if (sameLabel > 1) {
+                if (details.size() > 1) {
                     const QString detail = item.mapVersion.isEmpty() ? item.mcVersion : item.mapVersion;
                     if (!detail.isEmpty())
                         childName = QStringLiteral("%1 · %2").arg(childName, detail);
