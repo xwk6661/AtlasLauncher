@@ -351,8 +351,12 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     });
     connect(m_table, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
         auto* first = m_table->item(row, 0);
-        if (first != nullptr && !first->data(kGroupKeyRole).toString().isEmpty())
-            return;  // 双击组标题：单击已经切换过了，别再触发折叠
+        if (first != nullptr && !first->data(kGroupKeyRole).toString().isEmpty()) {
+            // 双击 = 两次 cellClicked（已经切换了两次，等于没动）+ 一次这里：
+            // 再切一次，双击就和单击一样只切换一个来回
+            toggleGroup(first->data(kGroupKeyRole).toString());
+            return;
+        }
         const QString file = first != nullptr ? first->data(Qt::UserRole).toString() : QString();
         if (file.isEmpty())
             return;
