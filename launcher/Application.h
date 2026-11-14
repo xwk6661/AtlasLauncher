@@ -164,6 +164,11 @@ class Application : public QApplication {
 
     HttpMetaCache* metacache();
 
+    /// 让 metacache 的 libraries / asset_indexes 基址跟上当前的 SharedResourceDir。
+    /// 迁移或改完资源目录**必须**调一次：基址是启动时定死的，不同步的话
+    /// 库文件按旧根解析 → 判定成"没下载过" → 整份重下，条目还会被除名写盘。
+    void refreshResourcePaths();
+
     Meta::Index* metadataIndex();
 
     void updateCapabilities();

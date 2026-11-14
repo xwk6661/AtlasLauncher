@@ -117,6 +117,12 @@ class HttpMetaCache : public QObject {
 
     void addBase(QString base, QString base_root);
 
+    // 换掉一个已注册基址的根目录（例如把 assets/libraries 迁到别的盘）。
+    // 与 addBase 不同，它会**覆盖**现有基址，并把该基址下已有条目的绝对路径一起改过去，
+    // 否则条目仍按旧根解析：文件明明搬走了，缓存却认为"没下载过"。
+    // 返回 true 表示根目录真的变了。
+    bool setBase(QString base, QString base_root);
+
     // (re)start a timer that calls SaveNow later.
     void SaveEventually();
     void Load();

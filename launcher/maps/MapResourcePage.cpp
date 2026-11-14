@@ -217,9 +217,9 @@ MapResourcePage::MapResourcePage(QWidget* parent) : QWidget(parent)
     auto* actionRow = new QHBoxLayout();
     actionRow->setSpacing(ui::kSpaceM);
     m_apply = ui::makePrimaryButton(tr("应用资源库"), box);
-    m_apply->setToolTip(tr("迁移并切换路径。改完需要重启启动器才生效（资源路径在启动时就固定了）。"));
+    m_apply->setToolTip(tr("迁移并切换路径。改完立即生效：资源路径与下载账本会一起改过去，不用重启。"));
     actionRow->addWidget(m_apply);
-    auto* applyHint = new QLabel(tr("只点「确定」不会搬文件；应用后需重启启动器"), box);
+    auto* applyHint = new QLabel(tr("只点「确定」不会搬文件；应用后立即生效"), box);
     applyHint->setFont(ui::metaFont(applyHint->font()));
     applyHint->setStyleSheet(QStringLiteral("color: %1;").arg(ui::mutedTextColor().name()));
     actionRow->addWidget(applyHint, 1);
@@ -335,9 +335,11 @@ void MapResourcePage::applyNow()
     APPLICATION->settings()->set("SharedResourceDir", root);
 
     if (root.isEmpty()) {
+        // 改回数据目录：基址也要跟着退回去，否则本次会话仍按旧根找库文件
+        APPLICATION->refreshResourcePaths();
         m_status->setStyleSheet(QString());
         m_status->setVisible(true);
-        m_status->setText(tr("已改回数据目录（重启启动器后生效）。之前迁移出去的文件没有搬回来，需要的话手动移回。"));
+        m_status->setText(tr("已改回数据目录（立即生效）。之前迁移出去的文件没有搬回来，需要的话手动移回。"));
         refreshStatus();
         return;
     }
@@ -358,10 +360,17 @@ void MapResourcePage::applyNow()
                                                     });
     progress.close();
 
+    // 文件已经在目标位置，下载账本（metacache 的 libraries / asset_indexes 基址）必须一起挪。
+    // 少了这一步：本次会话仍按旧根解析 → 判定"文件不存在" → 条目被除名写盘 → 重启后整份重下；
+    // classpath 也会继续指向旧目录，客户端直接 ClassNotFoundException。
+    APPLICATION->refreshResourcePaths();
+
     if (errors.isEmpty()) {
         m_status->setVisible(true);
         m_status->setStyleSheet(QStringLiteral("color: %1;").arg(ui::successColorName()));
-        m_status->setText(tr("已迁移到 %1。「重启启动器」后生效（资源路径在启动时固定）。").arg(QDir::toNativeSeparators(root)));
+        m_status->setText(tr("已迁移到 %1，下载账本已同步（立即生效，不用重启）。"
+                             "如果目标位置本来就有别的启动器的资源，已有的那份会按 sha1 直接认下来，不会重下。")
+                              .arg(QDir::toNativeSeparators(root)));
     } else {
         m_status->setVisible(true);
         m_status->setStyleSheet(QStringLiteral("color: %1;").arg(ui::warningColorName()));
@@ -372,8 +381,14 @@ void MapResourcePage::applyNow()
 
 bool MapResourcePage::apply()
 {
-    // 只记设置：真正的搬迁由「应用资源库」按钮执行（可能要搬几个 GB，不该发生在点「确定」时）
-    APPLICATION->settings()->set("SharedResourceDir", m_dir->text().trimmed());
+    // 只记设置：真正的搬迁由「应用资源库」按钮执行（可能要搬几个 GB，不该发生在点「确定」时）。
+    // 但路径一改就要立刻同步基址 —— 否则「改了路径、没搬文件」这种最常见的手动切换
+    // 会让本次会话的下载写到旧目录、classpath 指向旧目录。
+    const QString root = m_dir->text().trimmed();
+    if (root != APPLICATION->settings()->get("SharedResourceDir").toString()) {
+        APPLICATION->settings()->set("SharedResourceDir", root);
+        APPLICATION->refreshResourcePaths();
+    }
     return true;
 }
 

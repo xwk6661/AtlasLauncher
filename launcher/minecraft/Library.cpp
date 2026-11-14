@@ -39,8 +39,70 @@
 
 #include <BuildConfig.h>
 #include <FileSystem.h>
+#include <ResourcePaths.h>
 #include <net/ApiRequest.h>
 #include <net/ChecksumValidator.h>
+#include <net/HttpMetaCache.h>
+
+#include <QCryptographicHash>
+#include <QDebug>
+#include <QFile>
+#include <QFileInfo>
+
+namespace {
+
+/**
+ * @brief 认领目标位置已经存在的库文件：核对 sha1，然后把 md5 与时间戳补进缓存条目。
+ *
+ * 账本是按**数据目录**存的（`metacache`），文件却在共享资源目录里。把 libraries
+ * 指到另一个启动器的目录、或者换机器时账本不会跟着走，于是「文件明明在、缓存认为
+ * 没下载过」，整份重下（本机实测 2.1 GB）。这里只认内容不认来源：
+ * sha1 与元数据一致就直接记账，不一致才让调用方去下载。
+ */
+bool adoptExistingFile(HttpMetaCache* cache, const MetaEntryPtr& entry, const QString& expectedSha1)
+{
+    const QString path = entry->getFullPath();
+    const QFileInfo info(path);
+    if (!info.isFile() || info.size() <= 0)
+        return false;
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+
+    // 一次读完，同时算 sha1（与元数据核对）和 md5（账本里存的是它）
+    QCryptographicHash sha1(QCryptographicHash::Sha1);
+    QCryptographicHash md5(QCryptographicHash::Md5);
+    constexpr qint64 kChunk = 256 * 1024;
+    while (!file.atEnd()) {
+        const QByteArray chunk = file.read(kChunk);
+        if (chunk.isEmpty())
+            break;
+        sha1.addData(chunk);
+        md5.addData(chunk);
+    }
+    file.close();
+
+    const QString actual = QString::fromLatin1(sha1.result().toHex());
+    if (actual.compare(expectedSha1, Qt::CaseInsensitive) != 0) {
+        qDebug() << "Library file does not match its sha1, re-downloading:" << path;
+        return false;
+    }
+
+    entry->setMD5Sum(QString::fromLatin1(md5.result().toHex()));
+    entry->setLocalChangedTimestamp(info.lastModified().toUTC().toMSecsSinceEpoch());
+    entry->makeEternal(true);
+    entry->setStale(false);
+    if (!cache->updateEntry(entry)) {
+        entry->setStale(true);
+        return false;
+    }
+
+    qInfo() << "Adopted existing library file:" << path;
+    return true;
+}
+
+}  // namespace
 
 /**
  * @brief Collect applicable files for the library.
@@ -137,6 +199,9 @@ QList<Net::Request::Ptr> Library::getDownloads(const RuntimeContext& runtimeCont
             entry->setStale(true);
         }
         if (!entry->isStale())
+            return true;
+        // 账本里没有、但目标位置已经有这个文件：先核对 sha1，对得上就直接记账，不再重下
+        if (!sha1.isEmpty() && adoptExistingFile(cache, entry, sha1))
             return true;
         Net::Request::Options options;
         if (stale) {
@@ -312,11 +377,18 @@ void Library::setStoragePrefix(QString prefix)
 /**
  * @brief Get the default storage prefix for libraries.
  *
- * @return QString The default storage prefix.
+ * 必须走 `resource::librariesDir()`，不能返回相对的 "libraries/"。
+ * 这个前缀被 getApplicableFiles() 拼成 classpath 里的 jar 路径，而相对路径是按
+ * **进程当前工作目录**解析的 —— 一旦设了共享资源目录，库文件已经搬到别处，
+ * classpath 却仍然指向原地，客户端启动时就是
+ * `java.lang.ClassNotFoundException: net.minecraft.client.main.Main`。
+ * 没设共享目录时 librariesDir() 就等于「当前目录/libraries」，与旧行为逐字节一致。
+ *
+ * @return QString The default storage prefix（绝对路径）。
  */
 QString Library::defaultStoragePrefix()
 {
-    return "libraries/";
+    return resource::librariesDir();
 }
 
 /**

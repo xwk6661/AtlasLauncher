@@ -2206,6 +2206,19 @@ QString Application::javaPath()
     return resource::javaDir();
 }
 
+void Application::refreshResourcePaths()
+{
+    if (!m_metacache)
+        return;
+
+    // 只改这两个基址：meta / metacache 按数据目录解析，搬资源库时它们不动
+    // （见 02 §2.3 的边界说明）。
+    if (m_metacache->setBase("asset_indexes", FS::PathCombine(resource::assetsDir(), "indexes")))
+        qInfo() << "Resource paths: asset indexes now at" << FS::PathCombine(resource::assetsDir(), "indexes");
+    if (m_metacache->setBase("libraries", resource::librariesDir()))
+        qInfo() << "Resource paths: libraries now at" << resource::librariesDir();
+}
+
 void Application::addQSavePath(const QString& path)
 {
     QMutexLocker locker(&m_qsaveResourcesMutex);

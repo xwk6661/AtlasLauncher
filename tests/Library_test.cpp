@@ -33,10 +33,15 @@
  *      limitations under the License.
  */
 
+#include <QCryptographicHash>
+#include <QFile>
+#include <QFileInfo>
+#include <QTemporaryDir>
 #include <QTest>
 #include "Json.h"
 
 #include <FileSystem.h>
+#include <ResourcePaths.h>
 #include <RuntimeContext.h>
 #include <minecraft/Library.h>
 #include <minecraft/MojangVersionFormat.h>
@@ -71,6 +76,88 @@ class LibraryTest : public QObject {
         cache->addBase("libraries", QDir("libraries").absolutePath());
         dataDir = QDir(QFINDTESTDATA("testdata/Libraries")).absolutePath();
     }
+    void test_defaultStoragePrefixIsResourcePath()
+    {
+        // classpath 里的 jar 路径必须等于库文件实际所在的目录。这里曾经返回相对的
+        // "libraries/"（按进程工作目录解析），设了共享资源目录之后 classpath 仍指向
+        // 旧目录，客户端启动即 `ClassNotFoundException: net.minecraft.client.main.Main`。
+        const QString prefix = Library::defaultStoragePrefix();
+        QVERIFY2(QDir::isAbsolutePath(prefix), qPrintable(prefix));
+        QCOMPARE(QDir::cleanPath(prefix), QDir::cleanPath(resource::librariesDir()));
+    }
+    /// 目标是「别的启动器 / 换机器」那种目录：文件在、账本里没有。
+    /// 内容对得上就该直接认下来，不能整份重下（本机实测 2.1 GB）。
+    void test_adoptsExistingLibraryFile()
+    {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        const QString rel = QStringLiteral("com/paulscode/codecwav/20101023/codecwav-20101023.jar");
+        const QString target = FS::PathCombine(tmp.path(), rel);
+        QVERIFY(FS::ensureFolderPathExists(QFileInfo(target).absolutePath()));
+        QVERIFY(QFile::copy(QFINDTESTDATA("testdata/Libraries/codecwav-20101023.jar"), target));
+
+        // 元数据里的 sha1 按这份文件现算（夹具是 17 字节的占位 jar，不是真库）
+        QFile jar(target);
+        QVERIFY(jar.open(QIODevice::ReadOnly));
+        const QString sha1 = QString::fromLatin1(QCryptographicHash::hash(jar.readAll(), QCryptographicHash::Sha1).toHex());
+        jar.close();
+
+        const QString jsonPath = FS::PathCombine(tmp.path(), "lib.json");
+        QFile jsonFile(jsonPath);
+        QVERIFY(jsonFile.open(QIODevice::WriteOnly));
+        const QString jsonText =
+            QStringLiteral("{\n"
+                           "  \"downloads\": { \"artifact\": {\n"
+                           "    \"path\": \"%1\",\n"
+                           "    \"sha1\": \"%2\",\n"
+                           "    \"size\": 17,\n"
+                           "    \"url\": \"https://libraries.minecraft.net/%1\"\n"
+                           "  } },\n"
+                           "  \"name\": \"com.paulscode:codecwav:20101023\"\n"
+                           "}\n")
+                .arg(rel, sha1);
+        jsonFile.write(jsonText.toUtf8());
+        jsonFile.close();
+
+        HttpMetaCache cache;
+        cache.addBase("libraries", tmp.path());
+
+        auto lib = readMojangJson(jsonPath);
+        QVERIFY2(lib.has_value(), "fixture must parse");
+
+        QStringList failed;
+        auto downloads = lib.value()->getDownloads(dummyContext(), &cache, failed, QString());
+        QCOMPARE(failed, {});
+        QCOMPARE(downloads.size(), 0);
+
+        // 认领之后账本里要有一条有效记录，否则每一轮都要再哈希一遍
+        auto entry = cache.resolveEntry("libraries", rel);
+        QVERIFY(entry != nullptr);
+        QVERIFY2(!entry->isStale(), "adopted entry should be valid");
+    }
+
+    /// 内容对不上（sha1 不匹配）时仍然要下载 —— 认领只认内容，不认文件名
+    void test_doesNotAdoptMismatchedFile()
+    {
+        QTemporaryDir tmp;
+        QVERIFY(tmp.isValid());
+        const QString rel = QStringLiteral("com/paulscode/codecwav/20101023/codecwav-20101023.jar");
+        const QString target = FS::PathCombine(tmp.path(), rel);
+        QVERIFY(FS::ensureFolderPathExists(QFileInfo(target).absolutePath()));
+        // 同名但内容不同：另一个真实 jar 顶替上去
+        QVERIFY(QFile::copy(QFINDTESTDATA("testdata/Libraries/testname-testversion-linux-32.jar"), target));
+
+        HttpMetaCache cache;
+        cache.addBase("libraries", tmp.path());
+
+        auto lib = readMojangJson(QFINDTESTDATA("testdata/Libraries/lib-simple.json"));
+        QVERIFY2(lib.has_value(), "fixture must parse");
+
+        QStringList failed;
+        auto downloads = lib.value()->getDownloads(dummyContext(), &cache, failed, QString());
+        QCOMPARE(downloads.size(), 1);
+    }
+
     void test_legacy()
     {
         RuntimeContext r = dummyContext();

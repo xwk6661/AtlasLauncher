@@ -39,6 +39,7 @@
 
 #include <QCryptographicHash>
 #include <QDateTime>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 
@@ -210,6 +211,28 @@ void HttpMetaCache::addBase(QString base, QString base_root)
     m_entries[base] = foo;
 }
 
+bool HttpMetaCache::setBase(QString base, QString base_root)
+{
+    if (!m_entries.contains(base)) {
+        addBase(base, base_root);
+        return true;
+    }
+
+    auto& map = m_entries[base];
+    if (QDir::cleanPath(map.base_path) == QDir::cleanPath(base_root))
+        return false;
+
+    qCInfo(taskNetLogC) << "[HttpMetaCache] base" << base << "moved from" << map.base_path << "to" << base_root;
+
+    map.base_path = base_root;
+    // 条目自己存了绝对路径（MetaEntry::getFullPath 用 m_basePath），不一起改就会继续指向旧根
+    for (auto& entry : map.entry_list)
+        entry->m_basePath = base_root;
+
+    SaveEventually();
+    return true;
+}
+
 auto HttpMetaCache::getBasePath(QString base) -> QString
 {
     if (m_entries.contains(base)) {
@@ -258,6 +281,7 @@ void HttpMetaCache::Load()
 
         auto foo = new MetaEntry();
         foo->m_baseId = base;
+        foo->m_basePath = getBasePath(base);
         foo->m_relativePath = element_obj["path"].toString();
         foo->m_md5sum = element_obj["md5sum"].toString();
         foo->m_etag = element_obj["etag"].toString();
