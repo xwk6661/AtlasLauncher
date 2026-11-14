@@ -128,6 +128,28 @@ QString LibraryItem::badge() const
     return parts.join(QLatin1Char(' '));
 }
 
+QString LibraryItem::groupKey() const
+{
+    if (!hallSlug.isEmpty())
+        return QStringLiteral("hall:") + hallSlug;
+
+    QString base = englishName;
+    if (base.isEmpty())
+        base = chineseName;
+    if (base.isEmpty())
+        base = QFileInfo(file).completeBaseName();
+
+    const QString normalized = variant::normalizeName(base);
+    return QStringLiteral("local:") + (normalized.isEmpty() ? file : normalized);
+}
+
+QString LibraryItem::variantSummary() const
+{
+    if (variant.isEmpty())
+        return variant::languageLabel(variant::Language::Unknown);
+    return variant.summary();
+}
+
 MapLibrary::MapLibrary(QObject* parent) : QObject(parent) {}
 
 QString MapLibrary::libraryDir()
@@ -164,6 +186,15 @@ LibraryItem itemFromJson(const QJsonObject& object, const QString& dir)
     item.chineseName = object.value("chineseName").toString();
     item.note = object.value("note").toString();
     item.bytes = static_cast<qint64>(object.value("bytes").toDouble());
+
+    const auto hall = object.value("hall").toObject();
+    item.hallSlug = hall.value("slug").toString().trimmed();
+    item.hallVerified = item.hallSlug.isEmpty() ? false : hall.value("verified").toBool();
+
+    if (object.contains("variant") && object.value("variant").isObject())
+        item.variant = variant::Info::fromJson(object.value("variant").toObject());
+    else
+        item.variant = variant::inferFromFileName(item.file, item.note);
     return item;
 }
 
@@ -179,6 +210,18 @@ QJsonObject itemToJson(const LibraryItem& item, const QJsonObject& previous)
     object.insert("chineseName", item.chineseName);
     object.insert("note", item.note);
     object.insert("bytes", static_cast<double>(item.bytes));
+
+    // 大厅关联：没关联就把字段删掉，别留一个空对象让人以为关联过
+    if (!item.hallSlug.isEmpty()) {
+        QJsonObject hall;
+        hall.insert("slug", item.hallSlug);
+        hall.insert("verified", item.hallVerified);
+        object.insert("hall", hall);
+    } else {
+        object.remove("hall");
+    }
+    object.insert("variant", item.variant.toJson());
+
     if (!object.contains("addedAt"))
         object.insert("addedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
     return object;
@@ -515,6 +558,86 @@ bool MapLibrary::setCategory(const QString& file, MapCategory category)
     return setCategory(file, categoryId(category));
 }
 
+bool MapLibrary::setHallLink(const QString& file, const QString& hallSlug, bool verified)
+{
+    const QString slug = hallSlug.trimmed();
+    bool touched = false;
+    for (auto& item : m_items) {
+        if (item.file != file)
+            continue;
+        // 解除关联时 verified 一并清掉，别留一个"已确认但没有目标"的状态
+        const bool newVerified = slug.isEmpty() ? false : verified;
+        if (item.hallSlug != slug || item.hallVerified != newVerified) {
+            item.hallSlug = slug;
+            item.hallVerified = newVerified;
+            touched = true;
+        }
+        break;
+    }
+    if (!touched)
+        return true;
+    if (!saveIndex())
+        return false;
+
+    emit changed();
+    return true;
+}
+
+bool MapLibrary::setVariant(const QString& file, const variant::Info& info)
+{
+    for (auto& item : m_items) {
+        if (item.file != file)
+            continue;
+        item.variant = info;
+        if (!saveIndex())
+            return false;
+        emit changed();
+        return true;
+    }
+    return false;
+}
+
+bool MapLibrary::setDefaultVariant(const QString& file)
+{
+    QString key;
+    for (const auto& item : m_items) {
+        if (item.file == file) {
+            key = item.groupKey();
+            break;
+        }
+    }
+    if (key.isEmpty())
+        return false;
+
+    bool touched = false;
+    for (auto& item : m_items) {
+        if (item.groupKey() != key)
+            continue;
+        const bool want = item.file == file;
+        if (item.variant.isDefault != want) {
+            item.variant.isDefault = want;
+            touched = true;
+        }
+    }
+    if (!touched)
+        return true;
+    if (!saveIndex())
+        return false;
+
+    emit changed();
+    return true;
+}
+
+QList<LibraryItem> MapLibrary::groupItems(const QString& groupKeyValue) const
+{
+    QList<LibraryItem> result;
+    for (const auto& item : m_items) {
+        if (item.groupKey() == groupKeyValue)
+            result << item;
+    }
+    return result;
+}
+
 bool MapLibrary::saveIndex()
 {
     // 用内存里的条目重建 entries：目录里已经没有的条目顺手清掉
@@ -544,7 +667,7 @@ bool MapLibrary::saveIndex()
 }
 
 void MapLibrary::rememberImported(const QString& archivePath, const QString& mcVersion, const QString& englishName,
-                                  const QString& chineseName)
+                                  const QString& chineseName, const QString& hallSlug, const variant::Info& info)
 {
     const QString file = QFileInfo(archivePath).fileName();
     if (file.isEmpty())
@@ -552,6 +675,18 @@ void MapLibrary::rememberImported(const QString& archivePath, const QString& mcV
 
     QJsonObject root = readIndexObject(indexPath());
     auto entries = root.value("entries").toArray();
+
+    // 导入时玩家明确选过的关联/语言，优先级高于已有值（但分类与中文名仍然只在空时补）
+    const auto writeIdentity = [&](QJsonObject& object) {
+        if (!hallSlug.isEmpty()) {
+            QJsonObject hall;
+            hall.insert("slug", hallSlug);
+            hall.insert("verified", true);
+            object.insert("hall", hall);
+        }
+        if (!info.isEmpty())
+            object.insert("variant", info.toJson());
+    };
 
     bool found = false;
     for (int i = 0; i < entries.size(); ++i) {
@@ -566,6 +701,7 @@ void MapLibrary::rememberImported(const QString& archivePath, const QString& mcV
             object.insert("englishName", englishName);
         if (object.value("chineseName").toString().isEmpty() && !chineseName.isEmpty())
             object.insert("chineseName", chineseName);
+        writeIdentity(object);
         entries.replace(i, object);
         break;
     }
@@ -580,6 +716,7 @@ void MapLibrary::rememberImported(const QString& archivePath, const QString& mcV
         object.insert("note", QString());
         object.insert("bytes", static_cast<double>(QFileInfo(archivePath).size()));
         object.insert("addedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+        writeIdentity(object);
         entries.append(object);
     }
 

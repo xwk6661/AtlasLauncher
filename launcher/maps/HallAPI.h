@@ -154,6 +154,10 @@ class HallAPI : public QObject {
     QString m_fallbackNote;
 
     QNetworkReply* get(const QUrl& url);
+    /// 同步列表的分页游标。站上有 2287 张图，而 PostgREST 单次最多返回 1000 行 ——
+    /// 只发一个 `limit=1000` 会静默丢掉后一半（2026-11-14 发现：本地 26 个包里有 14 张
+    /// 在缓存里查不到，`Terra Restore` / `Ragecraft III` 这些老图全在丢的那一半）。
+    int m_syncListOffset = 0;
     /// 同步详情页的分页游标（maps 表按 slug 翻页，直到覆盖列表里所有 slug）
     int m_syncDetailOffset = 0;
     bool m_libraryIncomplete = false;

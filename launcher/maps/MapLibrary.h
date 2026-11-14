@@ -23,6 +23,8 @@
 #include <QString>
 #include <QStringList>
 
+#include "MapVariant.h"
+
 namespace maps {
 
 /// 地图库里的分类。id 落盘（`map-library.json`），纯英文显示名。
@@ -54,10 +56,22 @@ struct LibraryItem {
     bool installed = false;         ///< 是否有实例仍指向它
     QStringList installedInstances;  ///< 实例 id，给 tooltip 用
 
+    /// 关联的 CTM 地图（大厅 slug）。空 = 还没关联
+    QString hallSlug;
+    /// 关联是不是人工确认过的（自动匹配只作建议，不写库）
+    bool hallVerified = false;
+    /// 语言变体：原版 / 官中 / 汉化，整包还是资源包
+    variant::Info variant;
+
     /// 显示名：中文名 → 英文名 → 文件名
     QString displayName() const;
     /// 徽章文本：`[1.16.5] Final Paradox v1.1.15`
     QString badge() const;
+    /// 分组键：关联了大厅就用 `hall:<slug>`，否则退回 `local:<归一化图名>`。
+    /// **不落盘**：这样改名不会把同一张图拆成两组，换机器只要有 slug 就还在同一组。
+    QString groupKey() const;
+    /// 「简中汉化 · 整包」「原版」这类一行摘要（界面用）
+    QString variantSummary() const;
 };
 
 /**
@@ -113,9 +127,20 @@ class MapLibrary : public QObject {
     bool setCategory(const QString& file, const QString& categoryId);
     bool setCategory(const QString& file, MapCategory category);
 
-    /// 导入成功后把识别到的元数据补进索引（不动分类，也不覆盖已有的中文名）
+    /// 关联/解除关联 CTM 地图（slug 为空 = 解除）。verified 由人工确认时置 true。
+    bool setHallLink(const QString& file, const QString& hallSlug, bool verified = true);
+    /// 改写语言变体（原版/官中/汉化、整包/资源包、来源）
+    bool setVariant(const QString& file, const variant::Info& info);
+    /// 把同组里的默认变体设为这一个（其它同组条目的 default 清掉）
+    bool setDefaultVariant(const QString& file);
+    /// 取同一组的全部条目（含自己），给「这张图有哪几个语言版本」用
+    QList<LibraryItem> groupItems(const QString& groupKey) const;
+
+    /// 导入成功后把识别到的元数据补进索引（不动分类，也不覆盖已有的中文名）。
+    /// hallSlug / variant 是导入时玩家确认过的关联与语言，写了就覆盖（那是明确意图）。
     static void rememberImported(const QString& archivePath, const QString& mcVersion, const QString& englishName,
-                                 const QString& chineseName);
+                                 const QString& chineseName, const QString& hallSlug = {},
+                                 const variant::Info& variant = {});
 
    signals:
     void changed();

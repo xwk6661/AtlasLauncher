@@ -22,6 +22,7 @@
 
 #include <QAbstractItemView>
 #include <QAction>
+#include <QBrush>
 #include <QColor>
 #include <QDesktopServices>
 #include <QDir>
@@ -29,6 +30,8 @@
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileInfo>
+#include <QFont>
+#include <QHash>
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QInputDialog>
@@ -38,6 +41,7 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPushButton>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QTableWidget>
 #include <QTimer>
@@ -216,14 +220,15 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     body->addWidget(catContainer);
 
     m_table = new LibraryTable(this);
-    m_table->setColumnCount(4);
-    m_table->setHorizontalHeaderLabels({ tr("地图"), tr("版本"), tr("分类"), tr("状态") });
+    m_table->setColumnCount(5);
+    m_table->setHorizontalHeaderLabels({ tr("地图"), tr("版本"), tr("语言"), tr("分类"), tr("状态") });
     m_table->verticalHeader()->setVisible(false);
     m_table->horizontalHeader()->setStretchLastSection(false);
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
     m_table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -254,17 +259,31 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
         const auto selected = m_table->selectionModel()->selectedRows();
         if (selected.isEmpty())
             return;
-        const QString file = m_table->item(selected.first().row(), 0)->data(Qt::UserRole).toString();
+        auto* first = m_table->item(selected.first().row(), 0);
+        const QString file = first != nullptr ? first->data(Qt::UserRole).toString() : QString();
+        if (file.isEmpty())  // 组标题行没有文件名，不参与导入
+            return;
         const QString path = QFileInfo(QDir(MapLibrary::libraryDir()), file).absoluteFilePath();
         if (QFileInfo::exists(path))
             emit importRequested(path);
     });
 
     connect(m_table, &QTableWidget::itemSelectionChanged, this, [this] {
-        m_importButton->setEnabled(!m_table->selectionModel()->selectedRows().isEmpty());
+        bool actionable = false;
+        for (const auto& index : m_table->selectionModel()->selectedRows()) {
+            auto* first = m_table->item(index.row(), 0);
+            if (first != nullptr && !first->data(Qt::UserRole).toString().isEmpty()) {
+                actionable = true;
+                break;
+            }
+        }
+        m_importButton->setEnabled(actionable);
     });
     connect(m_table, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
-        const QString file = m_table->item(row, 0)->data(Qt::UserRole).toString();
+        auto* first = m_table->item(row, 0);
+        const QString file = first != nullptr ? first->data(Qt::UserRole).toString() : QString();
+        if (file.isEmpty())
+            return;
         const QString path = QFileInfo(QDir(MapLibrary::libraryDir()), file).absoluteFilePath();
         if (QFileInfo::exists(path))
             emit importRequested(path);
@@ -422,39 +441,149 @@ void MapLibraryPanel::rebuildTable()
     if (auto* current = m_table->currentItem())
         previousFile = current->data(Qt::UserRole).toString();
 
-    m_table->setRowCount(items.size());
-    for (int row = 0; row < items.size(); ++row) {
-        const auto& item = items.at(row);
+    // ── 按「图」归组：同一张图的原版/简中/繁中排在一起 ──
+    // 分组键是 MapLibrary::groupKey()：关联了大厅就是 slug，否则是归一化图名。
+    // 所以改名不会把同一张图拆成两组；没关联的仍靠名字兜底。
+    QStringList order;
+    QHash<QString, QList<LibraryItem>> groups;
+    for (const auto& item : items) {
+        const QString key = item.groupKey();
+        if (!groups.contains(key))
+            order << key;
+        groups[key].append(item);
+    }
 
-        auto* name = new QTableWidgetItem(item.displayName());
-        name->setData(Qt::UserRole, item.file);
-        QString tooltip = item.path;
-        if (!item.note.isEmpty())
-            tooltip += QLatin1String("\n") + item.note;
-        if (item.installed)
-            tooltip += QLatin1String("\n") + tr("已安装：%1").arg(item.installedInstances.join(QStringLiteral("、")));
-        name->setToolTip(tooltip);
-        m_table->setItem(row, 0, name);
-
-        QString version = item.mcVersion;
-        if (!item.mapVersion.isEmpty())
-            version += version.isEmpty() ? item.mapVersion : QStringLiteral(" · ") + item.mapVersion;
-
-        auto* versionItem = new QTableWidgetItem(version.isEmpty() ? QStringLiteral("—") : version);
-        versionItem->setData(Qt::UserRole, item.file);
-        m_table->setItem(row, 1, versionItem);
-
-        auto* categoryItem = new QTableWidgetItem(m_library.categoryName(item.category));
-        categoryItem->setData(Qt::UserRole, item.file);
-        m_table->setItem(row, 2, categoryItem);
-
-        auto* stateItem = new QTableWidgetItem(item.installed ? tr("已安装") : QStringLiteral("—"));
-        stateItem->setData(Qt::UserRole, item.file);
-        if (item.installed) {
-            stateItem->setForeground(ui::confidenceColor(Confidence::High));
-            stateItem->setToolTip(tr("已安装为实例：%1").arg(item.installedInstances.join(QStringLiteral("、"))));
+    const auto groupInstalled = [](const QList<LibraryItem>& list) {
+        int count = 0;
+        for (const auto& item : list) {
+            if (item.installed)
+                ++count;
         }
-        m_table->setItem(row, 3, stateItem);
+        return count;
+    };
+
+    std::sort(order.begin(), order.end(), [&groups, &groupInstalled](const QString& left, const QString& right) {
+        const bool leftInstalled = groupInstalled(groups.value(left)) > 0;
+        const bool rightInstalled = groupInstalled(groups.value(right)) > 0;
+        if (leftInstalled != rightInstalled)
+            return leftInstalled;
+        const auto& leftItems = groups.value(left);
+        const auto& rightItems = groups.value(right);
+        const QString leftName = leftItems.isEmpty() ? left : leftItems.first().displayName();
+        const QString rightName = rightItems.isEmpty() ? right : rightItems.first().displayName();
+        return leftName.localeAwareCompare(rightName) < 0;
+    });
+
+    int rowCount = 0;
+    for (const auto& key : order) {
+        const auto& list = groups.value(key);
+        rowCount += list.size() > 1 ? list.size() + 1 : 1;
+    }
+
+    m_table->clearSpans();
+    m_table->setRowCount(rowCount);
+
+    int row = 0;
+    int multiVersionGroups = 0;
+    for (const auto& key : order) {
+        auto list = groups.value(key);
+        // 组内顺序：默认变体 → 原版 → 其它
+        std::sort(list.begin(), list.end(), [](const LibraryItem& left, const LibraryItem& right) {
+            if (left.variant.isDefault != right.variant.isDefault)
+                return left.variant.isDefault;
+            const bool leftOriginal = left.variant.kind == variant::Kind::Original;
+            const bool rightOriginal = right.variant.kind == variant::Kind::Original;
+            if (leftOriginal != rightOriginal)
+                return leftOriginal;
+            return left.displayName().localeAwareCompare(right.displayName()) < 0;
+        });
+
+        const bool grouped = list.size() > 1;
+        if (grouped) {
+            ++multiVersionGroups;
+            const auto& head = list.first();
+            const int installedInGroup = groupInstalled(list);
+
+            auto* title = new QTableWidgetItem(head.displayName());
+            QFont bold = title->font();
+            bold.setBold(true);
+            title->setFont(bold);
+            title->setFlags(Qt::ItemIsEnabled);  // 不可选中：拖拽/双击/导入按钮都不认它
+            title->setToolTip(tr("%1 的 %2 个语言版本").arg(head.displayName()).arg(list.size()));
+            m_table->setItem(row, 0, title);
+
+            auto* count = new QTableWidgetItem(tr("%1 个语言版本").arg(list.size()));
+            count->setFlags(Qt::ItemIsEnabled);
+            count->setForeground(ui::mutedTextColor());
+            m_table->setItem(row, 2, count);
+
+            // 分类一致才显示，否则写「混合」——别替玩家挑一个
+            QSet<QString> categories;
+            for (const auto& item : list)
+                categories.insert(item.category);
+            auto* categoryItem = new QTableWidgetItem(categories.size() == 1
+                                                          ? m_library.categoryName(head.category)
+                                                          : tr("混合"));
+            categoryItem->setFlags(Qt::ItemIsEnabled);
+            categoryItem->setForeground(ui::mutedTextColor());
+            m_table->setItem(row, 3, categoryItem);
+
+            auto* stateItem = new QTableWidgetItem(installedInGroup > 0 ? tr("已装 %1").arg(installedInGroup)
+                                                                        : QStringLiteral("—"));
+            stateItem->setFlags(Qt::ItemIsEnabled);
+            if (installedInGroup > 0) {
+                stateItem->setForeground(ui::confidenceColor(Confidence::High));
+                stateItem->setToolTip(tr("这一组里已安装 %1 个版本").arg(installedInGroup));
+            }
+            m_table->setItem(row, 4, stateItem);
+            ++row;
+        }
+
+        for (const auto& item : list) {
+            const QString prefix = grouped ? QStringLiteral("└ ") : QString();
+            auto* name = new QTableWidgetItem(prefix + item.displayName());
+            name->setData(Qt::UserRole, item.file);
+            QString tooltip = item.path;
+            if (!item.note.isEmpty())
+                tooltip += QLatin1String("\n") + item.note;
+            if (item.installed)
+                tooltip += QLatin1String("\n") + tr("已安装：%1").arg(item.installedInstances.join(QStringLiteral("、")));
+            name->setToolTip(tooltip);
+            m_table->setItem(row, 0, name);
+
+            QString version = item.mcVersion;
+            if (!item.mapVersion.isEmpty())
+                version += version.isEmpty() ? item.mapVersion : QStringLiteral(" · ") + item.mapVersion;
+
+            auto* versionItem = new QTableWidgetItem(version.isEmpty() ? QStringLiteral("—") : version);
+            versionItem->setData(Qt::UserRole, item.file);
+            m_table->setItem(row, 1, versionItem);
+
+            auto* languageItem = new QTableWidgetItem(item.variantSummary());
+            languageItem->setData(Qt::UserRole, item.file);
+            QString languageTooltip = tr("%1 · %2").arg(variant::sourceLabel(item.variant.source),
+                                                        variant::deliveryLabel(item.variant.delivery));
+            if (!item.hallSlug.isEmpty()) {
+                languageTooltip += QLatin1String("\n") + tr("关联大厅：%1%2")
+                                                               .arg(item.hallSlug,
+                                                                    item.hallVerified ? QString() : tr("（未确认）"));
+            }
+            languageItem->setToolTip(languageTooltip);
+            m_table->setItem(row, 2, languageItem);
+
+            auto* categoryItem = new QTableWidgetItem(m_library.categoryName(item.category));
+            categoryItem->setData(Qt::UserRole, item.file);
+            m_table->setItem(row, 3, categoryItem);
+
+            auto* stateItem = new QTableWidgetItem(item.installed ? tr("已安装") : QStringLiteral("—"));
+            stateItem->setData(Qt::UserRole, item.file);
+            if (item.installed) {
+                stateItem->setForeground(ui::confidenceColor(Confidence::High));
+                stateItem->setToolTip(tr("已安装为实例：%1").arg(item.installedInstances.join(QStringLiteral("、"))));
+            }
+            m_table->setItem(row, 4, stateItem);
+            ++row;
+        }
     }
 
     if (!previousFile.isEmpty()) {
@@ -476,12 +605,15 @@ void MapLibraryPanel::rebuildTable()
             ++installed;
     }
 
-    m_summary->setText(tr("%1 张 · %2 · 已安装 %3 张")
+    m_summary->setText(tr("%1 个包 · %2 张图 · %3 · 已安装 %4")
                            .arg(items.size())
+                           .arg(order.size())
                            .arg(humanBytes(total))
                            .arg(installed));
-    m_summary->setToolTip(tr("%1 张地图，共 %2，已安装 %3 张\n库目录：%4")
+    m_summary->setToolTip(tr("%1 个压缩包，归为 %2 张图（其中 %3 张有多个语言版本），共 %4，已安装 %5 个版本\n库目录：%6")
                               .arg(items.size())
+                              .arg(order.size())
+                              .arg(multiVersionGroups)
                               .arg(humanBytes(total))
                               .arg(installed)
                               .arg(QDir::toNativeSeparators(MapLibrary::libraryDir())));

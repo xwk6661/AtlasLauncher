@@ -32,6 +32,8 @@
 #include "MMCZip.h"
 #include "Application.h"
 #include "DataVersionTable.h"
+#include "HallCache.h"
+#include "MapHallLink.h"
 #include "MapLibrary.h"
 #include "MapMeta.h"
 #include "MapOptionsTxt.h"
@@ -503,7 +505,23 @@ Result<> MapImportTask::writeMetadata()
             }
         }
         MapLibrary::rememberImported(libraryCopy, primary.version.mcVersion, hasChinese ? QString() : worldName,
-                                     hasChinese ? worldName : QString());
+                                     hasChinese ? worldName : QString(), m_options.hallSlug, m_options.variant);
+    }
+
+    // 关联到 CTM 地图：实例自己的 hall-link.json（与实例页「关联到 CTM 地图」同一份文件）。
+    // 标题/UUID 从本地大厅缓存取，取不到就只写 slug —— 有 slug 就够查简介与评论。
+    if (!m_options.hallSlug.isEmpty()) {
+        MapHallLink link;
+        link.slug = m_options.hallSlug;
+        const auto row = HallCache::findListRow(m_options.hallSlug);
+        if (!row.isEmpty()) {
+            link.mapUuid = row.value(QStringLiteral("map_uuid")).toString();
+            link.title = row.value(QStringLiteral("name")).toString();
+        }
+        link.linkedAt = QDateTime::currentDateTimeUtc();
+        QString linkError;
+        if (!link.save(instanceRoot(), &linkError))
+            qWarning() << "Map import: hall-link save failed:" << linkError;
     }
 
     QString error;

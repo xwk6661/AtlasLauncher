@@ -30,6 +30,7 @@
 #include "MapArchiveScanner.h"
 #include "MapMeta.h"
 #include "MapTypes.h"
+#include "MapVariant.h"
 #include "tasks/Task.h"
 
 class MinecraftInstance;
@@ -49,6 +50,11 @@ struct MapImportOptions {
     int worldIndex = -1;
     /// 是否把存档内的材质包与模组一并部署（默认是）
     bool deployBundledResources = true;
+    /// 关联的 CTM 地图 slug（空 = 不关联）。写进实例的 `hall-link.json`，
+    /// 同时也记进库索引 —— 图的身份以它为准，文件名只是载体。
+    QString hallSlug;
+    /// 语言变体：原版 / 官中 / 汉化（含来源）。同时写进库索引。
+    variant::Info variant;
 };
 
 /**

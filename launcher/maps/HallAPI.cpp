@@ -302,6 +302,7 @@ void HallAPI::syncLibrary()
 {
     m_pending = HallSnapshot{};
     m_syncStep = 0;
+    m_syncListOffset = 0;
     m_syncDetailOffset = 0;
     startSyncStep(0);
 }
@@ -321,6 +322,9 @@ void HallAPI::startSyncStep(int step)
             params.addQueryItem(QStringLiteral("select"), QStringLiteral("*"));
             params.addQueryItem(QStringLiteral("limit"), QStringLiteral("1000"));
             params.addQueryItem(QStringLiteral("order"), QStringLiteral("sort_date.desc.nullslast"));
+            // 单次上限 1000 行，必须按 offset 翻页；否则后一半地图静默消失
+            if (m_syncListOffset > 0)
+                params.addQueryItem(QStringLiteral("offset"), QString::number(m_syncListOffset));
             url = QUrl(QStringLiteral("%1/rest/v1/maps_search_view").arg(m_endpoint));
             break;
         case 1:
@@ -743,30 +747,42 @@ void HallAPI::handlePayload(const QByteArray& payload, const QByteArray& content
     }
 
     switch (m_kind) {
-        case Request::SyncList:
-            m_pending.listRows = document.array();
+        case Request::SyncList: {
+            const auto page = document.array();
+            for (const auto& value : page)
+                m_pending.listRows.append(value);
+            m_syncListOffset += page.size();
+
+            // 满一页就继续翻，直到拿到不满 1000 行的尾页（上限 5 页 = 5000 张，防异常数据死循环）
+            if (page.size() >= 1000 && m_syncListOffset < 5000) {
+                startSyncStep(0);
+                return;
+            }
             startSyncStep(1);
             return;
+        }
         case Request::SyncDetails: {
             const auto page = document.array();
             for (const auto& value : page)
                 m_pending.detailRows.append(value);
             m_syncDetailOffset += page.size();
 
-            // 覆盖检查：列表里所有 slug 都有详情了才收工（上限 3 页，防止异常数据死循环）
+            // 覆盖检查：列表里所有 slug 都有详情了才收工（上限 3 页，防止异常数据死循环）。
+            // 列表现在有 2287 行，逐条去 detailRows 里线性找是 2287² 次字符串比较 ——
+            // 先建一次 slug 集合，退化成 O(n)。
             const bool coversAll = [this] {
+                QSet<QString> detailSlugs;
+                detailSlugs.reserve(m_pending.detailRows.size());
+                for (const auto& detail : m_pending.detailRows) {
+                    const QString slug = textOr(detail.toObject().value(QStringLiteral("slug")));
+                    if (!slug.isEmpty())
+                        detailSlugs.insert(slug);
+                }
                 for (const auto& value : m_pending.listRows) {
                     const QString slug = textOr(value.toObject().value(QStringLiteral("slug")));
                     if (slug.isEmpty())
                         continue;
-                    bool found = false;
-                    for (const auto& detail : m_pending.detailRows) {
-                        if (textOr(detail.toObject().value(QStringLiteral("slug"))) == slug) {
-                            found = true;
-                            break;
-                        }
-                    }
-                    if (!found)
+                    if (!detailSlugs.contains(slug))
                         return false;
                 }
                 return true;

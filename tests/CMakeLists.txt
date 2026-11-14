@@ -28,6 +28,7 @@ set(TEST_SOURCES
     Commandline_test.cpp
     MapArchiveScan_test.cpp
     MapOptionsTxt_test.cpp
+    MapVariant_test.cpp
     MapL10nProbe_test.cpp
     MapL10nTranslate_test.cpp
     MapL10nApply_test.cpp

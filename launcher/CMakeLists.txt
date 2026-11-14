@@ -804,6 +804,10 @@ set(MAPS_SOURCES
     maps/MapRepository.cpp
     maps/MapLibrary.h
     maps/MapLibrary.cpp
+    maps/MapVariant.h
+    maps/MapVariant.cpp
+    maps/HallMatcher.h
+    maps/HallMatcher.cpp
     maps/MapLibraryPanel.h
     maps/MapLibraryPanel.cpp
     maps/MapImportDialog.h

@@ -4,8 +4,8 @@
 把 [`Minecraft-AIO`](E:/llmUsage/Minecraft-AIO)（mcml v0.33.0，Electron + TypeScript）的
 「以地图为中心」搬到了原生 Qt 上 —— **点地图卡片直接进图，版本由程序推断**。
 
-> **状态（2026-11-14 19:30，以 [05](05-进度与遗留.md) 为准）**：构建通过 · 测试 `425 passed / 0 failed / 6 skipped`
-> （本机有符号链接权限，31 个套件 / 431 项；无权限时为 `418 / 13`，差的 7 项是符号链接用例）·
+> **状态（2026-11-14 20:50，以 [05](05-进度与遗留.md) 为准）**：构建通过 · 测试 `449 passed / 0 failed / 7 skipped`
+> （本机有符号链接权限，32 个套件 / 456 项；无权限时为 `442 / 14`，差的 7 项是符号链接用例）·
 > M0、M2、M5 完成，M1 / M3 / M4 代码落地但仍有真机验收缺口，M6 主链路完成但**已隐藏** ·
 > 真机已过「1.20+ 进图与自动关游戏」「≤1.19.4 Agent 进图与安全退出（1.8.9 / 1.12 Forge / 1.16.5）」
 > 「大文件分片 + 续传 / 看门狗」「本地离线优先启动」「本地地图库」「资源库换目录（修复后同日复验：
@@ -64,7 +64,8 @@
 - 模组预设：内置三套 + 自建，按实例版本与加载器现查 Modrinth / CurseForge，逐条带说明、
   required 依赖自动补齐、缺加载器先引导安装；
 - 本地地图库：分类（默认 RPG / AAD / CTM / MiniGame / Other，可增删改）、拖行归类、已安装标绿、双击导入；
-  索引以**文件名**为键，库整体搬走也不失效；
+  **按图分组**（26 个包 = 20 张图，多语言版本折叠成一组）、语言列、导入时可关联 CTM 地图并标原版/简中/繁中/官中；
+  身份锚在大厅 slug，索引以**文件名**为键，库整体搬走也不失效；
 - 实例窗口「地图」页四页签（简介 / 评论 / 我的 / 启动），右侧卡片带「模组预设」「编辑实例」；设置里有全局「地图」「资源」两页，资源页能把
   `assets / libraries / java` **真的迁移**到任意盘，改完立即生效；目标位置已有的库文件按 sha1 认账，不重下；
 - ⏸ **地图汉化（已隐藏，代码与测试保留）**：链路完整（体检 → 导出 / 机翻 → 写回副本 → 备份后顶替），
@@ -81,7 +82,7 @@
 
 ## 代码地图
 
-新代码在 `launcher/maps/`（**45 个 .cpp + 51 个 .h，约 2.5 万行**；逐文件清单见
+新代码在 `launcher/maps/`（**47 个 .cpp + 53 个 .h，约 2.7 万行**；逐文件清单见
 [05 §4.1](05-进度与遗留.md)）、`launcher/ResourcePaths`
 与 `launcher/net/DownloadSource`（换源）；
 `launcher/net/{Request,FileSink}` 与 `Application` 为下载能力有较大改动（续传 / 看门狗 / 重试 / 连接池 / 分片），
@@ -92,7 +93,7 @@
 | **识别** | `MapArchiveScanner`（免解压嗅探）· `LevelDatReader`（NBT）· `MapVersionDetector`（三级判定）· `DataVersionTable` · `MapTypes` · `MapTextUtils` |
 | **数据** | `MapMeta`（`map.json`）· `MapNotes`（`notes.json`，玩家数据）· `MapHallLink`（实例 ↔ 大厅关联）· `HallCache`（大厅本地库） |
 | **导入** | `MapImportTask`（建实例 / 解世界 / 落材质包 / 重装）· `MapRepository`（地图库目录与归档）· `MapImportDialog` |
-| **地图库** | `MapLibrary`（`map-library.json`：分类 / 元数据 / 已安装判定）· `MapLibraryPanel`（分类栏固定 132px + 列表 + 拖拽归类 + 自定义分类管理）。位置：添加实例 → 导入 → 地图存档导入下方 |
+| **地图库** | `MapLibrary`（`map-library.json`：分类 / 元数据 / 已安装判定 / `hall.slug` / 语言变体）· `MapVariant`（原版/官中/汉化、整包/资源包）· `HallMatcher`（候选 + 理由）· `MapLibraryPanel`（分类栏固定 132px + 按图分组的列表 + 语言列 + 拖拽归类）。位置：添加实例 → 导入 → 地图存档导入下方 |
 | **启动** | `MapLaunchPrep`（选轨道 / 统一准备点）· `AgentBootstrap`（符号表 → `-javaagent`）· `MapWindowFocus`（把前台交给游戏窗口） |
 | **大厅** | `HallAPI` · `HallTypes` · `HallProxy` · `BrowserFetch` · `HallDialog` · `MapHallPage` |
 | **界面** | `MapInstanceBar`（右侧地图卡片）· `MapInstancePage`（「地图」页）· `MapGalleryPage/Window` · `MapReviewCard`（评论卡）· `MapInfoCard`（信息卡工厂）· `MapCoverLoader`（封面）· `OptiFineDialog` · `StarRatingWidget` · `MapTheme`（颜色）· `MapStyle`（尺度：间距 / 字体层级 / 主次按钮 / 表格） |
@@ -104,10 +105,10 @@
 
 资源：`launcher/resources/maps/dataversion.json`（483 个版本）、`launcher/resources/agents/`
 （`quickboot.jar` + `introskip.jar` + **60 张符号表**，由 `tools/agent_symbol_audit.py` 对着真实 jar 复核）。
-测试：31 个套件、431 项。本机（有符号链接权限）实测 `425 passed / 0 failed / 6 skipped`；
-无符号链接权限时是 `418 / 13`，差的 7 项就是 `FileSystem_test` 的符号链接用例 ——
-两种口径总数都是 431，明细见 [03 §5](03-环境与构建.md)。地图相关的有 `MapArchiveScan`（17 + 2 项门控）、
-`MapOptionsTxt`（32）、`MapL10nProbe`（29 + 1 项门控）、`MapL10nTranslate`（7）、
+测试：32 个套件、456 项。本机（有符号链接权限）实测 `449 passed / 0 failed / 7 skipped`；
+无符号链接权限时是 `442 / 14`，差的 7 项就是 `FileSystem_test` 的符号链接用例 ——
+两种口径总数都是 456，明细见 [03 §5](03-环境与构建.md)。地图相关的有 `MapArchiveScan`（17 + 2 项门控）、
+`MapOptionsTxt`（32）、`MapVariant`（24 + 1 项门控）、`MapL10nProbe`（29 + 1 项门控）、`MapL10nTranslate`（7）、
 `MapL10nApply`（15 + 3 项门控）、`ModPresets`（14）、`DownloadSource`（12）、`RequestRetry`（23）。
 
 ---

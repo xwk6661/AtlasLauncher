@@ -23,6 +23,7 @@
 
 #include "MapArchiveScanner.h"
 #include "MapImportTask.h"
+#include "MapVariant.h"
 
 class QComboBox;
 class QDialogButtonBox;
@@ -54,11 +55,15 @@ class MapImportDialog : public QDialog {
     void updateEvidence();
     /// 切换世界时同步版本 / 加载器 / 名称（多世界包的每个存档可能是不同版本）
     void worldChanged();
+    /// 语言一变，来源（作者/社区/自译）才可用；官中直接锁成"作者发布"
+    void languageChanged();
 
    private:
     void refreshConfirmState();
     /// 当前实际会用的版本：用户改过就看下拉框，没改过就看所选世界的判定结果
     QString effectiveVersion() const;
+    /// 把「语言 / 来源」两个下拉拼成变体信息（label 保留文件名的原话）
+    variant::Info variantFromUi() const;
 
     const MapScanResult m_scan;
 
@@ -67,6 +72,14 @@ class MapImportDialog : public QDialog {
     QComboBox* m_versionCombo = nullptr;
     QComboBox* m_loaderCombo = nullptr;
     QLineEdit* m_loaderVersionEdit = nullptr;
+    /// 这张图在大厅里是哪一张（slug 作为 item data，空 = 不关联）
+    QComboBox* m_hallCombo = nullptr;
+    /// 语言：原版 / 简中汉化 / 繁中汉化 / 官中 / 其他语言
+    QComboBox* m_languageCombo = nullptr;
+    /// 来源：未知 / 作者发布 / 社区汉化 / 自译
+    QComboBox* m_sourceCombo = nullptr;
+    /// 从文件名推断出来的原始结论（只用来给默认值与 label，不直接落库）
+    variant::Info m_inferred;
     QListWidget* m_evidenceList = nullptr;
     QLabel* m_confidenceLabel = nullptr;
     /// 实验性设置 / 缺模组这类「导入前必须知道」的警告，单独一行，别和统计数字挤在一起
