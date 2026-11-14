@@ -17,6 +17,7 @@
  */
 #pragma once
 
+#include <QSet>
 #include <QWidget>
 
 #include "MapLibrary.h"
@@ -63,6 +64,8 @@ class MapLibraryPanel : public QWidget {
    private:
     void rebuildCategories();
     void rebuildTable();
+    /// 折叠/展开某一组（组键同 `MapLibrary::groupKey()`）
+    void toggleGroup(const QString& key);
     void applyCategory(const QString& file, const QString& categoryId);
     /// 把一份资源包挂到玩家选中的实例（不建实例、不动存档）
     void attachResourcePack(const QString& file, const QString& path);
@@ -80,6 +83,8 @@ class MapLibraryPanel : public QWidget {
     QPushButton* m_delCategoryBtn = nullptr;
     bool m_showAll = true;
     QString m_filterCategoryId;
+    /// 展开的组键。**默认收起**：库里大半是同一个图的几个语言版本，全摊开时一屏看不到几张图
+    QSet<QString> m_expandedGroups;
 };
 
 }  // namespace maps

@@ -209,14 +209,21 @@ Info Info::fromJson(const QJsonObject& object)
 
 QString Info::summary() const
 {
-    if (kind == Kind::Original)
-        return language == Language::Unknown ? QStringLiteral("原版") : QStringLiteral("原版（%1）").arg(languageLabel(language));
+    // 只按「类别」给，**不照抄文件名里的括号**。
+    // 同一张图下面并列出现「简中」与「简中汉化v1.0」时，长度不一，看起来像两种不同的东西；
+    // 而它们本来就是一类。括号原话留在 label 里，需要细节的地方（tooltip）再显示。
+    QString text;
+    if (kind == Kind::Original) {
+        text = QStringLiteral("原版");
+    } else if (source == Source::Author) {
+        text = QStringLiteral("官中");
+    } else if (language == Language::Unknown) {
+        text = QStringLiteral("汉化");
+    } else {
+        text = languageLabel(language);
+    }
 
-    QString text = languageLabel(language);
-    if (source == Source::Author)
-        return QStringLiteral("官中");
-    if (!label.isEmpty())
-        text = label;
+    // 唯一允许变长的地方：资源包形态必须能一眼看出来（它不是一张图，只能挂到实例上）
     if (delivery == Delivery::ResourcePack)
         text += QStringLiteral(" · 资源包");
     return text;

@@ -47,6 +47,10 @@
 #include <QHash>
 #include <QHBoxLayout>
 #include <QHeaderView>
+#include <QIcon>
+#include <QPainter>
+#include <QPolygonF>
+#include <QPixmap>
 #include <QInputDialog>
 #include <QLabel>
 #include <QListWidget>
@@ -69,6 +73,47 @@ namespace maps {
 namespace {
 
 constexpr const char* kMimeType = "application/x-atlas-map-library-item";
+
+/// 组标题行在 `Qt::UserRole + 1` 里存分组键（`Qt::UserRole` 留给真实条目的文件名）
+constexpr int kGroupKeyRole = Qt::UserRole + 1;
+
+constexpr int kMarkerSize = 12;
+
+/**
+ * 折叠箭头。
+ *
+ * 自己画而不是用 `▾` / `▸` 字符：字符宽度随字体变，一旦标题用箭头、普通行用空格补齐，
+ * 两种行的文字起点就差一两个像素；用固定 12px 的图标给**每一行**留出同一个位置才不会歪。
+ */
+QIcon arrowIcon(bool expanded, const QColor& color)
+{
+    QPixmap pixmap(kMarkerSize, kMarkerSize);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.setPen(Qt::NoPen);
+    painter.setBrush(color);
+
+    QPolygonF triangle;
+    if (expanded) {
+        triangle << QPointF(2.5, 4.0) << QPointF(9.5, 4.0) << QPointF(6.0, 9.0);
+    } else {
+        triangle << QPointF(4.0, 2.5) << QPointF(9.0, 6.0) << QPointF(4.0, 9.5);
+    }
+    painter.drawPolygon(triangle);
+    return QIcon(pixmap);
+}
+
+/// 普通行占位：透明但**占同样的宽度**，于是所有行的文字起点一致
+QIcon blankIcon()
+{
+    static const QIcon icon = [] {
+        QPixmap pixmap(kMarkerSize, kMarkerSize);
+        pixmap.fill(Qt::transparent);
+        return QIcon(pixmap);
+    }();
+    return icon;
+}
 
 QString humanBytes(qint64 bytes)
 {
@@ -256,7 +301,8 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     m_table->setMinimumHeight(220);
     m_table->setMinimumWidth(0);
     m_table->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_table->setToolTip(tr("拖动行到左侧分类即可归类；双击直接导入"));
+    m_table->setToolTip(tr("拖动行到左侧分类即可归类；双击直接导入；点组标题展开/收起同图的不同语言版本"));
+    m_table->setIconSize(QSize(kMarkerSize, kMarkerSize));
     ui::tuneTable(m_table);
     body->addWidget(m_table, 1);
 
@@ -296,8 +342,17 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
         }
         m_importButton->setEnabled(actionable);
     });
+    connect(m_table, &QTableWidget::cellClicked, this, [this](int row, int) {
+        auto* first = m_table->item(row, 0);
+        const QString key = first != nullptr ? first->data(kGroupKeyRole).toString() : QString();
+        if (key.isEmpty())
+            return;
+        toggleGroup(key);
+    });
     connect(m_table, &QTableWidget::cellDoubleClicked, this, [this](int row, int) {
         auto* first = m_table->item(row, 0);
+        if (first != nullptr && !first->data(kGroupKeyRole).toString().isEmpty())
+            return;  // 双击组标题：单击已经切换过了，别再触发折叠
         const QString file = first != nullptr ? first->data(Qt::UserRole).toString() : QString();
         if (file.isEmpty())
             return;
@@ -453,6 +508,22 @@ void MapLibraryPanel::rebuildCategories()
     m_delCategoryBtn->setEnabled(!currentCatId.isEmpty() && currentCatId != QLatin1String("other"));
 }
 
+void MapLibraryPanel::toggleGroup(const QString& key)
+{
+    if (key.isEmpty())
+        return;
+
+    if (m_expandedGroups.contains(key)) {
+        m_expandedGroups.remove(key);
+        // rebuildTable 会"为了保住选中行"自动展开它所在的组，收起时先把选中清掉
+        m_table->clearSelection();
+        m_table->setCurrentCell(-1, -1);
+    } else {
+        m_expandedGroups.insert(key);
+    }
+    rebuildTable();
+}
+
 void MapLibraryPanel::rebuildTable()
 {
     const auto items = m_showAll ? m_library.items() : m_library.items(m_filterCategoryId);
@@ -460,6 +531,15 @@ void MapLibraryPanel::rebuildTable()
     QString previousFile;
     if (auto* current = m_table->currentItem())
         previousFile = current->data(Qt::UserRole).toString();
+
+    // 改语言/改分类都会 refresh；收起状态下如果不自动展开，刚才选中的那一行会"消失"
+    QString previousGroup;
+    for (const auto& item : items) {
+        if (!previousFile.isEmpty() && item.file == previousFile) {
+            previousGroup = item.groupKey();
+            break;
+        }
+    }
 
     // ── 按「图」归组：同一张图的原版/简中/繁中排在一起 ──
     // 分组键是 MapLibrary::groupKey()：关联了大厅就是 slug，否则是归一化图名。
@@ -494,10 +574,20 @@ void MapLibraryPanel::rebuildTable()
         return leftName.localeAwareCompare(rightName) < 0;
     });
 
+    const auto isExpanded = [this, &previousGroup](const QString& key) {
+        return m_expandedGroups.contains(key) || key == previousGroup;
+    };
+
     int rowCount = 0;
     for (const auto& key : order) {
         const auto& list = groups.value(key);
-        rowCount += list.size() > 1 ? list.size() + 1 : 1;
+        if (list.size() <= 1) {
+            ++rowCount;
+        } else {
+            ++rowCount;  // 组标题
+            if (isExpanded(key))
+                rowCount += list.size();
+        }
     }
 
     m_table->clearSpans();
@@ -519,6 +609,7 @@ void MapLibraryPanel::rebuildTable()
         });
 
         const bool grouped = list.size() > 1;
+        const bool expanded = grouped && isExpanded(key);
         if (grouped) {
             ++multiVersionGroups;
             const auto& head = list.first();
@@ -539,12 +630,19 @@ void MapLibraryPanel::rebuildTable()
             if (groupTitle.isEmpty())
                 groupTitle = head.displayName();
 
-            auto* title = new QTableWidgetItem(tr("%1（%2 个版本）").arg(groupTitle).arg(list.size()));
+            // 标题只写图名，版本数不再摆在标题里 —— 折叠时组下面根本看不到行，
+            // "（2 个版本）"只是在解释一个看不见的东西。数量放 tooltip。
+            auto* title = new QTableWidgetItem(groupTitle);
+            title->setIcon(arrowIcon(expanded, ui::bodyTextColor()));
             QFont bold = title->font();
             bold.setBold(true);
             title->setFont(bold);
             title->setFlags(Qt::ItemIsEnabled);  // 不可选中：拖拽/双击/导入按钮都不认它
-            title->setToolTip(tr("%1 的 %2 个语言版本").arg(head.displayName()).arg(list.size()));
+            title->setData(kGroupKeyRole, key);
+            title->setToolTip(tr("%1 · %2 个语言版本\n点一下%3")
+                                  .arg(head.displayName())
+                                  .arg(list.size())
+                                  .arg(expanded ? tr("收起") : tr("展开")));
             m_table->setItem(row, 0, title);
 
             // 分类一致才显示，否则写「混合」——别替玩家挑一个
@@ -569,6 +667,9 @@ void MapLibraryPanel::rebuildTable()
             ++row;
         }
 
+        if (grouped && !expanded)
+            continue;
+
         for (const auto& item : list) {
             const QString prefix = grouped ? QStringLiteral("└ ") : QString();
             // 组标题已经写了图名，子行只写"这是哪个语言版本"——
@@ -587,9 +688,14 @@ void MapLibraryPanel::rebuildTable()
                         childName = QStringLiteral("%1 · %2").arg(childName, detail);
                 }
             }
+            // 每一行都给同一个 12px 图标位：组标题那里是箭头，这里是透明占位，
+            // 于是「组标题」与「没有组的图」文字起点完全对齐（用空格补会随字体差一两个像素）
             auto* name = new QTableWidgetItem(prefix + childName);
+            name->setIcon(blankIcon());
             name->setData(Qt::UserRole, item.file);
             QString tooltip = item.path;
+            if (!item.variant.label.isEmpty())
+                tooltip += QLatin1String("\n") + tr("文件名标记：%1").arg(item.variant.label);
             if (!item.note.isEmpty())
                 tooltip += QLatin1String("\n") + item.note;
             if (item.installed)
@@ -628,6 +734,15 @@ void MapLibraryPanel::rebuildTable()
             auto* categoryItem = new QTableWidgetItem(m_library.categoryName(item.category));
             categoryItem->setData(Qt::UserRole, item.file);
             m_table->setItem(row, 3, categoryItem);
+
+            if (grouped) {
+                // 子行是"同一张图的另一个语言版本"，不是另一张图：压灰、不加粗，
+                // 才能和组标题以及下面那些独立的图在视觉上分开
+                name->setForeground(ui::mutedTextColor());
+                versionItem->setForeground(ui::mutedTextColor());
+                languageItem->setForeground(ui::mutedTextColor());
+                categoryItem->setForeground(ui::mutedTextColor());
+            }
 
             auto* stateItem = new QTableWidgetItem(item.installed ? tr("已安装") : QStringLiteral("—"));
             stateItem->setData(Qt::UserRole, item.file);

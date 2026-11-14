@@ -145,10 +145,8 @@ QString LibraryItem::groupKey() const
 
 QString LibraryItem::variantSummary() const
 {
-    // 原版就是原版：不要显示「未标注」，那看起来像"这张图没标语言"，而不是"这是原文版"
-    if (variant.kind == variant::Kind::Original)
-        return variant.language == variant::Language::Unknown ? QStringLiteral("原版")
-                                                             : QStringLiteral("原版（%1）").arg(variant::languageLabel(variant.language));
+    // 统一走 variant::summary()：同一类别必须同字数（原版 / 简中 / 繁中 / 官中），
+    // 别一边「简中」一边「简中汉化v1.0」——那看起来像两张不同的图。
     return variant.summary();
 }
 
