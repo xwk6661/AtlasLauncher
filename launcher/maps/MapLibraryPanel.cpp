@@ -19,6 +19,13 @@
 
 #include "MapTheme.h"
 #include "MapStyle.h"
+#include "FileSystem.h"
+#include "MapPackAttach.h"
+#include "MapMeta.h"
+
+#include "Application.h"
+#include "BaseInstance.h"
+#include "InstanceList.h"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -304,6 +311,9 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     connect(m_addCategoryBtn, &QPushButton::clicked, this, &MapLibraryPanel::onAddCategoryClicked);
     connect(m_delCategoryBtn, &QPushButton::clicked, this, &MapLibraryPanel::onDeleteCategoryClicked);
     connect(m_categories, &QWidget::customContextMenuRequested, this, &MapLibraryPanel::showCategoryContextMenu);
+
+    m_table->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_table, &QWidget::customContextMenuRequested, this, &MapLibraryPanel::showItemContextMenu);
 
     connect(&m_library, &MapLibrary::changed, this, [this] {
         rebuildCategories();
@@ -632,6 +642,108 @@ void MapLibraryPanel::applyCategory(const QString& file, const QString& category
         rebuildCategories();
         rebuildTable();
     });
+}
+
+void MapLibraryPanel::showItemContextMenu(const QPoint& pos)
+{
+    auto* cell = m_table->itemAt(pos);
+    if (cell == nullptr)
+        return;
+    auto* first = m_table->item(cell->row(), 0);
+    const QString file = first != nullptr ? first->data(Qt::UserRole).toString() : QString();
+    if (file.isEmpty())  // 组标题行
+        return;
+
+    const QString path = QFileInfo(QDir(MapLibrary::libraryDir()), file).absoluteFilePath();
+
+    QMenu menu(this);
+    QAction* importAction = menu.addAction(tr("导入这个版本"));
+    QAction* openAction = menu.addAction(tr("打开所在目录"));
+    menu.addSeparator();
+
+    // 资源包没有世界，不能走导入 —— 只能挂到已装实例上
+    const auto probe = MapPackAttach::inspect(path);
+    QAction* attachAction = menu.addAction(tr("作为资源包挂到已装实例…"));
+    attachAction->setEnabled(probe.valid);
+    attachAction->setToolTip(probe.valid ? tr("放进实例的 resourcepacks/ 并启用；不建实例、不动存档")
+                                        : probe.reason);
+
+    QAction* chosen = menu.exec(m_table->viewport()->mapToGlobal(pos));
+    if (chosen == importAction) {
+        emit importRequested(path);
+    } else if (chosen == openAction) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
+    } else if (chosen == attachAction) {
+        attachResourcePack(file, path);
+    }
+}
+
+void MapLibraryPanel::attachResourcePack(const QString& file, const QString& path)
+{
+    QStringList labels;
+    QStringList roots;
+    auto* instances = APPLICATION != nullptr ? APPLICATION->instances() : nullptr;
+    if (instances != nullptr) {
+        for (int i = 0; i < instances->count(); ++i) {
+            auto* instance = instances->at(i);
+            if (instance == nullptr)
+                continue;
+            const QString root = instance->instanceRoot();
+            // 没启动过的实例没有 options.txt，挂上去也会在第一次启动时被整份重写
+            if (!QFileInfo::exists(FS::PathCombine(root, QStringLiteral(".minecraft/options.txt"))))
+                continue;
+            labels << instance->name();
+            roots << root;
+        }
+    }
+    if (labels.isEmpty()) {
+        QMessageBox::information(this, tr("没有可挂的实例"),
+                                 tr("至少要有一个启动过一次的实例（它才会有 options.txt）。\n"
+                                    "先把汉化整包当普通地图导入并进一次游戏，再回来挂资源包。"));
+        return;
+    }
+
+    bool ok = false;
+    const QString chosen = QInputDialog::getItem(
+        this, tr("挂到哪个实例"),
+        tr("资源包会放进该实例的 resourcepacks/ 并自动启用。不建实例、不动存档。可以先挂到原版实例上对照。"),
+        labels, 0, false, &ok);
+    if (!ok)
+        return;
+
+    const QString instanceRoot = roots.at(labels.indexOf(chosen));
+    const auto attached = MapPackAttach::attach(path, instanceRoot);
+    if (!attached) {
+        QMessageBox::warning(this, tr("挂载失败"), attached.error());
+        return;
+    }
+
+    // 索引里标清楚"这是资源包、依附在哪个整包上"，分组才不会把它当成独立一张图
+    for (const auto& item : m_library.items()) {
+        if (item.file != file)
+            continue;
+        auto info = item.variant;
+        info.delivery = variant::Delivery::ResourcePack;
+        const auto meta = MapMeta::load(instanceRoot);
+        const QString basedOn = QFileInfo(meta.archive.libraryCopy).fileName();
+        info.basedOn = basedOn;
+        m_library.setVariant(file, info);
+
+        // 依附的原版若已关联大厅，就继承同一个 slug（同图不同语言）
+        for (const auto& other : m_library.items()) {
+            if (other.file == basedOn && !other.hallSlug.isEmpty()) {
+                m_library.setHallLink(file, other.hallSlug, false);
+                break;
+            }
+        }
+        break;
+    }
+
+    QMessageBox::information(this, tr("已挂上"),
+                             tr("已写入 %1 并启用。\n\n撤销：删掉该实例 resourcepacks 下的这个文件，\n"
+                                "再把 options.txt 的 resourcePacks 里对应那一项去掉。")
+                                 .arg(*attached));
+    refresh();
 }
 
 }  // namespace maps

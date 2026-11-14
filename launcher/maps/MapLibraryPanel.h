@@ -57,11 +57,15 @@ class MapLibraryPanel : public QWidget {
     void onRenameCategoryClicked();
     void onDeleteCategoryClicked();
     void showCategoryContextMenu(const QPoint& pos);
+    /// 列表行右键：导入 / 打开目录 / 作为资源包挂到已装实例
+    void showItemContextMenu(const QPoint& pos);
 
    private:
     void rebuildCategories();
     void rebuildTable();
     void applyCategory(const QString& file, const QString& categoryId);
+    /// 把一份资源包挂到玩家选中的实例（不建实例、不动存档）
+    void attachResourcePack(const QString& file, const QString& path);
 
     MapLibrary m_library;
     QListWidget* m_categories = nullptr;
