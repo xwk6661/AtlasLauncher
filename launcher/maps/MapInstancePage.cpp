@@ -59,6 +59,8 @@
 #include "HallCache.h"
 #include "MapCoverLoader.h"
 #include "MapHallLink.h"
+#include "MapLibrary.h"
+#include "MapMeta.h"
 #include "MapImportTask.h"
 #include "MapRepository.h"
 #include "MapFeatures.h"
@@ -645,6 +647,13 @@ void MapInstancePage::linkTo(const HallItem& item)
         CustomMessageBox::selectable(this, tr("关联失败"), error, QMessageBox::Critical)->show();
         return;
     }
+
+    // 库里对应的那个包跟着转成"已确认"：这条关联是玩家自己点的，不是匹配器猜的
+    const auto meta = MapMeta::load(m_instance->instanceRoot());
+    const QString libraryFile = QFileInfo(meta.archive.libraryCopy).fileName();
+    if (!libraryFile.isEmpty())
+        MapLibrary::markHallVerified(libraryFile, item.slug);
+
     refreshHallTabs();
 }
 

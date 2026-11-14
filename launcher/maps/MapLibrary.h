@@ -129,6 +129,13 @@ class MapLibrary : public QObject {
 
     /// 关联/解除关联 CTM 地图（slug 为空 = 解除）。verified 由人工确认时置 true。
     bool setHallLink(const QString& file, const QString& hallSlug, bool verified = true);
+    /**
+     * 把某条目的关联标成"人工确认"（实例页点过「关联到 CTM 地图」后调用）。
+     *
+     * 静态方法、只改一个字段、不 reload：实例页手里只有实例，没有库页面对象；
+     * 为了标记一个 bool 去扫一遍库目录不划算。条目不在索引里就返回 false（不算错）。
+     */
+    static bool markHallVerified(const QString& file, const QString& hallSlug);
     /// 改写语言变体（原版/官中/汉化、整包/资源包、来源）
     bool setVariant(const QString& file, const variant::Info& info);
     /// 把同组里的默认变体设为这一个（其它同组条目的 default 清掉）

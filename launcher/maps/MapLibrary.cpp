@@ -583,6 +583,30 @@ bool MapLibrary::setHallLink(const QString& file, const QString& hallSlug, bool 
     return true;
 }
 
+bool MapLibrary::markHallVerified(const QString& file, const QString& hallSlug)
+{
+    if (file.isEmpty() || hallSlug.isEmpty())
+        return false;
+
+    QJsonObject root = readIndexObject(indexPath());
+    auto entries = root.value("entries").toArray();
+    for (int i = 0; i < entries.size(); ++i) {
+        auto object = entries.at(i).toObject();
+        if (object.value("file").toString() != file)
+            continue;
+
+        QJsonObject hall;
+        hall.insert("slug", hallSlug);
+        hall.insert("verified", true);
+        object.insert("hall", hall);
+        entries.replace(i, object);
+        root.insert("entries", entries);
+        root.insert("updatedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+        return writeIndexObject(indexPath(), root);
+    }
+    return false;
+}
+
 bool MapLibrary::setVariant(const QString& file, const variant::Info& info)
 {
     for (auto& item : m_items) {
