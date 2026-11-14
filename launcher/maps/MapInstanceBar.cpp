@@ -354,6 +354,9 @@ void MapInstanceBar::showMapCard(MinecraftInstance* instance)
 
     // 徽章：版本 / 加载器
     addChip(meta.version.isKnown() ? meta.version.mcVersion : tr("版本未知"), ui::accentColor());
+    // 汉化版与原版是两个实例，名字可能一样 —— 用一枚语言徽章先把它们分开
+    if (meta.variant.kind == variant::Kind::Localized)
+        addChip(meta.variant.summary(), ui::bodyTextColor());
     // 加载器取实例实际装的组件：Vanilla 也要显示 —— 玩家靠这一格判断"要不要先装 Forge"
     addChip(entry.loaderVersion.isEmpty()
                 ? entry.loaderName

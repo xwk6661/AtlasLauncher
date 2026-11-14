@@ -120,6 +120,9 @@ MapMeta MapMeta::fromJson(const QJsonObject& object)
     if (meta.requiredMods.isEmpty())
         meta.requiresExternalModpack = false;
 
+    if (object.contains(QStringLiteral("variant")) && object.value(QStringLiteral("variant")).isObject())
+        meta.variant = variant::Info::fromJson(object.value(QStringLiteral("variant")).toObject());
+
     const auto statsJson = object.value(QStringLiteral("stats")).toObject();
     meta.stats.playSeconds = static_cast<qint64>(statsJson.value(QStringLiteral("playSeconds")).toDouble());
     meta.stats.lastExit = statsJson.value(QStringLiteral("lastExit")).toString(QStringLiteral("unknown"));
@@ -187,6 +190,8 @@ QJsonObject MapMeta::toJson() const
     if (stats.lastPlayed.isValid())
         statsJson.insert(QStringLiteral("lastPlayed"), stats.lastPlayed.toUTC().toString(Qt::ISODate));
     root.insert(QStringLiteral("stats"), statsJson);
+    if (!variant.isEmpty())
+        root.insert(QStringLiteral("variant"), variant.toJson());
 
     const auto imported = importedAt.isValid() ? importedAt : QDateTime::currentDateTimeUtc();
     root.insert(QStringLiteral("importedAt"), imported.toUTC().toString(Qt::ISODate));

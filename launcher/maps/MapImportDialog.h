@@ -80,6 +80,8 @@ class MapImportDialog : public QDialog {
     QComboBox* m_sourceCombo = nullptr;
     /// 从文件名推断出来的原始结论（只用来给默认值与 label，不直接落库）
     variant::Info m_inferred;
+    /// 实例名的基础部分（世界名或文件名）；语言一变就在后面加「（简中汉化）」这类后缀
+    QString m_baseName;
     QListWidget* m_evidenceList = nullptr;
     QLabel* m_confidenceLabel = nullptr;
     /// 实验性设置 / 缺模组这类「导入前必须知道」的警告，单独一行，别和统计数字挤在一起

@@ -24,6 +24,7 @@
 #include <QStringList>
 
 #include "MapTypes.h"
+#include "MapVariant.h"
 
 namespace maps {
 
@@ -107,6 +108,9 @@ class MapMeta {
     /// 存档是模组环境、但压缩包没带 mods —— 需要玩家自备整合包
     bool requiresExternalModpack = false;
     MapStats stats;
+    /// 这个实例用的是哪张图的哪个语言版本（原版/简中/繁中/官中，整包还是资源包）。
+    /// 导入时写一次，重装换版本时跟着改 —— 实例页与重装对话框靠它显示"我现在是哪个版本"。
+    variant::Info variant;
     QDateTime importedAt;
 };
 

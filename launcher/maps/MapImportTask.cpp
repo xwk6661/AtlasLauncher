@@ -489,6 +489,7 @@ Result<> MapImportTask::writeMetadata()
     // ServerBrands / WasModded 只说明作者用自己的整合包打开过，原版照样能开。
     meta.requiresExternalModpack = !primary.level.requiredMods.isEmpty() && m_scan.bundledMods().isEmpty();
     meta.importedAt = QDateTime::currentDateTimeUtc();
+    meta.variant = m_options.variant;  // 这个实例是原版还是哪个语言的翻译
 
     // 把压缩包归入地图库：原路径可能是下载目录 / U 盘，删掉就再也装不回来了
     const QString libraryCopy = MapRepository::importIntoLibrary(m_scan.archivePath);
@@ -541,12 +542,13 @@ Result<> MapImportTask::writeMetadata()
 
 Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMeta& meta,
                                         bool backupExisting,
-                                        std::function<bool(qint64, qint64)> progress)
+                                        std::function<bool(qint64, qint64)> progress,
+                                        const QString& archiveOverride)
 {
     if (meta.worlds.isEmpty())
         return std::unexpected{ tr("map.json 里没有记录世界目录，无法重装。") };
 
-    const QString archivePath = MapRepository::resolveArchivePath(meta);
+    const QString archivePath = archiveOverride.isEmpty() ? MapRepository::resolveArchivePath(meta) : archiveOverride;
     if (archivePath.isEmpty())
         return std::unexpected{ tr("找不到来源压缩包（库目录和 map.json 记录的位置都没有）。请重新导入这张地图。") };
 
@@ -619,8 +621,13 @@ Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMe
 // MapReinstallTask
 // ----------------------------------------------------------------------------
 
-MapReinstallTask::MapReinstallTask(QString instanceRoot, MapMeta meta, bool backupExisting)
-    : m_instanceRoot(std::move(instanceRoot)), m_meta(std::move(meta)), m_backupExisting(backupExisting)
+MapReinstallTask::MapReinstallTask(QString instanceRoot, MapMeta meta, bool backupExisting, QString archivePath,
+                                   variant::Info variant)
+    : m_instanceRoot(std::move(instanceRoot))
+    , m_meta(std::move(meta))
+    , m_backupExisting(backupExisting)
+    , m_archivePath(std::move(archivePath))
+    , m_variant(std::move(variant))
 {
 }
 
@@ -663,6 +670,22 @@ void MapReinstallTask::onReinstallFinished()
         return;
     }
     const auto result = m_watcher.result();
+    if (result && !m_archivePath.isEmpty()) {
+        // 换版本重装：实例现在依附的是另一个库条目，map.json 必须跟着改，
+        // 否则下次重装又会回到旧版本（库里的"已安装"也会指错）
+        MapMeta updated = MapMeta::load(m_instanceRoot);
+        if (updated.worlds.isEmpty())
+            updated = m_meta;
+        updated.archive.path = m_archivePath;
+        updated.archive.libraryCopy = m_archivePath;
+        updated.archive.size = QFileInfo(m_archivePath).size();
+        if (!m_variant.isEmpty())
+            updated.variant = m_variant;
+        QString error;
+        if (!updated.save(m_instanceRoot, &error))
+            qWarning() << "Map reinstall: map.json save failed:" << error;
+    }
+
     if (!result) {
         emitFailed(result.error());
     } else {

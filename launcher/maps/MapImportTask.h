@@ -79,10 +79,12 @@ class MapImportTask : public InstanceTask {
      *
      * @param backupExisting 若为 true，旧存档挪到 `saves/.mcml-backup/<时间戳>/<目录>/`；
      *                       若为 false，则不创建备份直接覆盖旧存档。
+     * @param archiveOverride 换了语言版本时指定另一个压缩包；空 = 用 map.json 记录的那个。
      */
     static Result<> reinstallWorlds(const QString& instanceRoot, const MapMeta& meta,
                                     bool backupExisting = true,
-                                    std::function<bool(qint64, qint64)> progress = nullptr);
+                                    std::function<bool(qint64, qint64)> progress = nullptr,
+                                    const QString& archiveOverride = {});
 
     void executeTask() override;
     bool abort() override;
@@ -154,7 +156,12 @@ class MapReinstallTask : public Task {
     Q_OBJECT
 
    public:
-    MapReinstallTask(QString instanceRoot, MapMeta meta, bool backupExisting = true);
+    /**
+     * @param archivePath 选中的库条目（另一语言版本）；空 = 沿用 map.json 记录的归档
+     * @param variant     选中的语言变体，成功后写回 map.json
+     */
+    MapReinstallTask(QString instanceRoot, MapMeta meta, bool backupExisting = true, QString archivePath = {},
+                     variant::Info variant = {});
     ~MapReinstallTask() override = default;
 
     void executeTask() override;
@@ -167,6 +174,9 @@ class MapReinstallTask : public Task {
     QString m_instanceRoot;
     MapMeta m_meta;
     bool m_backupExisting = true;
+    /// 换版本重装时选的压缩包（空 = 用 m_meta 里的）
+    QString m_archivePath;
+    variant::Info m_variant;
     std::atomic<bool> m_abortRequested{false};
     QFutureWatcher<Result<>> m_watcher;
 };

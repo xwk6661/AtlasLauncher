@@ -54,6 +54,7 @@
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSet>
 #include <QSignalBlocker>
 #include <QTableWidget>
@@ -234,7 +235,7 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
 
     m_table = new LibraryTable(this);
     m_table->setColumnCount(5);
-    m_table->setHorizontalHeaderLabels({ tr("地图"), tr("版本"), tr("语言"), tr("分类"), tr("状态") });
+    m_table->setHorizontalHeaderLabels({ tr("地图"), tr("版本"), tr("语言 / 来源"), tr("分类"), tr("状态") });
     m_table->verticalHeader()->setVisible(false);
     // 五列都可拖：玩家按自己的屏幕拖宽度，别替他固定死（Stretch / ResizeToContents 都拖不动）
     m_table->horizontalHeader()->setStretchLastSection(false);
@@ -523,18 +524,28 @@ void MapLibraryPanel::rebuildTable()
             const auto& head = list.first();
             const int installedInGroup = groupInstalled(list);
 
-            auto* title = new QTableWidgetItem(head.displayName());
+            // 组标题优先用站上的标准名（`Bitstream` 而不是 `Bitstream - by Gibbs & Asometric`）；
+            // 没关联大厅才退回索引里的名字，并把 ` - by 作者` 这类尾巴去掉。
+            QString groupTitle = head.displayName();
+            if (!head.hallSlug.isEmpty()) {
+                const auto row = HallCache::findListRow(head.hallSlug);
+                const QString hallName = row.value(QStringLiteral("name")).toString();
+                if (!hallName.isEmpty())
+                    groupTitle = hallName;
+            }
+            static const QRegularExpression bySuffix(QStringLiteral("\\s*[-–—]\\s*by\\s+.*$"),
+                                                    QRegularExpression::CaseInsensitiveOption);
+            groupTitle.remove(bySuffix);
+            if (groupTitle.isEmpty())
+                groupTitle = head.displayName();
+
+            auto* title = new QTableWidgetItem(tr("%1（%2 个版本）").arg(groupTitle).arg(list.size()));
             QFont bold = title->font();
             bold.setBold(true);
             title->setFont(bold);
             title->setFlags(Qt::ItemIsEnabled);  // 不可选中：拖拽/双击/导入按钮都不认它
             title->setToolTip(tr("%1 的 %2 个语言版本").arg(head.displayName()).arg(list.size()));
             m_table->setItem(row, 0, title);
-
-            auto* count = new QTableWidgetItem(tr("%1 个语言版本").arg(list.size()));
-            count->setFlags(Qt::ItemIsEnabled);
-            count->setForeground(ui::mutedTextColor());
-            m_table->setItem(row, 2, count);
 
             // 分类一致才显示，否则写「混合」——别替玩家挑一个
             QSet<QString> categories;
@@ -560,7 +571,23 @@ void MapLibraryPanel::rebuildTable()
 
         for (const auto& item : list) {
             const QString prefix = grouped ? QStringLiteral("└ ") : QString();
-            auto* name = new QTableWidgetItem(prefix + item.displayName());
+            // 组标题已经写了图名，子行只写"这是哪个语言版本"——
+            // 否则「Bitstream…」连写三行，只能靠右边的小字分辨
+            QString childName = grouped ? item.variantSummary() : item.displayName();
+            if (grouped) {
+                // 同组里两个都是"原版"（多版本的同语言包）时，补一个版本号区分
+                int sameLabel = 0;
+                for (const auto& other : list) {
+                    if (other.variantSummary() == item.variantSummary())
+                        ++sameLabel;
+                }
+                if (sameLabel > 1) {
+                    const QString detail = item.mapVersion.isEmpty() ? item.mcVersion : item.mapVersion;
+                    if (!detail.isEmpty())
+                        childName = QStringLiteral("%1 · %2").arg(childName, detail);
+                }
+            }
+            auto* name = new QTableWidgetItem(prefix + childName);
             name->setData(Qt::UserRole, item.file);
             QString tooltip = item.path;
             if (!item.note.isEmpty())
@@ -578,7 +605,15 @@ void MapLibraryPanel::rebuildTable()
             versionItem->setData(Qt::UserRole, item.file);
             m_table->setItem(row, 1, versionItem);
 
-            auto* languageItem = new QTableWidgetItem(item.variantSummary());
+            // 分组子行的名字已经是「简中汉化v1.0」，这一列再写一遍语言就重复了；
+            // 只有一行（未分组）时才用摘要，分组时写来源（社区汉化 / 自译 / 作者发布）
+            QString languageText = item.variantSummary();
+            if (grouped) {
+                languageText = item.variant.source == variant::Source::Unknown
+                                   ? QStringLiteral("—")
+                                   : variant::sourceLabel(item.variant.source);
+            }
+            auto* languageItem = new QTableWidgetItem(languageText);
             languageItem->setData(Qt::UserRole, item.file);
             QString languageTooltip = tr("%1 · %2").arg(variant::sourceLabel(item.variant.source),
                                                         variant::deliveryLabel(item.variant.delivery));

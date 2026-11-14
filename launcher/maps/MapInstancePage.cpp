@@ -27,6 +27,7 @@
 #include <QFileInfo>
 #include <QFrame>
 #include <QFont>
+#include <QComboBox>
 #include <QFormLayout>
 #include <QGridLayout>
 #include <QGroupBox>
@@ -1843,26 +1844,68 @@ void MapInstancePage::reinstallWorlds()
         return;
     }
 
-    QMessageBox box(this);
-    box.setWindowTitle(tr("重装地图"));
-    box.setIcon(QMessageBox::Question);
-    box.setText(tr("会用来源压缩包重新解压世界目录，实例本身（版本、加载器、模组）保持不变。\n\n继续吗？"));
+    // 同一张图可能有多个语言版本（原版 / 简中 / 繁中）。重装时让玩家选，
+    // 这样"换成英文原版"与"换成汉化版"都是同一套流程，不用删实例重导。
+    MapLibrary library;
+    library.reload();
+    const QString currentArchive = MapRepository::resolveArchivePath(m_meta);
+    const QString currentFile = QFileInfo(currentArchive).fileName();
 
-    auto* backupCheck = new QCheckBox(tr("备份现有存档到 saves/.mcml-backup/ 目录下"), &box);
+    QString groupKey;
+    for (const auto& item : library.items()) {
+        if (item.file == currentFile) {
+            groupKey = item.groupKey();
+            break;
+        }
+    }
+    const auto variants = groupKey.isEmpty() ? QList<LibraryItem>{} : library.groupItems(groupKey);
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("重装地图"));
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* text = new QLabel(tr("会用选中的压缩包重新解压世界目录；实例本身（版本、加载器、模组）保持不变。"), &dialog);
+    text->setWordWrap(true);
+    layout->addWidget(text);
+
+    auto* form = new QFormLayout();
+    auto* archiveCombo = new QComboBox(&dialog);
+    for (const auto& item : variants) {
+        archiveCombo->addItem(tr("%1 · MC %2 · %3").arg(item.variantSummary(), item.mcVersion, item.file), item.path);
+        if (item.file == currentFile)
+            archiveCombo->setCurrentIndex(archiveCombo->count() - 1);
+    }
+    if (archiveCombo->count() == 0)
+        archiveCombo->addItem(tr("（按 map.json 记录的来源）"), QString());
+    form->addRow(tr("来源版本"), archiveCombo);
+    layout->addLayout(form);
+
+    auto* backupCheck = new QCheckBox(tr("备份现有存档到 saves/.mcml-backup/ 目录下"), &dialog);
     backupCheck->setChecked(true);
-    box.setCheckBox(backupCheck);
+    layout->addWidget(backupCheck);
 
-    auto* yesButton = box.addButton(tr("是"), QMessageBox::YesRole);
-    auto* noButton = box.addButton(tr("否"), QMessageBox::NoRole);
-    box.setDefaultButton(noButton);
-
-    box.exec();
-    if (box.clickedButton() != yesButton)
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    buttons->button(QDialogButtonBox::Ok)->setText(tr("重装"));
+    layout->addWidget(buttons);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    if (dialog.exec() != QDialog::Accepted)
         return;
 
     const bool doBackup = backupCheck->isChecked();
+    const QString chosenPath = archiveCombo->currentData().toString();
 
-    auto task = std::make_unique<MapReinstallTask>(m_instance->instanceRoot(), m_meta, doBackup);
+    // 选中的那条的语言身份；换版本时一并写回 map.json
+    variant::Info chosenVariant;
+    for (const auto& item : variants) {
+        if (item.path == chosenPath) {
+            chosenVariant = item.variant;
+            break;
+        }
+    }
+    chosenVariant.isDefault = m_meta.variant.isDefault;
+
+    auto task = std::make_unique<MapReinstallTask>(m_instance->instanceRoot(), m_meta, doBackup, chosenPath,
+                                                   chosenVariant);
     connect(task.get(), &Task::failed, this, [this](const QString& reason) {
         CustomMessageBox::selectable(this, tr("重装失败"), reason, QMessageBox::Critical)->show();
     });

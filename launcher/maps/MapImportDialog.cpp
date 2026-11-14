@@ -210,7 +210,12 @@ MapImportDialog::MapImportDialog(const MapScanResult& scan, QWidget* parent) : Q
         // levelName 里常带 § 格式化码（截图里的"§d..."），实例名不要带
         if (!primary.level.levelName.isEmpty())
             m_nameEdit->setText(text::stripFormattingCodes(primary.level.levelName));
+        m_baseName = m_nameEdit->text();
+    } else {
+        m_baseName = m_nameEdit->text();
     }
+    // 名字定下来之后再套一次语言后缀：同一张图的原版与汉化版实例名必须能区分
+    languageChanged();
 
     connect(m_worldCombo, &QComboBox::currentIndexChanged, this, &MapImportDialog::worldChanged);
     connect(m_versionCombo, &QComboBox::currentTextChanged, this, [this](const QString&) {
@@ -333,6 +338,25 @@ void MapImportDialog::languageChanged()
     if (slot == 4) {
         m_sourceCombo->setCurrentIndex(int(variant::Source::Author));
         m_sourceCombo->setEnabled(false);
+    }
+
+    // 实例名跟着语言走：两张"石之恐惧"放在实例列表里根本分不出谁是谁
+    if (!m_nameTouched && !m_baseName.isEmpty()) {
+        QString suffix;
+        switch (slot) {
+            case 2:
+                suffix = QStringLiteral("（简中汉化）");
+                break;
+            case 3:
+                suffix = QStringLiteral("（繁中汉化）");
+                break;
+            case 4:
+                suffix = QStringLiteral("（官中）");
+                break;
+            default:
+                break;
+        }
+        m_nameEdit->setText(m_baseName + suffix);
     }
 }
 
