@@ -138,6 +138,8 @@ class MapLibrary : public QObject {
     static bool markHallVerified(const QString& file, const QString& hallSlug);
     /// 改写语言变体（原版/官中/汉化、整包/资源包、来源）
     bool setVariant(const QString& file, const variant::Info& info);
+    /// 改索引里的英文名。没有大厅关联时，分组键就是它 —— 用来把包合并到某个本地分组
+    bool setEnglishName(const QString& file, const QString& englishName);
     /// 把同组里的默认变体设为这一个（其它同组条目的 default 清掉）
     bool setDefaultVariant(const QString& file);
     /// 取同一组的全部条目（含自己），给「这张图有哪几个语言版本」用

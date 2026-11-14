@@ -66,6 +66,10 @@ class MapLibraryPanel : public QWidget {
     void applyCategory(const QString& file, const QString& categoryId);
     /// 把一份资源包挂到玩家选中的实例（不建实例、不动存档）
     void attachResourcePack(const QString& file, const QString& path);
+    /// 改语言标签（原版/简中/繁中/官中 + 来源）
+    void editVariant(const QString& file);
+    /// 从大厅缓存里挑一张图当"所属主"
+    void pickHallMap(const QString& file);
 
     MapLibrary m_library;
     QListWidget* m_categories = nullptr;

@@ -97,6 +97,8 @@ class ImportPage : public QWidget, public BasePage {
    private:
     void updateModpackState();
     void updateMapState();
+    /// 地图页唯一的入口：选一个包 → 立刻弹导入对话框 → 点导入就建实例
+    void importFromPath(const QString& path);
     QUrl modpackUrl() const;
 
    private:

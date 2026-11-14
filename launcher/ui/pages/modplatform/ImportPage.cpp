@@ -39,6 +39,8 @@
 #include <QApplication>
 #include <QDragEnterEvent>
 #include <QDropEvent>
+#include <QHBoxLayout>
+#include <QPushButton>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QMimeData>
@@ -97,17 +99,30 @@ ImportPage::ImportPage(NewInstanceDialog* dialog, QWidget* parent)
     ui->mapCardFrame->setVisible(false);
 
     /**
-     * 本地地图库放在地图页的最下面：上面是"拖一个压缩包进来"，下面是"从库里挑一张"。
+     * 地图页只有两样东西：**本地地图库**（占满）与右下角一个「从外部导入…」。
      *
-     * 面板只负责「把路径填进 mapEdit」——识别、建实例仍然走上面那条链路，
-     * 所以库里的图和外面拖进来的图行为完全一致（同一条 MapImportTask）。
+     * 原来的"选择本地压缩包"输入框 + 「已就绪的地图信息」卡片都收起来了：
+     * 玩家在这里的动作只有"从库里挑一张"或"从外面挑一个文件"，选完就该看到
+     * 导入对话框（版本/加载器/关联/语言），而不是先看一段只读摘要再点第二次。
      */
+    ui->mapLabel->setVisible(false);
+    ui->mapEdit->setVisible(false);
+    ui->mapBtn->setVisible(false);
+    ui->mapHintWidget->setVisible(false);
+    ui->mapCardFrame->setVisible(false);
+
     m_libraryPanel = new maps::MapLibraryPanel(this);
+    connect(m_libraryPanel, &maps::MapLibraryPanel::importRequested, this, &ImportPage::importFromPath);
+
+    // 库在上、按钮行在下：库吃满剩余高度
     ui->mapLayout->addWidget(m_libraryPanel, 1);
-    connect(m_libraryPanel, &maps::MapLibraryPanel::importRequested, this, [this](const QString& path) {
-        ui->mapEdit->setText(path);
-        updateState();
-    });
+    auto* bottomRow = new QHBoxLayout();
+    bottomRow->addStretch(1);
+    auto* importButton = new QPushButton(tr("从外部导入…"), this);
+    importButton->setToolTip(tr("选一个不在库里的压缩包（zip / rar / 7z / tar / gz / mcworld）直接导入"));
+    bottomRow->addWidget(importButton);
+    ui->mapLayout->addLayout(bottomRow);
+    connect(importButton, &QPushButton::clicked, this, &ImportPage::on_mapBtn_clicked);
 }
 
 ImportPage::~ImportPage()
@@ -148,7 +163,7 @@ void ImportPage::dropEvent(QDropEvent* event)
     }
     const QString localPath = urls.first().toLocalFile();
     if (ui->radioMap->isChecked()) {
-        ui->mapEdit->setText(localPath);
+        importFromPath(localPath);
     } else {
         ui->modpackEdit->setText(localPath);
     }
@@ -421,8 +436,7 @@ void ImportPage::setUrl(const QString& url)
 void ImportPage::setMapFile(const QString& path)
 {
     ui->radioMap->setChecked(true);
-    ui->mapEdit->setText(path);
-    updateState();
+    importFromPath(path);
 }
 
 void ImportPage::setExtraInfo(const QMap<QString, QString>& extra_info)
@@ -450,24 +464,47 @@ void ImportPage::on_modpackBtn_clicked()
 void ImportPage::on_mapBtn_clicked()
 {
     const QString filter = tr("Minecraft 地图 (*.zip *.rar *.7z *.tar *.gz *.mcworld);;所有文件 (*)");
-    const QString file = QFileDialog::getOpenFileName(this, tr("选择地图压缩包"), ui->mapEdit->text(), filter);
-    if (!file.isEmpty()) {
-        ui->mapEdit->setText(file);
+    const QString file = QFileDialog::getOpenFileName(this, tr("选择地图压缩包"), QString(), filter);
+    if (!file.isEmpty())
+        importFromPath(file);
+}
+
+void ImportPage::importFromPath(const QString& path)
+{
+    if (path.isEmpty() || !QFile::exists(path))
+        return;
+
+    QApplication::setOverrideCursor(Qt::WaitCursor);
+    const auto scanned = maps::MapArchiveScanner::scan(path);
+    QApplication::restoreOverrideCursor();
+
+    if (!scanned || scanned->worlds.isEmpty()) {
+        CustomMessageBox::selectable(this, tr("不是地图存档"),
+                                     tr("这个文件里没有找到包含 level.dat 的 Minecraft 世界。\n"
+                                        "如果它其实是整合包，请切到「整合导入」。"),
+                                     QMessageBox::Warning)
+            ->show();
+        return;
     }
+
+    // 选完就直接问"是不是这张图、哪个语言"；点导入立即建实例，不再回填一张只读摘要
+    const auto options = maps::MapImportDialog::ask(*scanned, this);
+    if (!options)
+        return;
+
+    // 名字被清空时用文件名兜底：实例名为空的话，新建对话框的「确定」本来就是禁用的
+    auto chosen = *options;
+    if (chosen.displayName.trimmed().isEmpty())
+        chosen.displayName = QFileInfo(path).completeBaseName();
+
+    dialog->setSuggestedPack(chosen.displayName, new maps::MapImportTask(path, *scanned, chosen));
+    dialog->setSuggestedIcon("default");
+    dialog->accept();
 }
 
 void ImportPage::on_btnMapOptions_clicked()
 {
-    if (!m_currentMapScan || m_currentMapScan->worlds.isEmpty()) {
-        return;
-    }
-
-    const auto options = maps::MapImportDialog::ask(*m_currentMapScan, this);
-    if (options) {
-        m_currentMapOptions = *options;
-        m_hasCustomMapOptions = true;
-        updateMapState();
-    }
+    // 「调整地图导入选项」按钮已随信息卡一起收走；保留这个槽只为 .ui 的自动连接不报错
 }
 
 QUrl ImportPage::modpackUrl() const

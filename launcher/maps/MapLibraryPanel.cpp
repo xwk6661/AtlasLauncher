@@ -20,6 +20,7 @@
 #include "MapTheme.h"
 #include "MapStyle.h"
 #include "FileSystem.h"
+#include "HallCache.h"
 #include "MapPackAttach.h"
 #include "MapMeta.h"
 
@@ -31,6 +32,11 @@
 #include <QAction>
 #include <QBrush>
 #include <QColor>
+#include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QFormLayout>
+#include <QLineEdit>
 #include <QDesktopServices>
 #include <QDir>
 #include <QDrag>
@@ -230,12 +236,15 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     m_table->setColumnCount(5);
     m_table->setHorizontalHeaderLabels({ tr("地图"), tr("版本"), tr("语言"), tr("分类"), tr("状态") });
     m_table->verticalHeader()->setVisible(false);
+    // 五列都可拖：玩家按自己的屏幕拖宽度，别替他固定死（Stretch / ResizeToContents 都拖不动）
     m_table->horizontalHeader()->setStretchLastSection(false);
-    m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    m_table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-    m_table->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
+    m_table->horizontalHeader()->setMinimumSectionSize(56);
+    m_table->setColumnWidth(0, 300);  // 地图（名字最长，给宽一点）
+    m_table->setColumnWidth(1, 130);  // 版本
+    m_table->setColumnWidth(2, 120);  // 语言
+    m_table->setColumnWidth(3, 90);   // 分类
+    m_table->setColumnWidth(4, 80);   // 状态
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -646,7 +655,9 @@ void MapLibraryPanel::applyCategory(const QString& file, const QString& category
 
 void MapLibraryPanel::showItemContextMenu(const QPoint& pos)
 {
-    auto* cell = m_table->itemAt(pos);
+    // 信号给的坐标是表格（含表头）的，itemAt / mapToGlobal 要的是 viewport 的
+    const QPoint viewportPos = m_table->viewport()->mapFrom(m_table, pos);
+    auto* cell = m_table->itemAt(viewportPos);
     if (cell == nullptr)
         return;
     auto* first = m_table->item(cell->row(), 0);
@@ -661,6 +672,78 @@ void MapLibraryPanel::showItemContextMenu(const QPoint& pos)
     QAction* openAction = menu.addAction(tr("打开所在目录"));
     menu.addSeparator();
 
+    QAction* variantAction = menu.addAction(tr("语言标签…"));
+
+    // 类别：直接在这里改，不用把行拖到左边
+    QMenu* categoryMenu = menu.addMenu(tr("类别"));
+    const QString currentCategory = [this, &file] {
+        for (const auto& item : m_library.items()) {
+            if (item.file == file)
+                return item.category;
+        }
+        return QString();
+    }();
+    for (const auto& category : m_library.categories()) {
+        QAction* action = categoryMenu->addAction(category.name);
+        action->setCheckable(true);
+        action->setChecked(category.id == currentCategory);
+        connect(action, &QAction::triggered, this, [this, file, id = category.id] { applyCategory(file, id); });
+    }
+
+    // 所属主：这张包算到哪张图下面（空 = 独立成图）
+    QMenu* groupMenu = menu.addMenu(tr("所属主"));
+    QAction* standalone = groupMenu->addAction(tr("独立成图（不关联）"));
+    standalone->setCheckable(true);
+    standalone->setChecked([this, &file] {
+        for (const auto& item : m_library.items())
+            if (item.file == file)
+                return item.hallSlug.isEmpty();
+        return true;
+    }());
+    connect(standalone, &QAction::triggered, this, [this, file] { m_library.setHallLink(file, QString(), false); });
+
+    groupMenu->addSeparator();
+    // 现有图组：有大厅关联的按 slug 挂，没有的按英文名（本地分组）合
+    QHash<QString, QString> slugNames;     // slug -> 显示名
+    QHash<QString, QString> localNames;    // englishName -> 显示名
+    for (const auto& item : m_library.items()) {
+        if (!item.hallSlug.isEmpty()) {
+            if (!slugNames.contains(item.hallSlug))
+                slugNames.insert(item.hallSlug, item.displayName());
+        } else if (!item.englishName.isEmpty()) {
+            if (!localNames.contains(item.englishName))
+                localNames.insert(item.englishName, item.displayName());
+        }
+    }
+
+    QList<QString> slugs = slugNames.keys();
+    std::sort(slugs.begin(), slugs.end(), [&slugNames](const QString& left, const QString& right) {
+        return slugNames.value(left).localeAwareCompare(slugNames.value(right)) < 0;
+    });
+    for (const auto& slug : slugs) {
+        QAction* action = groupMenu->addAction(tr("%1（%2）").arg(slugNames.value(slug), slug));
+        action->setCheckable(true);
+        connect(action, &QAction::triggered, this, [this, file, slug] { m_library.setHallLink(file, slug, false); });
+    }
+
+    QList<QString> locals = localNames.keys();
+    std::sort(locals.begin(), locals.end(), [&localNames](const QString& left, const QString& right) {
+        return localNames.value(left).localeAwareCompare(localNames.value(right)) < 0;
+    });
+    for (const auto& name : locals) {
+        QAction* action = groupMenu->addAction(tr("%1（本地分组）").arg(localNames.value(name)));
+        connect(action, &QAction::triggered, this, [this, file, name] {
+            // 本地分组的键是英文名：先解除大厅关联，再把英文名对齐，两条命令都走原子写
+            m_library.setHallLink(file, QString(), false);
+            m_library.setEnglishName(file, name);
+        });
+    }
+    groupMenu->addSeparator();
+    QAction* searchHall = groupMenu->addAction(tr("从大厅搜索…"));
+    connect(searchHall, &QAction::triggered, this, [this, file] { pickHallMap(file); });
+
+    menu.addSeparator();
+
     // 资源包没有世界，不能走导入 —— 只能挂到已装实例上
     const auto probe = MapPackAttach::inspect(path);
     QAction* attachAction = menu.addAction(tr("作为资源包挂到已装实例…"));
@@ -668,13 +751,15 @@ void MapLibraryPanel::showItemContextMenu(const QPoint& pos)
     attachAction->setToolTip(probe.valid ? tr("放进实例的 resourcepacks/ 并启用；不建实例、不动存档")
                                         : probe.reason);
 
-    QAction* chosen = menu.exec(m_table->viewport()->mapToGlobal(pos));
+    QAction* chosen = menu.exec(m_table->viewport()->mapToGlobal(viewportPos));
     if (chosen == importAction) {
         emit importRequested(path);
     } else if (chosen == openAction) {
         QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
     } else if (chosen == attachAction) {
         attachResourcePack(file, path);
+    } else if (chosen == variantAction) {
+        editVariant(file);
     }
 }
 
@@ -744,6 +829,187 @@ void MapLibraryPanel::attachResourcePack(const QString& file, const QString& pat
                                 "再把 options.txt 的 resourcePacks 里对应那一项去掉。")
                                  .arg(*attached));
     refresh();
+}
+
+void MapLibraryPanel::editVariant(const QString& file)
+{
+    variant::Info info;
+    bool found = false;
+    for (const auto& item : m_library.items()) {
+        if (item.file == file) {
+            info = item.variant;
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        return;
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("语言标签"));
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* form = new QFormLayout();
+    form->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
+
+    auto* language = new QComboBox(&dialog);
+    language->addItem(tr("原版（未标注语言）"));
+    language->addItem(tr("原版（英文）"));
+    language->addItem(tr("简中汉化"));
+    language->addItem(tr("繁中汉化"));
+    language->addItem(tr("官中（作者发布）"));
+    language->addItem(tr("其他语言"));
+
+    auto* source = new QComboBox(&dialog);
+    source->addItem(tr("来源未知"));
+    source->addItem(tr("作者发布"));
+    source->addItem(tr("社区汉化"));
+    source->addItem(tr("自译"));
+
+    // 回填当前值
+    if (info.kind == variant::Kind::Localized) {
+        if (info.language == variant::Language::TraditionalChinese)
+            language->setCurrentIndex(3);
+        else if (info.source == variant::Source::Author)
+            language->setCurrentIndex(4);
+        else if (info.language == variant::Language::Other)
+            language->setCurrentIndex(5);
+        else
+            language->setCurrentIndex(2);
+        source->setCurrentIndex(int(info.source));
+    } else {
+        language->setCurrentIndex(info.language == variant::Language::English ? 1 : 0);
+    }
+    source->setEnabled(info.kind == variant::Kind::Localized);
+
+    form->addRow(tr("语言"), language);
+    form->addRow(tr("来源"), source);
+
+    auto* hint = new QLabel(tr("载体：%1\n所属主：%2")
+                                .arg(variant::deliveryLabel(info.delivery),
+                                     info.basedOn.isEmpty() ? tr("按分组键算") : info.basedOn),
+                            &dialog);
+    hint->setWordWrap(true);
+    hint->setFont(ui::metaFont(hint->font()));
+    hint->setStyleSheet(QStringLiteral("color: %1;").arg(ui::mutedTextColor().name()));
+    form->addRow(hint);
+
+    layout->addLayout(form);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    layout->addWidget(buttons);
+
+    // 官中 = 语言简中 + 来源作者，别再让玩家把来源改成"自译"
+    connect(language, &QComboBox::currentIndexChanged, &dialog, [language, source](int index) {
+        source->setEnabled(index >= 2 && index != 4);
+        if (index == 4)
+            source->setCurrentIndex(int(variant::Source::Author));
+    });
+
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+
+    variant::Info updated;
+    switch (language->currentIndex()) {
+        case 0:
+            updated.kind = variant::Kind::Original;
+            updated.language = variant::Language::Unknown;
+            break;
+        case 1:
+            updated.kind = variant::Kind::Original;
+            updated.language = variant::Language::English;
+            break;
+        case 2:
+            updated.kind = variant::Kind::Localized;
+            updated.language = variant::Language::SimplifiedChinese;
+            break;
+        case 3:
+            updated.kind = variant::Kind::Localized;
+            updated.language = variant::Language::TraditionalChinese;
+            break;
+        case 4:
+            updated.kind = variant::Kind::Localized;
+            updated.language = variant::Language::SimplifiedChinese;
+            updated.source = variant::Source::Author;
+            break;
+        default:
+            updated.kind = variant::Kind::Localized;
+            updated.language = variant::Language::Other;
+            break;
+    }
+    if (updated.kind == variant::Kind::Localized && language->currentIndex() != 4)
+        updated.source = variant::Source(source->currentIndex());
+
+    // 只改语言与来源，载体/依附/默认这些别动
+    updated.delivery = info.delivery;
+    updated.basedOn = info.basedOn;
+    updated.isDefault = info.isDefault;
+    if (updated.kind == variant::Kind::Localized) {
+        updated.label = info.label.isEmpty() ? variant::languageLabel(updated.language) : info.label;
+        // 原来写的是别的语言，就别继续挂旧标签（「简中汉化v1.0」不能贴在繁中包上）
+        if (info.kind == variant::Kind::Localized && info.language != updated.language)
+            updated.label = variant::languageLabel(updated.language);
+    }
+
+    m_library.setVariant(file, updated);
+}
+
+void MapLibraryPanel::pickHallMap(const QString& file)
+{
+    const auto snapshot = HallCache::load();
+    if (!snapshot.isValid()) {
+        QMessageBox::information(this, tr("还没有大厅数据"),
+                                 tr("先打开「添加实例 → CTM 地图」，点一次「更新数据」。"));
+        return;
+    }
+
+    QDialog dialog(this);
+    dialog.setWindowTitle(tr("关联到 CTM 地图"));
+    dialog.resize(560, 460);
+    auto* layout = new QVBoxLayout(&dialog);
+    auto* filter = new QLineEdit(&dialog);
+    filter->setPlaceholderText(tr("按名字过滤（缓存里有 %1 张）").arg(snapshot.listRows.size()));
+    auto* list = new QListWidget(&dialog);
+    layout->addWidget(filter);
+    layout->addWidget(list, 1);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    layout->addWidget(buttons);
+
+    const auto rebuild = [list](const QJsonArray& rows, const QString& text) {
+        list->clear();
+        int shown = 0;
+        for (const auto& value : rows) {
+            const auto row = value.toObject();
+            const QString name = row.value(QStringLiteral("name")).toString();
+            const QString slug = row.value(QStringLiteral("slug")).toString();
+            if (name.isEmpty() || slug.isEmpty())
+                continue;
+            if (!text.isEmpty() && !name.contains(text, Qt::CaseInsensitive) &&
+                !slug.contains(text, Qt::CaseInsensitive))
+                continue;
+
+            auto* item = new QListWidgetItem(QStringLiteral("%1  ·  %2  ·  MC %3")
+                                                 .arg(name, slug, row.value(QStringLiteral("version")).toString()));
+            item->setData(Qt::UserRole, slug);
+            list->addItem(item);
+            if (++shown >= 200)  // 过滤为空时也别把 2287 行全塞进列表
+                break;
+        }
+    };
+    rebuild(snapshot.listRows, QString());
+
+    connect(filter, &QLineEdit::textChanged, &dialog,
+            [rebuild, rows = snapshot.listRows](const QString& text) { rebuild(rows, text); });
+    connect(list, &QListWidget::itemDoubleClicked, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    if (dialog.exec() != QDialog::Accepted)
+        return;
+    auto* current = list->currentItem();
+    if (current == nullptr)
+        return;
+    m_library.setHallLink(file, current->data(Qt::UserRole).toString(), false);
 }
 
 }  // namespace maps
