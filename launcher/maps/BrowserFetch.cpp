@@ -129,12 +129,19 @@ void BrowserFetch::get(const QUrl& url, int attempts)
     cleanup();
     m_url = url;
     m_attempts = std::max(1, attempts);
+
+    m_candidates.clear();
+    for (const auto& path : candidateBrowsers()) {
+        if (!path.isEmpty() && QFileInfo::exists(path))
+            m_candidates << path;
+    }
+    m_candidateIndex = 0;
     attemptOnce(m_attempts);
 }
 
 void BrowserFetch::attemptOnce(int remaining)
 {
-    const QString browser = browserPath();
+    const QString browser = m_candidates.value(m_candidateIndex);
     if (browser.isEmpty()) {
         emit finished(false, {}, tr("本机没有找到 Edge / Chrome，无法使用浏览器通道"));
         return;
@@ -235,8 +242,9 @@ go();
         QStringLiteral("--disable-sync"),
         QStringLiteral("--mute-audio"),
         QStringLiteral("--user-data-dir=%1").arg(profileDir),
-        // 留给 XHR 三次尝试（含退避）和 2.5 MB 级响应体
-        QStringLiteral("--virtual-time-budget=25000"),
+        // 留给 XHR 三次尝试（含退避）和 2.5 MB 级响应体。
+        // 重试时给更大的预算：整库列表约 2.5 MB，线慢时 25 秒不够，页面会停在 pending
+        QStringLiteral("--virtual-time-budget=%1").arg(remaining < m_attempts ? 45000 : 25000),
         QStringLiteral("--dump-dom"),
         QUrl::fromLocalFile(pagePath).toString(),
     });
@@ -297,6 +305,33 @@ go();
             return;
         }
 
+        /**
+         * 页面跑起来了、但 `<pre>` 还是 `pending`：虚拟时间预算先到，XHR 没回来。
+         *
+         * 以前这种情况被归到「浏览器没有返回内容（退出码 0）」—— 退出码 0 意味着浏览器
+         * 正常结束了，看起来像"浏览器坏了"，实际只是这次没等够，重试一次往往就有。
+         */
+        if (payload.trimmed() == QLatin1String("pending")) {
+            if (remaining > 1) {
+                QTimer::singleShot(400, this, [this, remaining] { attemptOnce(remaining - 1); });
+                return;
+            }
+            emit finished(false, {},
+                          tr("页面在预算时间内没跑完（数据量大或线路慢，已尝试 %1 次）").arg(m_attempts));
+            return;
+        }
+
+        /**
+         * 浏览器**一个字节都没吐**（stdout 为空、退出码 0）：命令行没问题、页面也在，
+         * 但它把活儿交给了别人（Edge 自更新 / 已有实例接管 / 企业策略）。
+         * 本机还有另一个浏览器（Chrome）时换过去，比在同一个 exe 上重试三次有用。
+         */
+        if (out.isEmpty() && remaining > 1 && m_candidateIndex + 1 < m_candidates.size()) {
+            ++m_candidateIndex;
+            QTimer::singleShot(400, this, [this, remaining] { attemptOnce(remaining - 1); });
+            return;
+        }
+
         // 连页面都没跑起来：退回进程层面的诊断
         QString reason;
         if (err.contains(QLatin1String("ERR_CONNECTION_RESET")))
@@ -307,8 +342,10 @@ go();
             reason = tr("系统提示没有网络连接");
         else if (status == QProcess::CrashExit)
             reason = tr("浏览器进程被系统终止（退出码 %1）").arg(code);
-        else
+        else if (out.isEmpty())
             reason = tr("浏览器没有返回内容（退出码 %1）").arg(code);
+        else
+            reason = tr("浏览器返回的页面里没有结果节点（退出码 %1，DOM %2 字节）").arg(code).arg(out.size());
 
         // 把浏览器的 stderr 尾巴带上：退出码 21 这种没有上下文的数字，光看没用
         QString tail = err;

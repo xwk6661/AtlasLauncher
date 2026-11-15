@@ -20,6 +20,7 @@
 #include <QByteArray>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QUrl>
 
 class QProcess;
@@ -86,6 +87,10 @@ class BrowserFetch : public QObject {
     QProcess* m_proc = nullptr;
     QUrl m_url;
     int m_attempts = 3;
+    /// 本机可用浏览器的有序列表（Edge 优先）。某个浏览器连一次 DOM 都没吐出来时换下一个：
+    /// Edge 自更新 / 被策略挡住时会"启动即退出 0、stdout 空"，换 Chrome 往往能过
+    QStringList m_candidates;
+    int m_candidateIndex = 0;
 };
 
 }  // namespace maps
