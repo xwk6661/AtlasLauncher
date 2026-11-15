@@ -35,6 +35,7 @@ class QLineEdit;
 class QListWidget;
 class QPushButton;
 class QStackedWidget;
+class QAction;
 class QToolButton;
 
 namespace maps {
@@ -94,6 +95,8 @@ class MapHallPage : public QWidget, public BasePage {
     void runProbe();
     /// 「反代模板」：把可直接粘贴到 Cloudflare Workers 的 20 行代码摊开，附一键复制
     void showRelayHelp();
+    /// 左栏在「列表 / 失败面板」之间切换；失败时同时收起右栏详情
+    void setFailMode(bool on);
 
     HallQuery currentQuery() const;
     /// 优先点开详情里的直链，没有就退回站点页面
@@ -116,12 +119,16 @@ class MapHallPage : public QWidget, public BasePage {
     QStackedWidget* m_leftStack = nullptr;
     QWidget* m_failBox = nullptr;
     QLabel* m_failTitle = nullptr;
-    QLabel* m_failLead = nullptr;
+    /// 一行性质 + 当前通道（失败面板的副标题）
+    QLabel* m_failMeta = nullptr;
     QLabel* m_failTips = nullptr;
     QLabel* m_failDetail = nullptr;
     QLabel* m_probeResult = nullptr;
     QToolButton* m_failDetailToggle = nullptr;
-    QPushButton* m_relayButton = nullptr;
+    /// 「更多」菜单里的反代模板（只在"出口不对"类失败里出现）
+    QAction* m_relayAction = nullptr;
+    /// 右栏详情：失败时整块收起，不留两张空卡片
+    QWidget* m_detailPanel = nullptr;
     QPushButton* m_loadMore = nullptr;
     /// 「更新数据」/「下载地图库」
     QPushButton* m_syncButton = nullptr;

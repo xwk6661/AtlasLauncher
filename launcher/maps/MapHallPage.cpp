@@ -29,6 +29,8 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QMenu>
+#include <QAction>
 #include <QNetworkReply>
 #include <QPlainTextEdit>
 #include <QPushButton>
@@ -339,7 +341,7 @@ void MapHallPage::openedImpl()
                               .arg(at.isValid() ? at.toString(QStringLiteral("MM-dd HH:mm")) : tr("未知")));
     } else {
         if (m_leftStack != nullptr)
-            m_leftStack->setCurrentWidget(m_list);
+            setFailMode(false);
         m_status->setText(tr("还没有本地地图库。点「下载地图库」拉一次（约 20–40 秒），之后打开即用。"));
     }
     m_started = true;
@@ -430,66 +432,109 @@ void MapHallPage::buildUi()
     m_list->setFrameShape(QFrame::NoFrame);
     m_leftStack->addWidget(m_list);
 
-    // ── 失败面板（照 AIO renderHallFail：标题 / 说明 / 建议 / 动作 / 技术细节） ──
+    /**
+     * ── 失败面板 ─────────────────────────────────────────────────────────────
+     * 一屏只说三件事：**出了什么错**（标题 + 一行性质）、**现在能做什么**（三条，动词开头）、
+     * **要点哪个按钮**（主按钮只留一个「重试」）。
+     *
+     * 2026-11-15 收口：原来把"封的是 SNI / Qt 没有 HTTP/3 / Electron 怎么发请求"的取证过程
+     * 直接摊在正文里，五行解释配五条长句建议，失败一次要读半屏；同一段话还在底部状态栏
+     * 又抄了一遍。需要取证的人会展开「技术细节」，不需要的人只想点重试。
+     */
     m_failBox = new QWidget(m_leftStack);
-    auto* failLayout = new QVBoxLayout(m_failBox);
-    failLayout->setContentsMargins(16, 16, 16, 16);
-    failLayout->setSpacing(8);
+    auto* failOuter = new QVBoxLayout(m_failBox);
+    failOuter->setContentsMargins(ui::kPageMargin, ui::kPageMargin, ui::kPageMargin, ui::kPageMargin);
+    failOuter->setSpacing(0);
+
+    /// 卡片只包内容、不拉满整栏：失败页看着像一个"提示"，而不是把整块区域涂满
+    auto* failCard = new QFrame(m_failBox);
+    failCard->setObjectName(QStringLiteral("mapCard"));
+    failCard->setStyleSheet(ui::cardStyle());
+    failOuter->addWidget(failCard);
+    failOuter->addStretch(1);
+
+    auto* failLayout = new QVBoxLayout(failCard);
+    failLayout->setContentsMargins(ui::kSpaceL, ui::kSpaceL, ui::kSpaceL, ui::kSpaceL);
+    failLayout->setSpacing(ui::kSpaceM);
 
     m_failTitle = new QLabel(m_failBox);
-    QFont failTitleFont = m_failTitle->font();
-    failTitleFont.setBold(true);
-    failTitleFont.setPointSizeF(failTitleFont.pointSizeF() * 1.15);
-    m_failTitle->setFont(failTitleFont);
+    m_failTitle->setFont(ui::pageTitleFont(m_failTitle->font()));
     m_failTitle->setWordWrap(true);
     failLayout->addWidget(m_failTitle);
 
-    m_failLead = new QLabel(m_failBox);
-    m_failLead->setWordWrap(true);
-    failLayout->addWidget(m_failLead);
+    /// 一行性质 + 当前通道（次要色小字）。正文不再复述通道，免得同一句话出现三次
+    m_failMeta = ui::makeMuted(QString(), m_failBox);
+    m_failMeta->setMaximumWidth(640);
+    failLayout->addWidget(m_failMeta);
+
+    auto* failRule = ui::makeSeparator(m_failBox);
+    failRule->setMaximumWidth(640);
+    failLayout->addWidget(failRule);
 
     m_failTips = new QLabel(m_failBox);
     m_failTips->setWordWrap(true);
     m_failTips->setTextFormat(Qt::RichText);
+    m_failTips->setMaximumWidth(640);
+    m_failTips->setTextInteractionFlags(Qt::TextSelectableByMouse);
     failLayout->addWidget(m_failTips);
 
     auto* failActions = new QHBoxLayout();
-    auto* retryButton = new QPushButton(tr("重试"), m_failBox);
+    failActions->setSpacing(ui::kSpaceS);
+
+    auto* retryButton = ui::makePrimaryButton(tr("重试"), m_failBox);
+    retryButton->setDefault(true);
     auto* probeButton = new QPushButton(tr("出网诊断"), m_failBox);
-    auto* netButton = new QPushButton(tr("网络设置"), m_failBox);
     auto* siteButton = new QPushButton(tr("打开原站"), m_failBox);
-    // 只有"出口不对"这类失败才给反代：HTTP/解析错误给这个只会误导
-    m_relayButton = new QPushButton(tr("反代模板…"), m_failBox);
-    m_relayButton->setVisible(false);
+    ui::applySecondaryButton(probeButton);
+    ui::applySecondaryButton(siteButton);
+
+    /**
+     * 低频动作收进「更多」：一行里五个同级按钮，主路径（重试）会被淹没。
+     * 反代模板只在"出口不对"这类失败里给 —— 网络解析错误给这个只会误导。
+     */
+    auto* moreButton = new QToolButton(m_failBox);
+    moreButton->setText(tr("更多"));
+    moreButton->setPopupMode(QToolButton::InstantPopup);
+    auto* moreMenu = new QMenu(moreButton);
+    auto* netAction = moreMenu->addAction(tr("网络设置…"));
+    netAction->setToolTip(tr("大厅通道与代理都在「设置 → 地图」里"));
+    m_relayAction = moreMenu->addAction(tr("反代模板…"));
+    m_relayAction->setVisible(false);
+    moreButton->setMenu(moreMenu);
+    moreButton->setMinimumHeight(28);
+
     failActions->addWidget(retryButton);
     failActions->addWidget(probeButton);
-    failActions->addWidget(netButton);
-    failActions->addWidget(m_relayButton);
     failActions->addWidget(siteButton);
+    failActions->addWidget(moreButton);
     failActions->addStretch(1);
     failLayout->addLayout(failActions);
 
-    m_probeResult = new QLabel(m_failBox);
-    m_probeResult->setWordWrap(true);
+    m_probeResult = ui::makeMuted(QString(), m_failBox);
+    m_probeResult->setMaximumWidth(640);
     m_probeResult->setVisible(false);
     failLayout->addWidget(m_probeResult);
 
     m_failDetailToggle = new QToolButton(m_failBox);
-    m_failDetailToggle->setText(tr("▸ 技术细节"));
+    m_failDetailToggle->setText(tr("技术细节"));
     m_failDetailToggle->setCheckable(true);
     m_failDetailToggle->setAutoRaise(true);
+    m_failDetailToggle->setArrowType(Qt::RightArrow);
+    m_failDetailToggle->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     failLayout->addWidget(m_failDetailToggle);
 
     m_failDetail = new QLabel(m_failBox);
     m_failDetail->setWordWrap(true);
+    m_failDetail->setMaximumWidth(640);
     m_failDetail->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_failDetail->setFont(ui::metaFont(m_failDetail->font()));
+    m_failDetail->setStyleSheet(QStringLiteral("color: %1;").arg(ui::mutedTextColor().name()));
     m_failDetail->setVisible(false);
     failLayout->addWidget(m_failDetail);
-    failLayout->addStretch(1);
 
     connect(m_failDetailToggle, &QToolButton::toggled, this, [this](bool on) {
         m_failDetail->setVisible(on);
-        m_failDetailToggle->setText(on ? tr("▾ 技术细节") : tr("▸ 技术细节"));
+        m_failDetailToggle->setArrowType(on ? Qt::DownArrow : Qt::RightArrow);
     });
     connect(retryButton, &QPushButton::clicked, this, [this] {
         // 重试前先让出口重新探活：用户可能刚把代理打开
@@ -497,8 +542,8 @@ void MapHallPage::buildUi()
         startSearch();
     });
     connect(probeButton, &QPushButton::clicked, this, &MapHallPage::runProbe);
-    connect(m_relayButton, &QPushButton::clicked, this, &MapHallPage::showRelayHelp);
-    connect(netButton, &QPushButton::clicked, this, [this] {
+    connect(m_relayAction, &QAction::triggered, this, &MapHallPage::showRelayHelp);
+    connect(netAction, &QAction::triggered, this, [this] {
         // 大厅通道 / 代理现在在「设置 → 地图」里；打开设置页后由它自己落盘并让出口重新探活
         APPLICATION->ShowGlobalSettings(this, QStringLiteral("map-settings"));
         HallAPI::invalidateProxyCache();
@@ -510,6 +555,7 @@ void MapHallPage::buildUi()
     splitter->addWidget(m_leftStack);
 
     auto* detail = new QWidget(splitter);
+    m_detailPanel = detail;
     detail->setMinimumWidth(320);
     auto* detailLayout = new QVBoxLayout(detail);
     detailLayout->setContentsMargins(10, 6, 4, 4);
@@ -744,7 +790,7 @@ void MapHallPage::syncLibrary()
     m_syncButton->setEnabled(false);
     // 同步时把失败面板收起来：那上面显示的是上一次的失败，会跟进度混在一起
     if (m_leftStack != nullptr)
-        m_leftStack->setCurrentWidget(m_list);
+        setFailMode(false);
     m_status->setText(tr("正在下载地图库…（4 个请求，可能需要十几秒）"));
     m_api->syncLibrary();
 }
@@ -827,7 +873,7 @@ void MapHallPage::onSearchDone(const QList<HallItem>& items)
 
     m_loadMore->setVisible(items.size() >= 20);
     if (m_leftStack != nullptr)
-        m_leftStack->setCurrentWidget(m_list);
+        setFailMode(false);
 
     // 本地命中时写「本地库」，别再拿"浏览器通道/直连"误导人（那次搜索根本没出网）
     const QString via = m_api->hasLibrary() ? tr("本地库") : m_api->transportNote();
@@ -985,7 +1031,7 @@ void MapHallPage::onFailed(HallError kind, const QString& humanReason, const QSt
         m_list->clear();
         m_loadMore->setVisible(false);
         if (m_leftStack != nullptr)
-            m_leftStack->setCurrentWidget(m_list);
+            setFailMode(false);
         m_status->setText(humanReason);
         return;
     }
@@ -1001,12 +1047,12 @@ void MapHallPage::onFailed(HallError kind, const QString& humanReason, const QSt
         m_syncing = false;
         m_syncButton->setEnabled(true);
         if (m_leftStack != nullptr)
-            m_leftStack->setCurrentWidget(m_list);
+            setFailMode(false);
         updateLibraryHint();
 
         const QDateTime at = m_api->libraryFetchedAt().toLocalTime();
-        m_status->setText(tr("更新没成功：%1\n本地库仍是 %2 的数据（%3 张地图），搜索、详情、评论、封面都照常可用；"
-                             "过一会儿再点一次「更新数据」就行。")
+        // 列表还在、功能都可用：一句话说清"没更新成功，但不影响用"
+        m_status->setText(tr("更新没成功：%1 · 仍在用 %2 的本地库（%3 张），功能照常")
                               .arg(humanReason,
                                    at.isValid() ? at.toString(QStringLiteral("MM-dd HH:mm")) : tr("上次同步"),
                                    QString::number(m_api->libraryItemCount())));
@@ -1018,104 +1064,122 @@ void MapHallPage::onFailed(HallError kind, const QString& humanReason, const QSt
         m_syncButton->setEnabled(true);
     }
 
-    QString text = humanReason;
-    if (!techDetail.isEmpty())
-        text += QStringLiteral("\n（技术细节：%1）").arg(techDetail);
-    if (kind == HallError::Dns || kind == HallError::Tls || kind == HallError::Timeout ||
-        kind == HallError::Blocked) {
-        // 这个接口在部分网络下会被直接重置（docs/atlas R2）。
-        // 大厅只是"发现地图"的入口，必须给一条不依赖它的路。
-        text += tr("\n\n可以：① 在「设置 → 网络」里配一个可用代理后点「搜索」重试；"
-                   "② 点「打开下载页」到站点上挑，下载完用「选择已下载的文件…」导入 —— 这条路完全离线可用。");
-    }
-    m_status->setText(text + QStringLiteral("\n（当前通道：%1）").arg(m_api->transportNote()));
+    /**
+     * 状态栏只说"失败 + 通道"这一句：原因、为什么、三条建议都在失败面板里，
+     * 以前这里把同样的话又抄了一遍（还是带技术细节的长段落），一眼看上去全是字。
+     */
+    m_status->setText(tr("失败：%1 · 当前通道：%2").arg(humanReason, m_api->transportNote()));
     m_loadMore->setVisible(false);
     showFailure(kind, humanReason, techDetail);
 }
 
+void MapHallPage::setFailMode(bool on)
+{
+    if (m_leftStack != nullptr)
+        m_leftStack->setCurrentWidget(on ? m_failBox : m_list);
+    // 失败时右栏只剩「基本信息 / 简介」两张空卡片，纯噪声
+    if (m_detailPanel != nullptr)
+        m_detailPanel->setVisible(!on);
+}
+
 void MapHallPage::showFailure(HallError kind, const QString& reason, const QString& detail)
 {
-    QString title;
-    QString lead;
-    QStringList tips;
+    /**
+     * 每种失败只回答三个问题：**发生了什么**（标题 + 一行性质）、**为什么**（收进「技术细节」）、
+     * **现在能做什么**（最多三条，动词开头）。同一段话不在状态栏再抄一遍。
+     */
+    QString title = tr("连不上 CTMMaps");
+    QString meta;
+    QString why;
+    QStringList steps;
+
     switch (kind) {
         case HallError::Tls:
-            title = tr("连不上 CTMMaps：握手被重置");
-            lead = tr("程序走 TCP，刚发出 TLS 握手就被打断。浏览器靠 QUIC 走 UDP 才可能绕过，"
-                      "所以会出现「网页能打开、程序不行」。");
-            tips = { tr("再点一次「重试」——链路有时要探一次才通"),
-                     tr("换一条网络（例如手机热点）确认是不是本机线路的问题"),
-                     tr("在「地图设置 → 大厅代理」填一个能到 supabase 的代理；"
-                        "也可以把「大厅数据地址」换成你自己的反代") };
+            title = tr("连接被重置");
+            meta = tr("TCP 通了，TLS 握手被打断 —— 这条线路对数据域名有阻断。");
+            why = tr("浏览器走 QUIC/ECH，握手内容里看不出目标域名；启动器的 Qt 只有 TCP，"
+                     "SNI 是明文，于是「网页能打开、程序不行」。");
+            steps = { tr("点「重试」——链路有时探一次才通"),
+                      tr("换一条网络（例如手机热点）确认是不是本机线路"),
+                      tr("在「更多 → 网络设置」里填一个能到数据主机的代理") };
             break;
         case HallError::Blocked:
-            title = tr("连不上 CTMMaps：数据主机把连接掐断了");
-            lead = tr("域名解析正常、TCP 也连上了，但发不出一个完整的 HTTP 请求就被打断 —— "
-                      "这条线路到 %1 的数据主机（Cloudflare）被阻断。相对地，www.ctmmaps.com "
-                      "本身是能打开的，所以会出现「网页能看、列表刷不出来」。\n"
-                      "浏览器之所以能看，是因为它走 HTTP/3（QUIC/UDP）；启动器用的 Qt 只有 "
-                      "TCP（HTTP/1.1、HTTP/2），没有 HTTP/3 —— AIO 能通也是靠 Electron 里"
-                      "自带的 Chromium 发请求，而不是 Node 网络层。")
-                       .arg(QStringLiteral("supabase"));
-            tips = { tr("不用管：默认「大厅通道 = 自动」会立刻改用本机浏览器（Edge/Chrome）重发，"
-                        "浏览器走 ECH，握手内容里看不出目标域名，所以能通 —— 这条不需要任何代理"),
-                     tr("如果仍然失败，把「地图设置 → 大厅通道」改成「只用浏览器」再点重试；"
-                        "浏览器通道每次请求约 2 秒，慢但能拿到数据"),
-                     tr("有代理的话：把「大厅通道」改回「只用网络」会更快（代理直连 Qt 网络）"),
-                     tr("完全不联网也能用：点「打开下载页」到站点上挑，下载完用"
-                        "「选择已下载的文件…」导入"),
-                     tr("「出网诊断」会分别试代理和直连两条路，告诉你是哪条通") };
+            title = tr("连接被掐断");
+            meta = tr("域名解析正常、TCP 也连上了，但一个完整的 HTTP 请求都没发出去。");
+            why = tr("这条线路阻断的是数据域名的 TLS 握手（SNI），www.ctmmaps.com 本身能开，"
+                     "所以是「网页能看、列表刷不出来」。浏览器走 HTTP/3（QUIC + ECH）能绕过去；"
+                     "Qt 没有 HTTP/3，只能改走浏览器通道或代理。");
+            steps = { tr("点「重试」——会自动改用本机浏览器重发，不需要代理"),
+                      tr("仍不行就「打开原站」挑图，下载完用「选择已下载的文件…」导入（完全离线）"),
+                      tr("有代理时在「更多 → 网络设置」里把通道改成「只用网络」，比浏览器通道快") };
             break;
         case HallError::Timeout:
-            title = tr("连不上 CTMMaps：没有响应");
-            lead = tr("请求发出去了，但在限定时间内没有任何回音。");
-            tips = { tr("重试一次（线路拥塞常见于瞬时）"),
-                     tr("确认「地图设置 → 大厅代理」里的代理还活着") };
+            title = tr("没有响应");
+            meta = tr("请求发出去了，限定时间内没有任何回音 —— 多半是线路拥塞或代理失联。");
+            why = tr("Qt 的传输超时到了就会中断请求；同一秒重试往往就通。");
+            steps = { tr("重试一次（瞬时拥塞很常见）"),
+                      tr("确认「网络设置」里的代理还活着"),
+                      tr("换一条网络再试") };
             break;
         case HallError::Dns:
-            title = tr("连不上 CTMMaps：域名解析失败");
-            lead = tr("解析不出数据地址里的主机名。");
-            tips = { tr("检查系统 DNS，或换成 223.5.5.5 / 1.1.1.1"),
-                     tr("如果用的是自建反代地址，确认它还能解析") };
+            title = tr("域名解析失败");
+            meta = tr("解析不出数据地址里的主机名。");
+            why = tr("这一步还没到 TLS，纯 DNS 问题：系统 DNS 出错、或者自建反代域名已失效。");
+            steps = { tr("检查系统 DNS（可临时换成 223.5.5.5 / 1.1.1.1）"),
+                      tr("用的是自建反代地址时，确认它还能解析"),
+                      tr("改完 DNS 点「重试」") };
             break;
         case HallError::Http:
             title = tr("CTMMaps 拒绝了这次请求");
-            lead = tr("网络是通的，是对方返回了错误状态码。");
-            tips = { tr("可能是 anon key 轮换了，或站点临时限制了读取"),
-                     tr("过一会儿再试；持续失败请把「技术细节」里的状态码记下来") };
+            meta = tr("网络是通的，是对方返回了错误状态码。");
+            why = tr("常见原因：anon key 轮换了，或站点临时限制了读取频率。");
+            steps = { tr("过一会儿再点「重试」"),
+                      tr("展开「技术细节」看状态码，反馈时一起带上"),
+                      tr("换了代理出口的话，换回直连试试") };
             break;
         case HallError::Parse:
             title = tr("CTMMaps 返回的数据看不懂");
-            lead = tr("网络是通的，但返回的内容不是预期的 JSON —— 站方可能改了接口。");
-            tips = { tr("过一会儿再试"), tr("把「技术细节」里的原文记下来反馈") };
+            meta = tr("网络是通的，但返回的内容不是预期的 JSON —— 站方可能改了接口。");
+            why = tr("接口字段变了，程序按旧结构解析会拿不到列表。");
+            steps = { tr("过一会儿再点「重试」"),
+                      tr("把「技术细节」里的原文记下来反馈") };
             break;
         default:
             title = tr("连不上 CTMMaps");
-            lead = tr("没有取到数据。");
-            tips = { tr("重试一次"), tr("用「出网诊断」看看到底卡在哪一步") };
+            meta = tr("没有取到数据。");
+            steps = { tr("重试一次"), tr("用「出网诊断」看卡在哪一步") };
             break;
     }
 
     m_failTitle->setText(title);
-    m_failLead->setText(lead);
-    QStringList bullets;
-    for (const auto& tip : tips)
-        bullets.append(QStringLiteral("• %1").arg(tip.toHtmlEscaped()));
-    m_failTips->setText(bullets.join(QStringLiteral("<br/>")));
+    m_failMeta->setText(tr("%1 · 当前通道：%2").arg(meta, m_api->transportNote()));
 
-    m_failDetail->setText(tr("数据地址：%1\n服务端通道：%2\n当前出口：%3")
-                              .arg(m_api->endpoint(),
-                                   detail.isEmpty() ? reason : QStringLiteral("%1（%2）").arg(reason, detail),
-                                   m_api->transportNote()));
+    // 三条建议：编号用强调色，正文用次要色 —— 扫一眼就知道"先做什么"
+    QStringList lines;
+    for (int i = 0; i < steps.size(); ++i) {
+        lines.append(QStringLiteral("<p style='margin:0 0 6px 0'>%1&nbsp;%2</p>")
+                         .arg(QStringLiteral("<span style=\"color:%1\">%2</span>")
+                                  .arg(ui::accentColor().name(), QString(QChar(0x2460 + i))),
+                              steps.at(i).toHtmlEscaped()));
+    }
+    m_failTips->setText(lines.join(QString()));
+
+    QString detailText =
+        tr("数据地址：%1\n失败原因：%2\n当前通道：%3")
+            .arg(m_api->endpoint(),
+                 detail.isEmpty() ? reason : QStringLiteral("%1（%2）").arg(reason, detail),
+                 m_api->transportNote());
+    if (!why.isEmpty())
+        detailText += QStringLiteral("\n\n") + why;
+    m_failDetail->setText(detailText);
     m_failDetail->setVisible(m_failDetailToggle->isChecked());
     m_probeResult->setVisible(false);
-    if (m_relayButton != nullptr) {
-        m_relayButton->setVisible(kind == HallError::Blocked || kind == HallError::Tls ||
+    if (m_relayAction != nullptr) {
+        m_relayAction->setVisible(kind == HallError::Blocked || kind == HallError::Tls ||
                                   kind == HallError::Timeout);
     }
 
-    if (m_leftStack != nullptr)
-        m_leftStack->setCurrentWidget(m_failBox);
+    setFailMode(true);
 }
 
 void MapHallPage::showRelayHelp()
