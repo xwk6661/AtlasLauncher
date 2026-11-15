@@ -36,7 +36,9 @@
 #include "InstanceDelegate.h"
 #include <QApplication>
 #include <QDebug>
+#include <QFontMetrics>
 #include <QPainter>
+#include <QRegularExpression>
 #include <QTextLayout>
 #include <QTextOption>
 #include <QtMath>
@@ -45,6 +47,112 @@
 #include <QTextEdit>
 #include "BaseInstance.h"
 #include "InstanceList.h"
+#include "maps/SeriesNames.h"
+
+namespace {
+
+/// 标签药丸的内边距与和名字之间的间隙
+constexpr int kTagPadH = 5;
+constexpr int kTagPadV = 1;
+constexpr int kTagGap = 2;
+
+/**
+ * 实例名里的「系列标签」：`[US1] Lacuna Sanctum` → 标签 `US1`、名字 `Lacuna Sanctum`。
+ *
+ * 只认「1~4 个字母 + 1~4 位数字」的括号前缀。这条写法是玩家自己约定出来的
+ * （`[US1]` / `[RC3]` / `[SP03]`），而不是放开的 `^\[.*\]` —— 后者会把
+ * `[1.8.9] 某图`、`[测试] 某图` 也吃掉，那些括号是名字的一部分，拆掉等于改名。
+ */
+struct InstanceTag {
+    QString tag;     ///< 括号内原样文本（US1）
+    QString name;    ///< 去掉标签后的名字
+    bool valid = false;
+};
+
+InstanceTag splitInstanceTag(const QString& text)
+{
+    static const QRegularExpression pattern(QStringLiteral("^\\s*\\[([A-Za-z]{1,4}\\d{1,4})\\]\\s*(.+)$"));
+    const auto match = pattern.match(text);
+    if (!match.hasMatch())
+        return InstanceTag{ {}, text, false };
+
+    InstanceTag out;
+    out.tag = match.captured(1);
+    out.name = match.captured(2).trimmed();
+    out.valid = !out.name.isEmpty();
+    return out;
+}
+
+QFont tagFont(const QFont& base)
+{
+    QFont font = base;
+    // 比名字小两档：标签是"补充说明"，不该和名字抢注意力
+    font.setPointSizeF(qMax(7.0, base.pointSizeF() - 2.0));
+    return font;
+}
+
+/// 标签块占的高度（含与名字之间的间隙）。没有标签时是 0。
+int tagBlockHeight(const QFont& base)
+{
+    const QFontMetrics metrics(tagFont(base));
+    return metrics.height() + 2 * kTagPadV + kTagGap + 1;
+}
+
+/**
+ * 画标签药丸。位置在文字区水平居中、**名字下方**（`top` 是名字最后一行的底边）。
+ *
+ * 放在名字下面而不是上面：图标的视觉重心本来就在上半格，标签压在上面会把名字往下推，
+ * 一排实例看起来像"标签是主体、名字是注脚"；放下面等于给名字加一条脚注。
+ */
+void drawInstanceTag(QPainter* painter, const QStyleOptionViewItem& opt, const InstanceTag& tag, const QRect& textRect, int top)
+{
+    if (!tag.valid)
+        return;
+
+    const QFont font = tagFont(opt.font);
+    const QFontMetrics metrics(font);
+
+    // 统一走次要色，不按系列上色：一排彩色小字会把图标压下去，而"是哪个系列"现在由文字
+    // （`Ragecraft 3`）说明，颜色不再是唯一的区分手段。
+    QColor textColor;
+    QColor borderColor;
+    QColor fillColor;
+    if (opt.state & QStyle::State_Selected) {
+        textColor = opt.palette.color(QPalette::HighlightedText);
+        borderColor = textColor;
+        fillColor = textColor;
+    } else {
+        const bool dark = opt.palette.color(QPalette::Window).lightness() < 128;
+        textColor = opt.palette.color(QPalette::WindowText);
+        textColor.setAlpha(dark ? 190 : 165);
+        borderColor = textColor;
+        borderColor.setAlpha(dark ? 90 : 75);
+        fillColor = textColor;
+        fillColor.setAlpha(dark ? 18 : 14);
+    }
+    borderColor.setAlpha(qMin(borderColor.alpha(), 160));
+    fillColor.setAlpha(qMin(fillColor.alpha(), 40));
+
+    // 表里的系列名可能比"代码"长（`Untold Stories 9`）：放不下就省略，绝不撑破格子
+    const int maxTextWidth = qMax(12, textRect.width() - 2 * kTagPadH - 4);
+    const QString text = metrics.elidedText(maps::series::displayLabel(tag.tag), Qt::ElideRight, maxTextWidth);
+
+    const int width = qMin(metrics.horizontalAdvance(text) + 2 * kTagPadH, textRect.width() - 2);
+    const int height = metrics.height() + 2 * kTagPadV;
+    const QRect pill(textRect.center().x() - width / 2, top + 1, width, height);
+
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+    painter->setPen(QPen(borderColor, 1.0));
+    painter->setBrush(fillColor);
+    painter->drawRoundedRect(QRectF(pill).adjusted(0.5, 0.5, -0.5, -0.5), 3.0, 3.0);
+    painter->setFont(font);
+    painter->setPen(textColor);
+    painter->drawText(pill, Qt::AlignCenter, text);
+    painter->restore();
+}
+
+}  // namespace
 
 // Origin: Qt
 static void viewItemTextLayout(QTextLayout& textLayout, int lineWidth, qreal& height, qreal& widthUsed)
@@ -134,11 +242,16 @@ void ListViewDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
 {
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
+
+    // 名字里的 `[US1]` 拆出来单独画成标签，名字本身只写「Lacuna Sanctum」。
+    // 实例名（数据）一个字都不改：标签仍然在名字里，改名/搜索/拖拽都按原名走。
+    const InstanceTag tag = splitInstanceTag(index.data().toString());
+
     painter->save();
     painter->setClipRect(opt.rect);
 
     opt.features |= QStyleOptionViewItem::WrapText;
-    opt.text = index.data().toString();
+    opt.text = tag.valid ? tag.name : index.data().toString();
     opt.textElideMode = Qt::ElideRight;
     opt.displayAlignment = Qt::AlignTop | Qt::AlignHCenter;
 
@@ -202,6 +315,9 @@ void ListViewDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
         line.draw(painter, position);
     }
 
+    // 标签画在名字**下方**：名字先落地，系列作为脚注跟一行
+    drawInstanceTag(painter, opt, tag, textRect, int(layoutRect.top() + height) + kTagGap);
+
     // FIXME: this really has no business of being here. Make generic.
     auto instance = (BaseInstance*)index.data(InstanceList::InstancePointerRole).value<void*>();
     if (instance) {
@@ -215,8 +331,11 @@ QSize ListViewDelegate::sizeHint(const QStyleOptionViewItem& option, const QMode
 {
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
+
+    const InstanceTag tag = splitInstanceTag(index.data().toString());
+
     opt.features |= QStyleOptionViewItem::WrapText;
-    opt.text = index.data().toString();
+    opt.text = tag.valid ? tag.name : index.data().toString();
     opt.textElideMode = Qt::ElideRight;
     opt.displayAlignment = Qt::AlignTop | Qt::AlignHCenter;
 
@@ -225,6 +344,9 @@ QSize ListViewDelegate::sizeHint(const QStyleOptionViewItem& option, const QMode
     int height = 48 + textMargin * 2 + 5;  // TODO: turn constants into variables
     QSize szz = viewItemTextSize(&opt);
     height += szz.height();
+    // 标签占的那一行也要算进格子高度，否则下一行的图标会压到标签上
+    if (tag.valid)
+        height += tagBlockHeight(option.font);
     // FIXME: maybe the icon items could scale and keep proportions?
     QSize sz(100, height);
     return sz;
@@ -259,11 +381,10 @@ class NoReturnTextEdit : public QTextEdit {
     void editingDone();
 };
 
-void ListViewDelegate::updateEditorGeometry(QWidget* editor,
-                                            const QStyleOptionViewItem& option,
-                                            [[maybe_unused]] const QModelIndex& index) const
+void ListViewDelegate::updateEditorGeometry(QWidget* editor, const QStyleOptionViewItem& option, const QModelIndex& index) const
 {
     const int iconSize = 48;
+    // 标签在名字下方，改名的输入框仍然从名字那一行开始（和绘制时的文字位置对齐）
     QRect textRect = option.rect;
     textRect.adjust(0, iconSize + 5, 0, 0);
     editor->setGeometry(textRect);

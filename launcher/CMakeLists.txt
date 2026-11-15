@@ -808,6 +808,8 @@ set(MAPS_SOURCES
     maps/MapVariant.cpp
     maps/HallMatcher.h
     maps/HallMatcher.cpp
+    maps/SeriesNames.h
+    maps/SeriesNames.cpp
     maps/MapPackAttach.h
     maps/MapPackAttach.cpp
     maps/MapLibraryPanel.h

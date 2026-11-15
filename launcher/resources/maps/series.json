@@ -1,0 +1,16 @@
+{
+    "schema": 1,
+    "note": "实例名里的系列代码 → CTMMaps 站上的系列名。由 tools/ctm_series_codes.py 从大厅缓存的 series 字段学习（2026-11-15），表里没有的代码原样显示，不猜。",
+    "codes": {
+        "RC": {
+            "name": "Ragecraft"
+        },
+        "US": {
+            "name": "Untold Stories"
+        },
+        "SP": {
+            "name": "Simulation Protocol",
+            "short": "Sim. Protocol"
+        }
+    }
+}
