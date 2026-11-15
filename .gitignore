@@ -32,6 +32,9 @@ build
 install
 /install-*
 
+# Packaged output (build\package.ps1)
+/dist
+
 # Ctags File
 tags
 
