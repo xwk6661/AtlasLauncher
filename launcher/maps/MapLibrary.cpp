@@ -27,6 +27,7 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QSaveFile>
+#include <QSet>
 
 #include <algorithm>
 
@@ -556,6 +557,52 @@ bool MapLibrary::setCategory(const QString& file, const QString& categoryId)
 bool MapLibrary::setCategory(const QString& file, MapCategory category)
 {
     return setCategory(file, categoryId(category));
+}
+
+bool MapLibrary::setCategoryForItems(const QStringList& files, const QString& categoryId)
+{
+    if (files.isEmpty())
+        return true;
+
+    const QString targetId = categoryId.trimmed().toLower();
+    const QSet<QString> wanted(files.begin(), files.end());
+    bool touched = false;
+    for (auto& item : m_items) {
+        if (!wanted.contains(item.file) || item.category == targetId)
+            continue;
+        item.category = targetId;
+        touched = true;
+    }
+    if (!touched)
+        return true;
+    if (!saveIndex())
+        return false;
+
+    emit changed();
+    return true;
+}
+
+bool MapLibrary::setMapVersion(const QString& file, const QString& version)
+{
+    // 玩家可能写成「v1.0」或「1.0」：**存的时候去掉 v**，显示时统一加，
+    // 否则同一张图会出现「v1.0」和「vv1.0」两种写法
+    QString value = version.trimmed();
+    if (value.startsWith(QLatin1Char('v'), Qt::CaseInsensitive))
+        value.remove(0, 1);
+    value = value.trimmed();
+
+    for (auto& item : m_items) {
+        if (item.file != file)
+            continue;
+        if (item.mapVersion == value)
+            return true;
+        item.mapVersion = value;
+        if (!saveIndex())
+            return false;
+        emit changed();
+        return true;
+    }
+    return false;
 }
 
 bool MapLibrary::setHallLink(const QString& file, const QString& hallSlug, bool verified)

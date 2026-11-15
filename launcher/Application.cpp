@@ -797,6 +797,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         // ── Map launcher（docs/atlas）────────────────────────────
         // 这一段全部是地图启动器自己的设置，集中在这里便于与上游对比 / 定位
         m_settings->registerSetting("MapLibraryDir", "");           // 空 = 数据目录下的 maps/
+        // 地图库表格的列宽（QHeaderView::saveState 的 base64）。空 = 用默认五列宽度
+        m_settings->registerSetting("MapLibraryColumnState", "");
         m_settings->registerSetting("MapHallEndpoint", "");         // 空 = 用 ctmmaps 官方地址
         m_settings->registerSetting("MapHallProxyMode", "auto");    // auto / manual / off
         m_settings->registerSetting("MapHallProxyUrl", "");         // manual 模式下生效

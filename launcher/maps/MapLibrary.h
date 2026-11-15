@@ -58,7 +58,8 @@ struct LibraryItem {
 
     /// 关联的 CTM 地图（大厅 slug）。空 = 还没关联
     QString hallSlug;
-    /// 关联是不是人工确认过的（自动匹配只作建议，不写库）
+    /// 关联是不是人工确认过的。自动匹配也会写库，但只写 false（[06 §72]）；
+    /// 实例页里玩家点过一次「关联」才转 true。
     bool hallVerified = false;
     /// 语言变体：原版 / 官中 / 汉化，整包还是资源包
     variant::Info variant;
@@ -126,9 +127,15 @@ class MapLibrary : public QObject {
     /// 改分类并立即落盘；失败返回 false（写不了索引时界面会提示）
     bool setCategory(const QString& file, const QString& categoryId);
     bool setCategory(const QString& file, MapCategory category);
+    /// 整组改分类（组标题右键用）：一次写盘，不是 N 次
+    bool setCategoryForItems(const QStringList& files, const QString& categoryId);
+    /// 改「地图自己的版本号」（`mapVersion`）。界面默认按 1.0 显示，但**不写进索引**：
+    /// 只有玩家真填了才落盘。传空串 = 清掉，回到默认显示。
+    bool setMapVersion(const QString& file, const QString& version);
 
     /// 关联/解除关联 CTM 地图（slug 为空 = 解除）。verified 由人工确认时置 true。
-    bool setHallLink(const QString& file, const QString& hallSlug, bool verified = true);
+    /// 默认 **false**：自动化路径一律不替玩家宣布"已确认"，只有人在界面上点过才传 true。
+    bool setHallLink(const QString& file, const QString& hallSlug, bool verified = false);
     /**
      * 把某条目的关联标成"人工确认"（实例页点过「关联到 CTM 地图」后调用）。
      *
