@@ -313,6 +313,13 @@ AgentBootstrap::ArgsResult AgentBootstrap::buildAgentArgs(const AgentSymbolTable
         parts << QStringLiteral("quitSignalTimeout=86400000");
     }
 
+    // 1.19+ 的进图通道。两个值都来自 introskip 表（同一个类就是 WorldOpenFlows），
+    // Agent 那边按描述符查方法，查不到就退回 1.7~1.16 的旧扫描 —— 不会比现在更差。
+    if (!options.flowsClass.isEmpty() && !options.flowsProbeDesc.isEmpty()) {
+        parts << QStringLiteral("flows=%1").arg(options.flowsClass);
+        parts << QStringLiteral("flowsProbe=%1").arg(options.flowsProbeDesc);
+    }
+
     result.args = parts.join(QLatin1Char(','));
     return result;
 }

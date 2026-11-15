@@ -9,9 +9,33 @@
       "method": "a",
       "defer": true
     },
+    "1.19": {
+      "class": "eok",
+      "desc": "(Lekj;Ljava/lang/String;ZLjava/lang/Runnable;)V",
+      "index": 4,
+      "method": "a"
+    },
+    "1.19.1": {
+      "class": "ept",
+      "desc": "(Lelm;Ljava/lang/String;ZLjava/lang/Runnable;)V",
+      "index": 4,
+      "method": "a"
+    },
     "1.19.2": {
       "class": "ept",
       "desc": "(Lelm;Ljava/lang/String;ZLjava/lang/Runnable;)V",
+      "index": 4,
+      "method": "a"
+    },
+    "1.19.3": {
+      "class": "etq",
+      "desc": "(Lepb;Ljava/lang/String;ZLjava/lang/Runnable;)V",
+      "index": 4,
+      "method": "a"
+    },
+    "1.19.4": {
+      "class": "exx",
+      "desc": "(Letd;Ljava/lang/String;ZLjava/lang/Runnable;)V",
       "index": 4,
       "method": "a"
     },

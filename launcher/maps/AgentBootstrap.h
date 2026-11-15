@@ -116,6 +116,17 @@ class AgentBootstrap : public QObject {
         bool autoEnter = true;
         /// 关掉「退出即关游戏」时不 halt，让 JVM 留在标题画面
         bool closeOnQuit = true;
+        /**
+         * 1.19+ 的进图通道：WorldOpenFlows 的混淆类名（从 introskip 表里取）。
+         *
+         * 1.19 起「进世界」的入口是 `doWorldLoad(String, LevelStorageAccess,
+         * PackRepository, WorldStem, boolean)`，后面几个参数得自己装配；所以改走
+         * `createWorldOpenFlows().loadLevel(screen, levelId)` —— 单人游戏按钮自己走的那条。
+         * 空 = 用 1.7~1.16 的旧扫描路径。
+         */
+        QString flowsClass;
+        /// 同一个类里 askForBackup 的描述符，用来解析出 Screen 的类名（不猜）
+        QString flowsProbeDesc;
     };
 
     static ArgsResult buildAgentArgs(const AgentSymbolTable& table, const AgentOptions& options);

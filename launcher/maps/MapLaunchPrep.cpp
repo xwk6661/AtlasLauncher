@@ -64,14 +64,11 @@ void repairOptionsFile(MinecraftInstance* instance, QString mcVersion)
     const bool fixOnboarding = instance->settings()->get("MapAutoEnter").toBool();
 
     // 只在「文件从没被游戏读过」时补回中文与键位（见 repairOptionsTxt 的参数说明）。
-    // 这三项是**全局**设置：实例的 SettingsObject 里没有它们（不像 MapAutoEnter 有
-    // registerOverride），从 instance->settings() 读只会拿到空值 → false。
+    // 这一套是启动器级的默认值，实例的 SettingsObject 里没有它们
+    // （不像 MapAutoEnter 有 registerOverride），从 instance->settings() 读只会拿到空值。
     options::Defaults restoreDefaults;
-    if (const auto* app = APPLICATION) {
-        const auto settings = app->settings();
-        restoreDefaults.setChinese = settings->get("MapOptionsForceChinese").toBool();
-        restoreDefaults.swapSprintSneak = settings->get("MapOptionsSwapSprintSneak").toBool();
-    }
+    if (const auto* app = APPLICATION)
+        restoreDefaults = options::defaultsFromSettings(app->settings());
     restoreDefaults.skipAccessibilityOnboarding = fixOnboarding;
 
     const auto result = options::repairOptionsTxt(path, mcVersion, dataVersion, fixOnboarding, restoreDefaults);
@@ -94,6 +91,23 @@ void repairOptionsFile(MinecraftInstance* instance, QString mcVersion)
 QSet<QString> traitsFor(MinecraftInstance* instance)
 {
     return instance->traits();
+}
+
+/// `1.19.x` / `1.21.11` / `26.2` 这类写法是否 ≥ major.minor（判不出返回 false）
+bool versionAtLeast(const QString& mcVersion, int major, int minor)
+{
+    const auto parts = mcVersion.trimmed().split(QLatin1Char('.'));
+    if (parts.size() < 2)
+        return false;
+    bool majorOk = false;
+    bool minorOk = false;
+    const int foundMajor = parts.at(0).toInt(&majorOk);
+    const int foundMinor = parts.at(1).toInt(&minorOk);
+    if (!majorOk || !minorOk)
+        return false;
+    if (foundMajor != major)
+        return foundMajor > major;
+    return foundMinor >= minor;
 }
 
 /**
@@ -279,6 +293,24 @@ Result<> MapLaunchPrep::prepare(MinecraftInstance* instance, const MapMeta& meta
             options.agentLogPath = logPath;
             options.autoEnter = plan.autoEnter;
             options.closeOnQuit = plan.closeOnQuit;
+            /**
+             * 1.19+ 的进图要经过 `WorldOpenFlows`（1.17 / 1.18 没有这个类，仍走旧扫描）。
+             *
+             * 表里那一行本来就是给 introskip 用的（同一个类），这里顺手把它当
+             * 「WorldOpenFlows 的类名 + Screen 描述符」用：Agent 靠这两个值拼出
+             * `loadLevel(Screen, String)` 去调，不用自己装配 doWorldLoad 的一堆参数。
+             * 与「跳过确认页」的开关无关 —— 就算玩家关掉 introskip，进图仍然要用这个类名。
+             */
+            if (versionAtLeast(meta.version.mcVersion, 1, 19)) {
+                QString skipError;
+                if (const auto rule = AgentBootstrap::introSkipRule(meta.version.mcVersion, &skipError)) {
+                    options.flowsClass = rule->className;
+                    options.flowsProbeDesc = rule->descriptor;
+                } else {
+                    qInfo() << "Map launch: 1.19+ 但没有 WorldOpenFlows 表项，" << skipError
+                            << "—— 进图会退回旧扫描（大概率停在主菜单）";
+                }
+            }
             const auto args = AgentBootstrap::buildAgentArgs(*symbols, options);
             if (args.args.isEmpty()) {
                 plan.track = Track::Plain;
