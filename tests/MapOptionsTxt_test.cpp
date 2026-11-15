@@ -92,13 +92,13 @@ class MapOptionsTxtTest : public QObject {
         defaults.swapSprintSneak = true;
 
         QStringList legacy;
-        QCOMPARE(applyDefaults(legacy, Format::Legacy, defaults), 3);
+        QCOMPARE(applyDefaults(legacy, Format::Legacy, QStringLiteral("1.12.2"), defaults), 3);
         QCOMPARE(legacy,
                  QStringList({ QStringLiteral("lang:zh_CN"), QStringLiteral("key_key.sneak:29"),
                                QStringLiteral("key_key.sprint:42") }));
 
         QStringList modern;
-        QCOMPARE(applyDefaults(modern, Format::Modern, defaults), 3);
+        QCOMPARE(applyDefaults(modern, Format::Modern, QStringLiteral("1.16.5"), defaults), 3);
         QCOMPARE(modern.at(0), QStringLiteral("lang:zh_cn"));
         QCOMPARE(modern.at(1), QStringLiteral("key_key.sneak:key.keyboard.left.control"));
         QCOMPARE(modern.at(2), QStringLiteral("key_key.sprint:key.keyboard.left.shift"));
@@ -112,7 +112,7 @@ class MapOptionsTxtTest : public QObject {
         Defaults defaults;
         defaults.setChinese = true;
         defaults.swapSprintSneak = true;
-        QCOMPARE(applyDefaults(lines, Format::Modern, defaults), 3);
+        QCOMPARE(applyDefaults(lines, Format::Modern, QStringLiteral("1.16.5"), defaults), 3);
 
         // 原有行一个不丢；被改的那行留在原位，不搬到末尾
         QCOMPARE(lines.size(), 6);
@@ -130,7 +130,7 @@ class MapOptionsTxtTest : public QObject {
         Defaults defaults;
         defaults.setChinese = true;
         defaults.swapSprintSneak = true;
-        applyDefaults(lines, Format::Modern, defaults);
+        applyDefaults(lines, Format::Modern, QStringLiteral("1.16.5"), defaults);
 
         QCOMPARE(lines.size(), 3);  // lang / sprint 就地改，sneak 追加
         QCOMPARE(lines.at(0), QStringLiteral("lang:zh_cn"));
@@ -145,16 +145,16 @@ class MapOptionsTxtTest : public QObject {
         defaults.setChinese = true;
         defaults.swapSprintSneak = true;
 
-        QCOMPARE(applyDefaults(lines, Format::Modern, defaults), 3);
+        QCOMPARE(applyDefaults(lines, Format::Modern, QStringLiteral("1.16.5"), defaults), 3);
         const QStringList afterFirst = lines;
-        QCOMPARE(applyDefaults(lines, Format::Modern, defaults), 0);
+        QCOMPARE(applyDefaults(lines, Format::Modern, QStringLiteral("1.16.5"), defaults), 0);
         QCOMPARE(lines, afterFirst);
     }
 
     void skipsWhenNoDefaultRequested()
     {
         QStringList lines{ QStringLiteral("lang:en_us") };
-        QCOMPARE(applyDefaults(lines, Format::Modern, Defaults{}), 0);
+        QCOMPARE(applyDefaults(lines, Format::Modern, QStringLiteral("1.16.5"), Defaults{}), 0);
         QCOMPARE(lines, QStringList({ QStringLiteral("lang:en_us") }));
     }
 
@@ -164,7 +164,7 @@ class MapOptionsTxtTest : public QObject {
         Defaults defaults;
         defaults.setChinese = true;
 
-        QCOMPARE(applyDefaults(lines, Format::Modern, defaults), 1);
+        QCOMPARE(applyDefaults(lines, Format::Modern, QStringLiteral("1.16.5"), defaults), 1);
         QCOMPARE(lines.size(), 2);
         QCOMPARE(lines.at(0), QStringLiteral("key_key.sneak:key.keyboard.left.shift"));
         QCOMPARE(lines.at(1), QStringLiteral("lang:zh_cn"));
@@ -241,9 +241,9 @@ class MapOptionsTxtTest : public QObject {
         Defaults defaults;
         defaults.skipAccessibilityOnboarding = true;
 
-        QCOMPARE(applyDefaults(lines, Format::Modern, defaults), 1);
+        QCOMPARE(applyDefaults(lines, Format::Modern, QStringLiteral("1.16.5"), defaults), 1);
         QCOMPARE(lines.at(1), QStringLiteral("onboardAccessibility:false"));
-        QCOMPARE(applyDefaults(lines, Format::Modern, defaults), 0);
+        QCOMPARE(applyDefaults(lines, Format::Modern, QStringLiteral("1.16.5"), defaults), 0);
 
         QStringList already{ QStringLiteral("onboardAccessibility:true") };
         QVERIFY(disableOnboarding(already));
@@ -344,6 +344,130 @@ class MapOptionsTxtTest : public QObject {
         QVERIFY(result.missing);
         QVERIFY(!result.changed);
         QVERIFY(result.error.isEmpty());  // 新实例本来就没有 options.txt，不算错
+    }
+
+    /**
+     * 版本能力：写错键不会坏档，但会「勾了没生效」。所以每一项都按版本判。
+     * 判不出（空串 / unknown）一律 false —— 与"判不出代就一条都不写"同一条原则。
+     */
+    void versionCapabilities()
+    {
+        QVERIFY(!supportsAutoJump(QStringLiteral("1.7.10")));
+        QVERIFY(supportsAutoJump(QStringLiteral("1.8")));
+        QVERIFY(supportsAutoJump(QStringLiteral("1.19.3")));
+        QVERIFY(!supportsAutoJump(QString()));
+
+        // 云：1.7 及更早叫 clouds，1.8 起叫 renderClouds
+        QCOMPARE(cloudsKey(QStringLiteral("1.7.10")), QStringLiteral("clouds"));
+        QCOMPARE(cloudsKey(QStringLiteral("1.8.9")), QStringLiteral("renderClouds"));
+        QCOMPARE(cloudsKey(QStringLiteral("1.21.1")), QStringLiteral("renderClouds"));
+        QVERIFY(cloudsKey(QString()).isEmpty());
+
+        // 1.19 起游戏自己写带引号的三态值
+        QVERIFY(!cloudsValueQuoted(QStringLiteral("1.18.2")));
+        QVERIFY(cloudsValueQuoted(QStringLiteral("1.19")));
+        QVERIFY(cloudsValueQuoted(QStringLiteral("1.21.1")));
+
+        // 键位只在 1.6+ 存在
+        QVERIFY(!supportsKeybinds(QStringLiteral("1.5.2")));
+        QVERIFY(supportsKeybinds(QStringLiteral("1.6.4")));
+    }
+
+    /**
+     * 1.8.9（数字键码那一代）：六项都要落成老写法，
+     * 尤其是「切换视角 = V」必须是 47，不是 F5 的 63。
+     */
+    void writesLegacyGameplayDefaults()
+    {
+        QStringList lines{ QStringLiteral("version:1976") };
+        Defaults defaults;
+        defaults.disableClouds = true;
+        defaults.disableAutoJump = true;
+        defaults.perspectiveOnV = true;
+        defaults.renderDistance = 12;
+        defaults.disableViewBobbing = true;
+        defaults.brightestGamma = true;
+
+        QCOMPARE(applyDefaults(lines, Format::Legacy, QStringLiteral("1.8.9"), defaults), 6);
+        QVERIFY(lines.contains(QStringLiteral("renderClouds:false")));
+        QVERIFY(lines.contains(QStringLiteral("autoJump:false")));
+        QVERIFY(lines.contains(QStringLiteral("key_key.togglePerspective:47")));
+        QVERIFY(lines.contains(QStringLiteral("renderDistance:12")));
+        QVERIFY(lines.contains(QStringLiteral("bobView:false")));
+        QVERIFY(lines.contains(QStringLiteral("gamma:1.0")));
+
+        // 幂等
+        QCOMPARE(applyDefaults(lines, Format::Legacy, QStringLiteral("1.8.9"), defaults), 0);
+    }
+
+    /**
+     * 1.19.3：键位写 `key.keyboard.v`，云写带引号的 `"false"`。
+     * 1.16.5 的同一项是不带引号的 —— 所以「已有这一行」时跟文件方言走。
+     */
+    void writesModernGameplayDefaults()
+    {
+        QStringList modern;
+        Defaults defaults;
+        defaults.disableClouds = true;
+        defaults.perspectiveOnV = true;
+
+        QCOMPARE(applyDefaults(modern, Format::Modern, QStringLiteral("1.19.3"), defaults), 2);
+        QVERIFY(modern.contains(QStringLiteral("renderClouds:\"false\"")));
+        QVERIFY(modern.contains(QStringLiteral("key_key.togglePerspective:key.keyboard.v")));
+
+        // 1.16.5 的空文件：还是裸 false
+        QStringList old;
+        QCOMPARE(applyDefaults(old, Format::Modern, QStringLiteral("1.16.5"), defaults), 2);
+        QVERIFY(old.contains(QStringLiteral("renderClouds:false")));
+
+        // 文件里已经有一行（1.16.5 自己写的裸 false）→ 保持裸的，别忽然加引号
+        QStringList existing{ QStringLiteral("renderClouds:true") };
+        QCOMPARE(applyDefaults(existing, Format::Modern, QStringLiteral("1.19.3"), defaults), 2);
+        QVERIFY(existing.contains(QStringLiteral("renderClouds:false")));
+        QVERIFY(existing.contains(QStringLiteral("key_key.togglePerspective:key.keyboard.v")));
+    }
+
+    /**
+     * 版本没有的键一条都不写：1.7.10 没有 autoJump，1.5.2 连 key_key.* 都还没有。
+     */
+    void skipsKeysTheVersionLacks()
+    {
+        Defaults defaults;
+        defaults.disableAutoJump = true;
+        defaults.swapSprintSneak = true;
+        defaults.perspectiveOnV = true;
+        defaults.disableClouds = true;
+
+        QStringList old{ QStringLiteral("version:1") };
+        QCOMPARE(applyDefaults(old, Format::Legacy, QStringLiteral("1.7.10"), defaults), 4);  // 云 + 两个键位 + 视角键
+        QVERIFY(old.contains(QStringLiteral("clouds:false")));
+        QVERIFY(!old.contains(QStringLiteral("autoJump:false")));
+
+        // 1.6 之前连 key_key.* 都没有；云那一项也不认（cloudsKey 只覆盖 1.6+）
+        QStringList older;
+        QCOMPARE(applyDefaults(older, Format::Legacy, QStringLiteral("1.5.2"), defaults), 0);
+        QVERIFY(older.isEmpty());
+
+        // 版本判不出来：连云也不写（cloudsKey 空）
+        QStringList unknown;
+        QCOMPARE(applyDefaults(unknown, Format::Legacy, QStringLiteral("unknown"), defaults), 0);
+        QVERIFY(unknown.isEmpty());
+    }
+
+    /// 视野距离越界要被夹住，而不是把 64 原样写进去让游戏忽略
+    void renderDistanceIsClamped()
+    {
+        Defaults defaults;
+        defaults.renderDistance = 64;
+        QStringList lines;
+        QCOMPARE(applyDefaults(lines, Format::Modern, QStringLiteral("1.20.1"), defaults), 1);
+        QVERIFY(lines.contains(QStringLiteral("renderDistance:32")));
+
+        Defaults tiny;
+        tiny.renderDistance = 1;
+        QStringList lines2;
+        QCOMPARE(applyDefaults(lines2, Format::Modern, QStringLiteral("1.20.1"), tiny), 1);
+        QVERIFY(lines2.contains(QStringLiteral("renderDistance:2")));
     }
 };
 
