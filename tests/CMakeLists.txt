@@ -29,6 +29,7 @@ set(TEST_SOURCES
     MapArchiveScan_test.cpp
     MapOptionsTxt_test.cpp
     MapVariant_test.cpp
+    MapSeriesNames_test.cpp
     MapPackAttach_test.cpp
     MapL10nProbe_test.cpp
     MapL10nTranslate_test.cpp
