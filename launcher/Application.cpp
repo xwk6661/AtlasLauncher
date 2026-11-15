@@ -832,10 +832,6 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("MapOptionsRenderDistance", 0);     // 0 = 不写
         m_settings->registerSetting("MapOptionsBobOff", false);         // bobView:false
         m_settings->registerSetting("MapOptionsBrightGamma", false);    // gamma:1.0
-        // 汉化：自动翻译走 OpenAI 兼容接口（Base URL 可以指到任何兼容网关）
-        m_settings->registerSetting("MapL10nApiBase", QStringLiteral("https://api.openai.com/v1"));
-        m_settings->registerSetting("MapL10nApiKey", QString());
-        m_settings->registerSetting("MapL10nModel", QStringLiteral("gpt-4o-mini"));
         // 控制台（实例窗口）页签开关：地图启动器默认收起这四页，
         // 一个地图一个实例，世界/服务器/备注/其他日志基本用不上
         m_settings->registerSetting("MapConsoleShowNotes", false);

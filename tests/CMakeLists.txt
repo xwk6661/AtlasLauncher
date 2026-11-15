@@ -31,9 +31,6 @@ set(TEST_SOURCES
     MapVariant_test.cpp
     MapSeriesNames_test.cpp
     MapPackAttach_test.cpp
-    MapL10nProbe_test.cpp
-    MapL10nTranslate_test.cpp
-    MapL10nApply_test.cpp
     ModPresets_test.cpp
     DownloadSource_test.cpp
     RequestRetry_test.cpp

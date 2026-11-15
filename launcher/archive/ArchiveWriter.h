@@ -39,7 +39,6 @@ class ArchiveWriter {
      *
      * 默认 `deflate`（保持原有行为）。打包**已经压缩过的数据**（.mca 区块、jar、png）时
      * 用 `store` —— deflate 在这种数据上几乎压不动，只是白烧 CPU 和时间。
-     * 见 `MapL10nApply` 的存档备份。
      */
     void setCompression(const QString& method) { m_compression = method; }
 

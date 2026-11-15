@@ -16,7 +16,6 @@
  *  along with this program.  If not, see <https://www.gnu.org/licenses/>.
  */
 #include "MapSettingsWidget.h"
-#include "MapFeatures.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -150,51 +149,6 @@ void MapSettingsWidget::buildGlobalGroups(QWidget* parent, QVBoxLayout* layout)
                                "两代写法互不兼容，写错会让蹲/跑静默回到默认键位。"));
     layout->addWidget(optionsHint);
 
-    // ── 汉化翻译（OpenAI 兼容接口）──
-    // 只用于"把导出的待译清单自动翻成中文"。不填也能用——导出 CSV 自己翻、再导入。
-    auto* l10nBox = new QGroupBox(tr("汉化翻译"), parent);
-    auto* l10nLayout = new QVBoxLayout(l10nBox);
-    l10nLayout->setSpacing(6);
-
-    auto* l10nForm = new QFormLayout();
-    l10nForm->setContentsMargins(0, 0, 0, 0);
-
-    m_l10nApiBase = new QLineEdit(l10nBox);
-    m_l10nApiBase->setPlaceholderText(QStringLiteral("https://api.openai.com/v1"));
-    m_l10nApiBase->setToolTip(tr("任何 OpenAI 兼容的 /chat/completions 接口都行（中转、自建网关、本地模型）。\n"
-                                 "末尾的 / 会被自动去掉。"));
-    l10nForm->addRow(tr("接口地址"), m_l10nApiBase);
-
-    m_l10nApiKey = new QLineEdit(l10nBox);
-    m_l10nApiKey->setEchoMode(QLineEdit::Password);
-    m_l10nApiKey->setPlaceholderText(QStringLiteral("sk-…"));
-    m_l10nApiKey->setToolTip(tr("存在启动器配置里（明文）。只在你主动点「自动翻译」时才会用到。"));
-    l10nForm->addRow(tr("API Key"), m_l10nApiKey);
-
-    m_l10nModel = new QLineEdit(l10nBox);
-    m_l10nModel->setPlaceholderText(QStringLiteral("gpt-4o-mini"));
-    l10nForm->addRow(tr("模型"), m_l10nModel);
-    l10nLayout->addLayout(l10nForm);
-
-    auto* l10nHint = new QLabel(tr("不填 API Key 也能用：导出的 strings.csv 用 Excel 自己翻，再导入回来。\n"
-                                   "术语表固定内置（Creeper=苦力怕 这类），§ 格式码与占位符会强制保留。"),
-                                l10nBox);
-    l10nHint->setWordWrap(true);
-    l10nHint->setEnabled(false);
-    l10nLayout->addWidget(l10nHint);
-
-    /**
-     * 汉化功能当前整体隐藏（`maps::features::kLocalization == false`，见 MapFeatures.h）。
-     *
-     * 控件照常建出来、照常读写配置 —— 只是**不进布局、直接 hide()**：
-     * 已经填过接口地址的玩家不会因为这次隐藏把配置清掉，恢复开关时也不用改动这里。
-     */
-    if (features::kLocalization) {
-        layout->addWidget(l10nBox);
-    } else {
-        l10nBox->hide();
-    }
-
     // ── 大厅 ──
     auto* hallBox = new QGroupBox(tr("地图大厅"), parent);
     auto* hallLayout = new QVBoxLayout(hallBox);
@@ -299,9 +253,6 @@ void MapSettingsWidget::loadSettings()
         return;
 
     m_libraryDir->setText(m_settings->get("MapLibraryDir").toString());
-    m_l10nApiBase->setText(m_settings->get("MapL10nApiBase").toString());
-    m_l10nApiKey->setText(m_settings->get("MapL10nApiKey").toString());
-    m_l10nModel->setText(m_settings->get("MapL10nModel").toString());
     m_hallEndpoint->setText(m_settings->get("MapHallEndpoint").toString());
     m_hallTransport->setCurrentIndex(
         std::max(0, m_hallTransport->findData(m_settings->get("MapHallTransport").toString())));
@@ -340,9 +291,6 @@ void MapSettingsWidget::saveSettings()
     m_settings->set("MapSkipExperimentalPrompt", m_skipPrompt->isChecked());
     m_settings->set("MapEnterDelay", m_enterDelay->value());
     m_settings->set("MapLibraryDir", m_libraryDir->text().trimmed());
-    m_settings->set("MapL10nApiBase", m_l10nApiBase->text().trimmed());
-    m_settings->set("MapL10nApiKey", m_l10nApiKey->text().trimmed());
-    m_settings->set("MapL10nModel", m_l10nModel->text().trimmed());
     m_settings->set("MapHallEndpoint", m_hallEndpoint->text().trimmed());
     m_settings->set("MapHallTransport", m_hallTransport->currentData().toString());
     m_settings->set("MapHallProxyMode", m_hallProxyMode->currentData().toString());
