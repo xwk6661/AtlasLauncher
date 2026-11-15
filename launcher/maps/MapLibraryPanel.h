@@ -45,6 +45,7 @@ class MapLibraryPanel : public QWidget {
 
    public:
     explicit MapLibraryPanel(QWidget* parent = nullptr);
+    ~MapLibraryPanel() override;
 
     /// 重新读索引与目录（页面打开时调一次即可，代价只有一次目录遍历）
     void refresh();
@@ -58,7 +59,7 @@ class MapLibraryPanel : public QWidget {
     void onRenameCategoryClicked();
     void onDeleteCategoryClicked();
     void showCategoryContextMenu(const QPoint& pos);
-    /// 列表行右键：导入 / 打开目录 / 作为资源包挂到已装实例
+    /// 列表行右键：组标题 / 组内版本 / 独立成图，三种菜单互不越权
     void showItemContextMenu(const QPoint& pos);
 
    private:
@@ -67,12 +68,26 @@ class MapLibraryPanel : public QWidget {
     /// 折叠/展开某一组（组键同 `MapLibrary::groupKey()`）
     void toggleGroup(const QString& key);
     void applyCategory(const QString& file, const QString& categoryId);
+    /// 整组改分类（组标题右键）
+    void applyCategoryToGroup(const QString& groupKey, const QString& categoryId);
     /// 把一份资源包挂到玩家选中的实例（不建实例、不动存档）
     void attachResourcePack(const QString& file, const QString& path);
     /// 改语言标签（原版/简中/繁中/官中 + 来源）
     void editVariant(const QString& file);
-    /// 从大厅缓存里挑一张图当"所属主"
-    void pickHallMap(const QString& file);
+    /// 改「地图版本」（v1.0 这种，界面默认 1.0）
+    void editMapVersion(const QString& file);
+    /// 组标题菜单：信息 + 展开/收起 + 导入特定版本 + 整组类别/关联
+    void showGroupContextMenu(const QString& groupKey, const QPoint& globalPos);
+    /// 组内版本菜单：**只能**导入和改它自己的字段，碰不到组标题
+    void showVersionContextMenu(const QString& file, const QPoint& globalPos);
+    /// 独立成图（没有组）的菜单：它就是自己那一组，所以组级操作也归它
+    void showStandaloneMenu(const QString& file, const QPoint& globalPos);
+    /// 从大厅缓存里挑一张图当"所属主"（files 可以是一组）
+    void pickHallMap(const QStringList& files);
+
+    /// 列宽持久化（设置项 `MapLibraryColumnState`）
+    void restoreColumnState();
+    void saveColumnState();
 
     MapLibrary m_library;
     QListWidget* m_categories = nullptr;
@@ -85,6 +100,8 @@ class MapLibraryPanel : public QWidget {
     QString m_filterCategoryId;
     /// 展开的组键。**默认收起**：库里大半是同一个图的几个语言版本，全摊开时一屏看不到几张图
     QSet<QString> m_expandedGroups;
+    /// 列宽变化后延迟落盘：拖动时 sectionResized 会连发几十次
+    class QTimer* m_columnSaveTimer = nullptr;
 };
 
 }  // namespace maps

@@ -19,6 +19,7 @@
 
 #include "MapTheme.h"
 #include "MapStyle.h"
+#include "DataVersionTable.h"
 #include "FileSystem.h"
 #include "HallCache.h"
 #include "MapPackAttach.h"
@@ -44,6 +45,7 @@
 #include <QDropEvent>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontDatabase>
 #include <QHash>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -76,8 +78,36 @@ constexpr const char* kMimeType = "application/x-atlas-map-library-item";
 
 /// 组标题行在 `Qt::UserRole + 1` 里存分组键（`Qt::UserRole` 留给真实条目的文件名）
 constexpr int kGroupKeyRole = Qt::UserRole + 1;
+/// 组内版本行（子行）标记：右键菜单据此走"只能改自己"的那一套
+constexpr int kChildRowRole = Qt::UserRole + 2;
 
 constexpr int kMarkerSize = 12;
+/// 组内版本行的高度：**约半行**。子行只写"哪个语言版本"，不需要正常行的高度
+constexpr int kChildRowHeight = 16;
+constexpr int kDefaultRowHeight = 30;
+
+/**
+ * 「└」折号。
+ *
+ * 子行原来用「└ 」这个字符前缀，宽度随字体变，还会把文字推得比组标题更靠右；
+ * 改成和折叠箭头同一个 12px 图标位，画一条竖线接一条横线 ——
+ * 三行的文字起点逐像素对齐，缩进只由图形表达。
+ */
+QIcon elbowIcon(const QColor& color)
+{
+    QPixmap pixmap(kMarkerSize, kMarkerSize);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPen pen(color, 1.2);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    // 竖线从上边缘落到中线，再向右折出去（视觉上就是「└」）
+    painter.drawLine(QPointF(5.0, 0.5), QPointF(5.0, 8.0));
+    painter.drawLine(QPointF(5.0, 8.0), QPointF(10.0, 8.0));
+    return QIcon(pixmap);
+}
 
 /**
  * 折叠箭头。
@@ -125,6 +155,100 @@ QString humanBytes(qint64 bytes)
         return QStringLiteral("%1 MB").arg(bytes / 1024.0 / 1024.0, 0, 'f', 1);
     return QStringLiteral("%1 GB").arg(bytes / 1024.0 / 1024.0 / 1024.0, 0, 'f', 2);
 }
+
+/// 等宽字体下的「显示格数」：汉字占两格、ASCII 占一格。
+/// `leftJustified` 按**字符数**补空格，中英混排反而对不齐（「全部」2 个字符占 4 格），所以自己算。
+int displayCells(const QString& text)
+{
+    int cells = 0;
+    for (const QChar c : text) {
+        const ushort u = c.unicode();
+        const bool wide = (u >= 0x1100 && u <= 0x115F) || (u >= 0x2E80 && u <= 0xA4CF) || (u >= 0xAC00 && u <= 0xD7A3) ||
+                          (u >= 0xF900 && u <= 0xFAFF) || (u >= 0xFE30 && u <= 0xFE4F) || (u >= 0xFF00 && u <= 0xFF60) ||
+                          (u >= 0xFFE0 && u <= 0xFFE6);
+        cells += wide ? 2 : 1;
+    }
+    return cells;
+}
+
+QString padToCells(QString text, int cells)
+{
+    const int need = cells - displayCells(text);
+    if (need > 0)
+        text += QString(need, QLatin1Char(' '));
+    return text;
+}
+
+/**
+ * 分类栏的等宽字体。
+ *
+ * 系统 `FixedFont` 在 Windows 上常常落到 Courier New —— 字形带衬线、8pt 下笔画发虚，
+ * 一列中文夹英文尤其糊。这里按"正字面等宽"优先挑，并且**用整数号**：
+ * DirectWrite 下分数号（8.5pt）要缩放采样，正是"看着糊"的来源。
+ */
+QFont categoryFont(const QFont& base)
+{
+    static const QStringList preferred{
+        QStringLiteral("Cascadia Mono"),  QStringLiteral("Consolas"),        QStringLiteral("JetBrains Mono"),
+        QStringLiteral("DejaVu Sans Mono"), QStringLiteral("Liberation Mono"),
+    };
+
+    QFont font = base;
+    const auto families = QFontDatabase::families();
+    bool found = false;
+    for (const auto& name : preferred) {
+        if (families.contains(name, Qt::CaseInsensitive)) {
+            font.setFamily(name);
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        font = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+
+    font.setPointSize(qMax(8, int(qRound(base.pointSizeF()))));
+    font.setHintingPreference(QFont::PreferFullHinting);
+    font.setStyleStrategy(QFont::PreferAntialias);
+    return font;
+}
+
+/// 语言短标签：组内行只写「EN / 简中 / 繁中 / 官中」，一个词就说清是哪个版本
+QString languageTag(const variant::Info& info)
+{
+    if (info.source == variant::Source::Author)
+        return QStringLiteral("官中");
+    switch (info.language) {
+        case variant::Language::SimplifiedChinese:
+            return QStringLiteral("简中");
+        case variant::Language::TraditionalChinese:
+            return QStringLiteral("繁中");
+        case variant::Language::English:
+            return QStringLiteral("EN");
+        case variant::Language::Other:
+            return QStringLiteral("其他");
+        case variant::Language::Unknown:
+            break;
+    }
+    // 没标语言的原版：写「原版」而不是猜 EN（盘灵古域这种中文原创图就是"没标、但是中文"）
+    return info.kind == variant::Kind::Localized ? QStringLiteral("汉化") : QStringLiteral("原版");
+}
+
+/// 组内行的名字：「v1.0 EN」「v1.0 简中」。没有地图版本号就按 1.0 显示（不写盘）
+QString versionLabel(const LibraryItem& item)
+{
+    QString version = item.mapVersion.trimmed();
+    if (version.isEmpty())
+        version = QStringLiteral("1.0");
+    if (!version.startsWith(QLatin1Char('v'), Qt::CaseInsensitive))
+        version.prepend(QLatin1Char('v'));
+
+    QString label = QStringLiteral("%1 %2").arg(version, languageTag(item.variant));
+    // 资源包不是一张图、只能挂到实例上，这个差别必须一眼可见
+    if (item.variant.delivery == variant::Delivery::ResourcePack)
+        label += QStringLiteral(" · 资源包");
+    return label;
+}
+
 
 /// 只读表格：拖出去时带的是**文件名**，不是显示文本
 class LibraryTable : public QTableWidget {
@@ -238,20 +362,26 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     auto* body = new QHBoxLayout;
     body->setSpacing(ui::kSpaceM);
 
-    // 左侧分类栏容器：固定宽度 132px，防止挤占右侧表格（解决 8.1）
+    // 左侧分类栏容器：固定宽度（8.1）。分类名都在 3~8 个字符内，132px 纯属浪费表格的地方，
+    // 收到 92px：等宽字体下「MiniGame (  2)」正好放得下，右边表格多出 40px 给地图名。
     auto* catContainer = new QWidget(this);
-    catContainer->setFixedWidth(132);
+    catContainer->setFixedWidth(92);
     auto* catLayout = new QVBoxLayout(catContainer);
     catLayout->setContentsMargins(0, 0, 0, 0);
     catLayout->setSpacing(4);
 
     m_categories = new CategoryList(this);
-    m_categories->setFixedWidth(132);
+    m_categories->setFixedWidth(92);
     // 与右侧表格一样去掉原生边框：两者并排时，一个有线一个没线会显得歪
     m_categories->setFrameShape(QFrame::NoFrame);
+    // 等宽字体 + 整数号：分类名长短不一，比例字体下每一行的计数永远对不齐（「CTM (9)」vs「MiniGame (2)」）
+    m_categories->setFont(categoryFont(font()));
     m_categories->setAcceptDrops(true);
     m_categories->setDragDropMode(QAbstractItemView::DropOnly);
     m_categories->setSelectionMode(QAbstractItemView::SingleSelection);
+    // 窄栏里放不下就省略，别让一条横向滚动条吃掉分类栏的高度
+    m_categories->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_categories->setTextElideMode(Qt::ElideRight);
     m_categories->setContextMenuPolicy(Qt::CustomContextMenu);
     m_categories->setToolTip(tr("把右边的地图拖到分类上即可归类；右键可新建、重命名或删除分类"));
     static_cast<CategoryList*>(m_categories)->onDropFile = [this](const QString& file, const QString& categoryId) {
@@ -265,11 +395,11 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
 
     m_addCategoryBtn = new QPushButton(QStringLiteral("+"), this);
     m_addCategoryBtn->setToolTip(tr("新建分类"));
-    m_addCategoryBtn->setFixedWidth(64);
+    m_addCategoryBtn->setFixedWidth(44);
 
     m_delCategoryBtn = new QPushButton(QStringLiteral("-"), this);
     m_delCategoryBtn->setToolTip(tr("删除选中分类（其下地图将移至 Other）"));
-    m_delCategoryBtn->setFixedWidth(64);
+    m_delCategoryBtn->setFixedWidth(44);
     m_delCategoryBtn->setEnabled(false);
 
     catBtnLayout->addWidget(m_addCategoryBtn);
@@ -286,11 +416,17 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     m_table->horizontalHeader()->setStretchLastSection(false);
     m_table->horizontalHeader()->setSectionResizeMode(QHeaderView::Interactive);
     m_table->horizontalHeader()->setMinimumSectionSize(56);
-    m_table->setColumnWidth(0, 300);  // 地图（名字最长，给宽一点）
-    m_table->setColumnWidth(1, 130);  // 版本
-    m_table->setColumnWidth(2, 120);  // 语言
-    m_table->setColumnWidth(3, 90);   // 分类
-    m_table->setColumnWidth(4, 80);   // 状态
+    // 列宽本身可拖，拖动结果记在设置里（不然每次重开对话框都回到默认值）
+    restoreColumnState();
+    m_columnSaveTimer = new QTimer(this);
+    m_columnSaveTimer->setSingleShot(true);
+    m_columnSaveTimer->setInterval(400);
+    connect(m_columnSaveTimer, &QTimer::timeout, this, &MapLibraryPanel::saveColumnState);
+    connect(m_table->horizontalHeader(), &QHeaderView::sectionResized, this, [this] {
+        if (m_columnSaveTimer != nullptr)
+            m_columnSaveTimer->start();
+    });
+
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSelectionMode(QAbstractItemView::SingleSelection);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -301,9 +437,12 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     m_table->setMinimumHeight(220);
     m_table->setMinimumWidth(0);
     m_table->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_table->setToolTip(tr("拖动行到左侧分类即可归类；双击直接导入；点组标题展开/收起同图的不同语言版本"));
+    m_table->setToolTip(tr("拖动行到左侧分类即可归类；双击直接导入；点组标题展开/收起同图的不同语言版本；"
+                           "右键组标题可整组操作，右键语言版本只能改它自己"));
     m_table->setIconSize(QSize(kMarkerSize, kMarkerSize));
-    ui::tuneTable(m_table);
+    ui::tuneTable(m_table, kDefaultRowHeight);
+    // 子行要压到 16px：垂直表头的最小高度默认按字体算（约 20），不放开就会被静默钳回 20
+    m_table->verticalHeader()->setMinimumSectionSize(kChildRowHeight - 2);
     body->addWidget(m_table, 1);
 
     root->addLayout(body, 1);
@@ -392,11 +531,50 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     refresh();
 }
 
+MapLibraryPanel::~MapLibraryPanel()
+{
+    // 关窗口时定时器可能还在等那 400ms：这里同步落一次，否则"拖完列宽马上关掉"会丢
+    saveColumnState();
+}
+
 void MapLibraryPanel::refresh()
 {
     m_library.reload();
     rebuildCategories();
     rebuildTable();
+}
+
+void MapLibraryPanel::restoreColumnState()
+{
+    auto* header = m_table->horizontalHeader();
+
+    QString saved;
+    if (APPLICATION != nullptr && APPLICATION->settings() != nullptr)
+        saved = APPLICATION->settings()->get("MapLibraryColumnState").toString();
+
+    if (!saved.isEmpty()) {
+        const QByteArray state = QByteArray::fromBase64(saved.toLatin1());
+        // restoreState 在列数/版本对不上时返回 false：那就退回默认值，别留下半套宽度
+        if (!state.isEmpty() && header->restoreState(state))
+            return;
+    }
+
+    // 默认宽度按导入对话框的常见宽度配（约 640px 内放得下）：五列加起来 616，
+    // 再宽就会一进来就有横向滚动条 —— 玩家拖过一次之后按他的来（存在设置里）
+    m_table->setColumnWidth(0, 260);  // 地图（名字最长，给宽一点）
+    m_table->setColumnWidth(1, 110);  // 版本
+    m_table->setColumnWidth(2, 110);  // 语言 / 来源
+    m_table->setColumnWidth(3, 72);   // 分类
+    m_table->setColumnWidth(4, 64);   // 状态
+}
+
+void MapLibraryPanel::saveColumnState()
+{
+    if (APPLICATION == nullptr || APPLICATION->settings() == nullptr)
+        return;
+    const QByteArray state = m_table->horizontalHeader()->saveState().toBase64();
+    if (!state.isEmpty())
+        APPLICATION->settings()->set("MapLibraryColumnState", QString::fromLatin1(state));
 }
 
 void MapLibraryPanel::onAddCategoryClicked()
@@ -488,14 +666,25 @@ void MapLibraryPanel::rebuildCategories()
     QSignalBlocker blocker(m_categories);
     m_categories->clear();
 
-    auto* all = new QListWidgetItem(tr("全部（%1）").arg(m_library.items().size()), m_categories);
+    // 等宽字体下按「格」对齐：名字左对齐到同一格，计数右对齐到三位 —— 比例字体里做不到，
+    // 而这一栏本来就是"扫一眼看每类有几个"，对不齐就只能一行行读。
+    // 「全部」写 `ALL`：它是这一列的"第 0 项"，用两个汉字的宽度会永远比下面的英文名宽一截。
+    const QString allName = QStringLiteral("ALL");
+    int nameCells = displayCells(allName);
+    for (const auto& cat : m_library.categories())
+        nameCells = qMax(nameCells, displayCells(cat.name));
+
+    const auto makeLabel = [nameCells](const QString& name, int count) {
+        return QStringLiteral("%1 (%2)").arg(padToCells(name, nameCells), QString::number(count).rightJustified(3));
+    };
+
+    auto* all = new QListWidgetItem(makeLabel(allName, m_library.items().size()), m_categories);
     all->setData(Qt::UserRole, QString());
 
     int selectedRow = 0;
     int rowIdx = 1;
     for (const auto& cat : m_library.categories()) {
-        auto* item = new QListWidgetItem(QStringLiteral("%1（%2）").arg(cat.name).arg(m_library.count(cat.id)),
-                                         m_categories);
+        auto* item = new QListWidgetItem(makeLabel(cat.name, m_library.count(cat.id)), m_categories);
         item->setData(Qt::UserRole, cat.id);
         if (!m_showAll && cat.id == previousCat)
             selectedRow = rowIdx;
@@ -594,6 +783,9 @@ void MapLibraryPanel::rebuildTable()
         }
     }
 
+    // 先清空再重建：子行现在不写 1~3 列，若沿用旧行，上一轮 standalone 行的
+    // 版本/语言/分类文本会留在原地，看起来像"子行也有版本号"
+    m_table->setRowCount(0);
     m_table->clearSpans();
     m_table->setRowCount(rowCount);
 
@@ -623,8 +815,8 @@ void MapLibraryPanel::rebuildTable()
             // 没关联大厅才退回索引里的名字，并把 ` - by 作者` 这类尾巴去掉。
             QString groupTitle = head.displayName();
             if (!head.hallSlug.isEmpty()) {
-                const auto row = HallCache::findListRow(head.hallSlug);
-                const QString hallName = row.value(QStringLiteral("name")).toString();
+                const auto hallRow = HallCache::findListRow(head.hallSlug);
+                const QString hallName = hallRow.value(QStringLiteral("name")).toString();
                 if (!hallName.isEmpty())
                     groupTitle = hallName;
             }
@@ -638,16 +830,48 @@ void MapLibraryPanel::rebuildTable()
             // "（2 个版本）"只是在解释一个看不见的东西。数量放 tooltip。
             auto* title = new QTableWidgetItem(groupTitle);
             title->setIcon(arrowIcon(expanded, ui::bodyTextColor()));
-            QFont bold = title->font();
-            bold.setBold(true);
-            title->setFont(bold);
+            // 组标题与"没有组的图"都用粗体，组内版本行不加粗 —— 层级靠字重与缩进，
+            // 不靠颜色：一排灰字里只要有两条粗体，眼睛就知道那是"几张图"而不是"几个包"
+            title->setFont(ui::cardTitleFont(title->font()));
             title->setFlags(Qt::ItemIsEnabled);  // 不可选中：拖拽/双击/导入按钮都不认它
             title->setData(kGroupKeyRole, key);
-            title->setToolTip(tr("%1 · %2 个语言版本\n点一下%3")
+            qint64 groupBytes = 0;
+            for (const auto& item : list)
+                groupBytes += item.bytes;
+            title->setToolTip(tr("%1\n%2 个语言版本 · 共 %3 · 已装 %4\n点一下%5；右键可整组操作")
                                   .arg(head.displayName())
                                   .arg(list.size())
+                                  .arg(humanBytes(groupBytes))
+                                  .arg(installedInGroup)
                                   .arg(expanded ? tr("收起") : tr("展开")));
             m_table->setItem(row, 0, title);
+            m_table->setRowHeight(row, kDefaultRowHeight);
+
+            // 组标题只写 **MC 版本**：地图版本一组可能有好几个，写哪一个都是偏心；
+            // 但"这张图跑在什么版本上"是玩家扫列表时最想知道的一件事，所以留在这一行。
+            QStringList versions;
+            for (const auto& item : list) {
+                if (!item.mcVersion.isEmpty() && !versions.contains(item.mcVersion))
+                    versions << item.mcVersion;
+            }
+            std::sort(versions.begin(), versions.end(), [](const QString& left, const QString& right) {
+                return DataVersionTable::instance().dataVersionFor(left) <
+                       DataVersionTable::instance().dataVersionFor(right);
+            });
+            QString versionText = QStringLiteral("—");
+            if (!versions.isEmpty()) {
+                constexpr int kMaxInline = 2;
+                versionText = versions.mid(0, kMaxInline).join(QStringLiteral(" / "));
+                if (versions.size() > kMaxInline)
+                    versionText += QStringLiteral(" …");
+            }
+            auto* groupVersion = new QTableWidgetItem(versionText);
+            groupVersion->setFlags(Qt::ItemIsEnabled);
+            groupVersion->setForeground(ui::mutedTextColor());
+            groupVersion->setToolTip(versions.isEmpty()
+                                         ? tr("组内没有解析出版本")
+                                         : tr("组内各版本的 MC 版本：%1").arg(versions.join(QStringLiteral("、"))));
+            m_table->setItem(row, 1, groupVersion);
 
             // 分类一致才显示，否则写「混合」——别替玩家挑一个
             QSet<QString> categories;
@@ -674,34 +898,49 @@ void MapLibraryPanel::rebuildTable()
         if (grouped && !expanded)
             continue;
 
+        // 组内两行的标签可能撞车（两个都是「v1.0 EN」）——只有撞车时才补 MC 版本区分，
+        // 不撞就一个字都不多写
+        QHash<QString, int> labelCounts;
+        if (grouped) {
+            for (const auto& item : list)
+                ++labelCounts[versionLabel(item)];
+        }
+
         for (const auto& item : list) {
-            const QString prefix = grouped ? QStringLiteral("└ ") : QString();
-            // 组标题已经写了图名，子行只写"这是哪个语言版本"——
-            // 否则「Bitstream…」连写三行，只能靠右边的小字分辨
-            QString childName = grouped ? item.variantSummary() : item.displayName();
+            auto* name = new QTableWidgetItem;
             if (grouped) {
-                // 同组里两个都是"原版"（多版本的同语言包）时，补一个版本号区分
-                // 同组里两行标签一样（例如两个包都是「原版」）时，用版本号区分；
-                // 但**只有版本确实不同才加**——否则会得到两行「简中 · 1.21.9」，白噪声
-                QSet<QString> details;
-                for (const auto& other : list) {
-                    if (other.variantSummary() == item.variantSummary())
-                        details.insert(other.mapVersion.isEmpty() ? other.mcVersion : other.mapVersion);
-                }
-                if (details.size() > 1) {
-                    const QString detail = item.mapVersion.isEmpty() ? item.mcVersion : item.mapVersion;
-                    if (!detail.isEmpty())
-                        childName = QStringLiteral("%1 · %2").arg(childName, detail);
-                }
+                // 组标题已经写了图名，子行只写"这是哪个语言版本"：`v1.0 EN` / `v1.0 简中`
+                QString label = versionLabel(item);
+                if (labelCounts.value(label) > 1 && !item.mcVersion.isEmpty())
+                    label += QStringLiteral(" · MC %1").arg(item.mcVersion);
+                name->setText(label);
+                name->setIcon(elbowIcon(ui::mutedTextColor()));
+                name->setFont(ui::metaFont(name->font()));
+                name->setForeground(ui::mutedTextColor());
+                name->setData(kChildRowRole, true);
+            } else {
+                // 没有组的图 = 这张图只有它自己：与组标题同一层级，同样加粗
+                name->setText(item.displayName());
+                name->setIcon(blankIcon());
+                name->setFont(ui::cardTitleFont(name->font()));
             }
-            // 每一行都给同一个 12px 图标位：组标题那里是箭头，这里是透明占位，
-            // 于是「组标题」与「没有组的图」文字起点完全对齐（用空格补会随字体差一两个像素）
-            auto* name = new QTableWidgetItem(prefix + childName);
-            name->setIcon(blankIcon());
             name->setData(Qt::UserRole, item.file);
+
             QString tooltip = item.path;
+            if (!item.mapVersion.isEmpty())
+                tooltip += QLatin1String("\n") + tr("地图版本：%1").arg(item.mapVersion);
+            else
+                tooltip += QLatin1String("\n") + tr("地图版本未标注，按 v1.0 显示");
             if (!item.variant.label.isEmpty())
                 tooltip += QLatin1String("\n") + tr("文件名标记：%1").arg(item.variant.label);
+            tooltip += QLatin1String("\n") + tr("%1 · %2 · MC %3")
+                                              .arg(variant::languageLabel(item.variant.language),
+                                                   variant::deliveryLabel(item.variant.delivery),
+                                                   item.mcVersion.isEmpty() ? QStringLiteral("—") : item.mcVersion);
+            if (!item.hallSlug.isEmpty()) {
+                tooltip += QLatin1String("\n") + tr("关联大厅：%1%2")
+                                                  .arg(item.hallSlug, item.hallVerified ? QString() : tr("（未确认）"));
+            }
             if (!item.note.isEmpty())
                 tooltip += QLatin1String("\n") + item.note;
             if (item.installed)
@@ -709,45 +948,36 @@ void MapLibraryPanel::rebuildTable()
             name->setToolTip(tooltip);
             m_table->setItem(row, 0, name);
 
-            QString version = item.mcVersion;
-            if (!item.mapVersion.isEmpty())
-                version += version.isEmpty() ? item.mapVersion : QStringLiteral(" · ") + item.mapVersion;
+            if (!grouped) {
+                // 没有组的行才需要这些列：子行的 MC 版本 / 分类 / 来源都在组标题与右键菜单里，
+                // 一排四列重复信息只会让人以为"每行都是一张图"
+                QString version = item.mcVersion;
+                if (!item.mapVersion.isEmpty())
+                    version += version.isEmpty() ? item.mapVersion : QStringLiteral(" · ") + item.mapVersion;
 
-            auto* versionItem = new QTableWidgetItem(version.isEmpty() ? QStringLiteral("—") : version);
-            versionItem->setData(Qt::UserRole, item.file);
-            m_table->setItem(row, 1, versionItem);
+                auto* versionItem = new QTableWidgetItem(version.isEmpty() ? QStringLiteral("—") : version);
+                versionItem->setData(Qt::UserRole, item.file);
+                m_table->setItem(row, 1, versionItem);
 
-            // 分组子行的名字已经是「简中汉化v1.0」，这一列再写一遍语言就重复了；
-            // 只有一行（未分组）时才用摘要，分组时写来源（社区汉化 / 自译 / 作者发布）
-            QString languageText = item.variantSummary();
-            if (grouped) {
-                languageText = item.variant.source == variant::Source::Unknown
-                                   ? QStringLiteral("—")
-                                   : variant::sourceLabel(item.variant.source);
-            }
-            auto* languageItem = new QTableWidgetItem(languageText);
-            languageItem->setData(Qt::UserRole, item.file);
-            QString languageTooltip = tr("%1 · %2").arg(variant::sourceLabel(item.variant.source),
-                                                        variant::deliveryLabel(item.variant.delivery));
-            if (!item.hallSlug.isEmpty()) {
-                languageTooltip += QLatin1String("\n") + tr("关联大厅：%1%2")
-                                                               .arg(item.hallSlug,
-                                                                    item.hallVerified ? QString() : tr("（未确认）"));
-            }
-            languageItem->setToolTip(languageTooltip);
-            m_table->setItem(row, 2, languageItem);
+                auto* languageItem = new QTableWidgetItem(item.variantSummary());
+                languageItem->setData(Qt::UserRole, item.file);
+                languageItem->setToolTip(tr("%1 · %2").arg(variant::sourceLabel(item.variant.source),
+                                                           variant::deliveryLabel(item.variant.delivery)));
+                m_table->setItem(row, 2, languageItem);
 
-            auto* categoryItem = new QTableWidgetItem(m_library.categoryName(item.category));
-            categoryItem->setData(Qt::UserRole, item.file);
-            m_table->setItem(row, 3, categoryItem);
-
-            if (grouped) {
-                // 子行是"同一张图的另一个语言版本"，不是另一张图：压灰、不加粗，
-                // 才能和组标题以及下面那些独立的图在视觉上分开
-                name->setForeground(ui::mutedTextColor());
-                versionItem->setForeground(ui::mutedTextColor());
-                languageItem->setForeground(ui::mutedTextColor());
-                categoryItem->setForeground(ui::mutedTextColor());
+                auto* categoryItem = new QTableWidgetItem(m_library.categoryName(item.category));
+                categoryItem->setData(Qt::UserRole, item.file);
+                m_table->setItem(row, 3, categoryItem);
+            } else {
+                // 子行只写「版本 + 语言」，其余列留空。但**空列也要有 item**：
+                // QTableWidget 只给有 item 的格子画选中底色，缺列时选中行会断成两截。
+                for (int column = 1; column <= 3; ++column) {
+                    auto* filler = new QTableWidgetItem;
+                    filler->setData(Qt::UserRole, item.file);
+                    filler->setFlags(Qt::ItemIsEnabled | Qt::ItemIsSelectable);
+                    filler->setToolTip(tooltip);
+                    m_table->setItem(row, column, filler);
+                }
             }
 
             auto* stateItem = new QTableWidgetItem(item.installed ? tr("已安装") : QStringLiteral("—"));
@@ -756,17 +986,22 @@ void MapLibraryPanel::rebuildTable()
                 stateItem->setForeground(ui::confidenceColor(Confidence::High));
                 stateItem->setToolTip(tr("已安装为实例：%1").arg(item.installedInstances.join(QStringLiteral("、"))));
             }
+            if (grouped)
+                stateItem->setFont(ui::metaFont(stateItem->font()));
             m_table->setItem(row, 4, stateItem);
+
+            // 组内版本行只占半行高：它承载的信息只有"哪个语言版本 + 装没装"
+            m_table->setRowHeight(row, grouped ? kChildRowHeight : kDefaultRowHeight);
             ++row;
         }
     }
 
     if (!previousFile.isEmpty()) {
-        for (int row = 0; row < m_table->rowCount(); ++row) {
-            auto* first = m_table->item(row, 0);
+        for (int candidate = 0; candidate < m_table->rowCount(); ++candidate) {
+            auto* first = m_table->item(candidate, 0);
             if (first != nullptr && first->data(Qt::UserRole).toString() == previousFile) {
-                m_table->selectRow(row);
-                m_table->setCurrentCell(row, 0);
+                m_table->selectRow(candidate);
+                m_table->setCurrentCell(candidate, 0);
                 break;
             }
         }
@@ -809,18 +1044,217 @@ void MapLibraryPanel::applyCategory(const QString& file, const QString& category
     });
 }
 
-void MapLibraryPanel::showItemContextMenu(const QPoint& pos)
+void MapLibraryPanel::applyCategoryToGroup(const QString& groupKey, const QString& categoryId)
 {
-    // 信号给的坐标是表格（含表头）的，itemAt / mapToGlobal 要的是 viewport 的
-    const QPoint viewportPos = m_table->viewport()->mapFrom(m_table, pos);
-    auto* cell = m_table->itemAt(viewportPos);
-    if (cell == nullptr)
-        return;
-    auto* first = m_table->item(cell->row(), 0);
-    const QString file = first != nullptr ? first->data(Qt::UserRole).toString() : QString();
-    if (file.isEmpty())  // 组标题行
+    QStringList files;
+    for (const auto& item : m_library.groupItems(groupKey))
+        files << item.file;
+    if (files.isEmpty())
         return;
 
+    if (!m_library.setCategoryForItems(files, categoryId)) {
+        QMessageBox::warning(this, tr("改分类失败"),
+                             tr("无法写入地图库索引：%1").arg(QDir::toNativeSeparators(MapLibrary::indexPath())));
+        return;
+    }
+    QTimer::singleShot(0, this, [this] {
+        rebuildCategories();
+        rebuildTable();
+    });
+}
+
+void MapLibraryPanel::showItemContextMenu(const QPoint& pos)
+{
+    // `customContextMenuRequested` 给的坐标**已经是视口坐标**（和 itemAt / indexAt 同一套）。
+    // 之前又按"表格坐标"映射了一次，于是整体上移一个表头（32px）：右键 A 行会弹出 A 上一行
+    // 的菜单 —— 组标题与子行的菜单不同，表现出来就是"点了这个、管的是那个"。
+    const QPoint viewportPos = pos;
+    const QPoint globalPos = m_table->viewport()->mapToGlobal(viewportPos);
+
+    // 用 indexAt 而不是 itemAt：组标题只有 0/3/4 三列有 item，右键点在「版本」列
+    // 这种空格子上时 itemAt 会是 nullptr，菜单就"点了没反应"
+    const QModelIndex index = m_table->indexAt(viewportPos);
+    if (!index.isValid())
+        return;
+    auto* first = m_table->item(index.row(), 0);
+    if (first == nullptr)
+        return;
+
+    const QString groupKey = first->data(kGroupKeyRole).toString();
+    if (!groupKey.isEmpty()) {
+        showGroupContextMenu(groupKey, globalPos);
+        return;
+    }
+
+    const QString file = first->data(Qt::UserRole).toString();
+    if (file.isEmpty())
+        return;
+
+    if (first->data(kChildRowRole).toBool())
+        showVersionContextMenu(file, globalPos);
+    else
+        showStandaloneMenu(file, globalPos);
+}
+
+void MapLibraryPanel::showGroupContextMenu(const QString& groupKey, const QPoint& globalPos)
+{
+    const auto list = m_library.groupItems(groupKey);
+    if (list.isEmpty())
+        return;
+
+    // 默认版本：玩家标过 default 的就是它，否则按组内顺序（原版在前）
+    const LibraryItem* defaultItem = &list.first();
+    for (const auto& item : list) {
+        if (item.variant.isDefault) {
+            defaultItem = &item;
+            break;
+        }
+    }
+
+    int installed = 0;
+    qint64 bytes = 0;
+    QStringList files;
+    for (const auto& item : list) {
+        files << item.file;
+        bytes += item.bytes;
+        if (item.installed)
+            ++installed;
+    }
+
+    QMenu menu(this);
+    auto* info = menu.addAction(tr("%1 · %2 个版本 · %3 · 已装 %4")
+                                    .arg(defaultItem->displayName())
+                                    .arg(list.size())
+                                    .arg(humanBytes(bytes))
+                                    .arg(installed));
+    info->setEnabled(false);
+    menu.addSeparator();
+
+    const bool expanded = m_expandedGroups.contains(groupKey);
+    QAction* toggle = menu.addAction(expanded ? tr("收起") : tr("展开"));
+    connect(toggle, &QAction::triggered, this, [this, groupKey] { toggleGroup(groupKey); });
+
+    // 不给"导入默认版本"：一组里哪个算默认是程序猜的，玩家要的是**自己挑一个**；
+    // 两项并存时"默认"还会被当成推荐，点错就多建一个实例。
+    QMenu* versions = menu.addMenu(tr("导入特定版本"));
+    for (const auto& item : list) {
+        const QString label = tr("%1 · MC %2%3").arg(versionLabel(item),
+                                                      item.mcVersion.isEmpty() ? QStringLiteral("—") : item.mcVersion,
+                                                      item.installed ? tr(" · 已安装") : QString());
+        QAction* action = versions->addAction(label);
+        const QString path = QFileInfo(QDir(MapLibrary::libraryDir()), item.file).absoluteFilePath();
+        connect(action, &QAction::triggered, this, [this, path] { emit importRequested(path); });
+    }
+
+    menu.addSeparator();
+
+    // 整组改分类：组标题上只有一份分类，子行改分类没有意义（会立刻变「混合」）
+    QMenu* categoryMenu = menu.addMenu(tr("整组归到类别"));
+    for (const auto& category : m_library.categories()) {
+        QAction* action = categoryMenu->addAction(category.name);
+        action->setCheckable(true);
+        action->setChecked(defaultItem->category == category.id);
+        connect(action, &QAction::triggered, this,
+                [this, groupKey, id = category.id] { applyCategoryToGroup(groupKey, id); });
+    }
+
+    if (defaultItem->hallSlug.isEmpty()) {
+        QAction* link = menu.addAction(tr("关联到大厅地图…"));
+        connect(link, &QAction::triggered, this, [this, files] { pickHallMap(files); });
+    } else {
+        QAction* unlink = menu.addAction(tr("解除大厅关联（整组）"));
+        connect(unlink, &QAction::triggered, this, [this, files] {
+            for (const auto& file : files)
+                m_library.setHallLink(file, QString(), false);
+        });
+    }
+
+    QAction* openAction = menu.addAction(tr("打开所在目录"));
+    connect(openAction, &QAction::triggered, this, [this, defaultItem] {
+        const QString path = QFileInfo(QDir(MapLibrary::libraryDir()), defaultItem->file).absoluteFilePath();
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
+    });
+
+    menu.exec(globalPos);
+}
+
+void MapLibraryPanel::showVersionContextMenu(const QString& file, const QPoint& globalPos)
+{
+    LibraryItem item;
+    bool found = false;
+    for (const auto& candidate : m_library.items()) {
+        if (candidate.file == file) {
+            item = candidate;
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        return;
+
+    const QString path = QFileInfo(QDir(MapLibrary::libraryDir()), file).absoluteFilePath();
+
+    QMenu menu(this);
+    // 组内版本行只能改"它自己是什么"，不能改"它属于哪张图、归哪一类"——
+    // 那两件事写在组标题上，子行改会让整组显示成「混合」
+    auto* info = menu.addAction(tr("%1 · MC %2").arg(versionLabel(item),
+                                                      item.mcVersion.isEmpty() ? QStringLiteral("—") : item.mcVersion));
+    info->setEnabled(false);
+    menu.addSeparator();
+
+    QAction* importAction = menu.addAction(tr("导入这个版本"));
+    QAction* versionAction = menu.addAction(tr("地图版本…"));
+    QAction* variantAction = menu.addAction(tr("语言标签…"));
+    QAction* openAction = menu.addAction(tr("打开所在目录"));
+
+    QAction* attachAction = nullptr;
+    if (item.variant.delivery == variant::Delivery::ResourcePack) {
+        const auto probe = MapPackAttach::inspect(path);
+        menu.addSeparator();
+        attachAction = menu.addAction(tr("作为资源包挂到已装实例…"));
+        attachAction->setEnabled(probe.valid);
+        attachAction->setToolTip(probe.valid ? tr("放进实例的 resourcepacks/ 并启用；不建实例、不动存档") : probe.reason);
+    }
+
+    QAction* chosen = menu.exec(globalPos);
+    if (chosen == importAction)
+        emit importRequested(path);
+    else if (chosen == openAction)
+        QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
+    else if (chosen == variantAction)
+        editVariant(file);
+    else if (chosen == versionAction)
+        editMapVersion(file);
+    else if (attachAction != nullptr && chosen == attachAction)
+        attachResourcePack(file, path);
+}
+
+void MapLibraryPanel::editMapVersion(const QString& file)
+{
+    QString current;
+    for (const auto& item : m_library.items()) {
+        if (item.file == file) {
+            current = item.mapVersion;
+            break;
+        }
+    }
+
+    bool ok = false;
+    const QString text = QInputDialog::getText(this, tr("地图版本"),
+                                               tr("这张图自己的版本号（例如 1.0、1.2.3）。\n"
+                                                  "留空 = 按 1.0 显示。"),
+                                               QLineEdit::Normal,
+                                               current.isEmpty() ? QStringLiteral("1.0") : current, &ok);
+    if (!ok)
+        return;
+    if (!m_library.setMapVersion(file, text)) {
+        QMessageBox::warning(this, tr("改版本失败"),
+                             tr("无法写入地图库索引：%1").arg(QDir::toNativeSeparators(MapLibrary::indexPath())));
+    }
+}
+
+void MapLibraryPanel::showStandaloneMenu(const QString& file, const QPoint& globalPos)
+{
     const QString path = QFileInfo(QDir(MapLibrary::libraryDir()), file).absoluteFilePath();
 
     QMenu menu(this);
@@ -829,6 +1263,7 @@ void MapLibraryPanel::showItemContextMenu(const QPoint& pos)
     menu.addSeparator();
 
     QAction* variantAction = menu.addAction(tr("语言标签…"));
+    QAction* versionAction = menu.addAction(tr("地图版本…"));
 
     // 类别：直接在这里改，不用把行拖到左边
     QMenu* categoryMenu = menu.addMenu(tr("类别"));
@@ -896,7 +1331,7 @@ void MapLibraryPanel::showItemContextMenu(const QPoint& pos)
     }
     groupMenu->addSeparator();
     QAction* searchHall = groupMenu->addAction(tr("从大厅搜索…"));
-    connect(searchHall, &QAction::triggered, this, [this, file] { pickHallMap(file); });
+    connect(searchHall, &QAction::triggered, this, [this, file] { pickHallMap({ file }); });
 
     menu.addSeparator();
 
@@ -907,7 +1342,7 @@ void MapLibraryPanel::showItemContextMenu(const QPoint& pos)
     attachAction->setToolTip(probe.valid ? tr("放进实例的 resourcepacks/ 并启用；不建实例、不动存档")
                                         : probe.reason);
 
-    QAction* chosen = menu.exec(m_table->viewport()->mapToGlobal(viewportPos));
+    QAction* chosen = menu.exec(globalPos);
     if (chosen == importAction) {
         emit importRequested(path);
     } else if (chosen == openAction) {
@@ -916,6 +1351,8 @@ void MapLibraryPanel::showItemContextMenu(const QPoint& pos)
         attachResourcePack(file, path);
     } else if (chosen == variantAction) {
         editVariant(file);
+    } else if (chosen == versionAction) {
+        editMapVersion(file);
     }
 }
 
@@ -1110,8 +1547,11 @@ void MapLibraryPanel::editVariant(const QString& file)
     m_library.setVariant(file, updated);
 }
 
-void MapLibraryPanel::pickHallMap(const QString& file)
+void MapLibraryPanel::pickHallMap(const QStringList& files)
 {
+    if (files.isEmpty())
+        return;
+
     const auto snapshot = HallCache::load();
     if (!snapshot.isValid()) {
         QMessageBox::information(this, tr("还没有大厅数据"),
@@ -1165,7 +1605,11 @@ void MapLibraryPanel::pickHallMap(const QString& file)
     auto* current = list->currentItem();
     if (current == nullptr)
         return;
-    m_library.setHallLink(file, current->data(Qt::UserRole).toString(), false);
+    // 组标题上选的关联对整个组生效：同一张图的几个语言版本必须锚在同一个 slug 上，
+    // 否则分组又会散开
+    const QString slug = current->data(Qt::UserRole).toString();
+    for (const auto& file : files)
+        m_library.setHallLink(file, slug, false);
 }
 
 }  // namespace maps
