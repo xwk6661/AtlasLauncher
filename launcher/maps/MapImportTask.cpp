@@ -75,11 +75,10 @@ MapImportTask::MapImportTask(QString archivePath, MapScanResult scan, MapImportO
     setName(m_options.displayName);
 
     // 构造在 UI 线程：设置对象的读取放在这里，别带到线程池里去（见头文件里的说明）
-    if (const auto* app = APPLICATION) {
-        const auto settings = app->settings();
-        m_optionsSetChinese = settings->get("MapOptionsForceChinese").toBool();
-        m_optionsSwapSprintSneak = settings->get("MapOptionsSwapSprintSneak").toBool();
-        m_optionsFullscreen = settings->get("MapStartFullscreen").toBool();
+    if (m_options.hasGameOptions) {
+        m_gameOptions = m_options.gameOptions;
+    } else if (const auto* app = APPLICATION) {
+        m_gameOptions = options::defaultsFromSettings(app->settings());
     }
 }
 
@@ -374,15 +373,12 @@ Result<> MapImportTask::applyOptionsDefaults()
 {
     const auto packs = m_scan.resourcePacks();
 
-    options::Defaults defaults;
-    defaults.setChinese = m_optionsSetChinese;
-    defaults.swapSprintSneak = m_optionsSwapSprintSneak;
+    options::Defaults defaults = m_gameOptions;
     // 首屏无障碍引导会把 quickPlay 挡在外面（2026-11-12 复现），地图实例一律关掉
     defaults.skipAccessibilityOnboarding = true;
     // 全屏：地图本来就是"一张图一个世界"，全屏是它的正常形态。
     // （2026-11-12 曾用它绕过本机「窗口模式一片白」，该问题已于 11-13 解决，
     //   这里不再作为规避手段，只是玩家可关的默认偏好。）
-    defaults.setFullscreen = m_optionsFullscreen;
     defaults.fullscreen = true;
 
     if (packs.isEmpty() && defaults.isEmpty())
@@ -434,7 +430,7 @@ Result<> MapImportTask::applyOptionsDefaults()
             // （含刚设好的中文），首屏还退回无障碍引导 —— 图就进不去了。
             if (options::putVersionStamp(lines, *format, DataVersionTable::instance().dataVersionFor(m_mcVersion)))
                 touched = true;
-            if (options::applyDefaults(lines, *format, defaults) > 0)
+            if (options::applyDefaults(lines, *format, m_mcVersion, defaults) > 0)
                 touched = true;
         }
     }

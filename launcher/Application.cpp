@@ -823,6 +823,15 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         // 地图实例默认全屏进图：地图是「一张图一个世界」，全屏才是正常形态
         // （曾被用来绕开「窗口模式整片白」，该问题 2026-11-13 已解决，见 05 文档 §6）
         m_settings->registerSetting("MapStartFullscreen", true);
+        // 以下几项同样只在导入时写一次，默认全关 —— 玩家在导入对话框里勾过之后
+        // 由对话框写回这里，于是下次导入自动带上（"记住上次的选择"）。
+        // 键名与取值随版本分叉，见 maps/MapOptionsTxt.h 的 capabilities 部分
+        m_settings->registerSetting("MapOptionsCloudsOff", false);      // renderClouds:false
+        m_settings->registerSetting("MapOptionsAutoJumpOff", false);    // autoJump:false
+        m_settings->registerSetting("MapOptionsPerspectiveV", false);   // 切换视角改 V（默认 F5）
+        m_settings->registerSetting("MapOptionsRenderDistance", 0);     // 0 = 不写
+        m_settings->registerSetting("MapOptionsBobOff", false);         // bobView:false
+        m_settings->registerSetting("MapOptionsBrightGamma", false);    // gamma:1.0
         // 汉化：自动翻译走 OpenAI 兼容接口（Base URL 可以指到任何兼容网关）
         m_settings->registerSetting("MapL10nApiBase", QStringLiteral("https://api.openai.com/v1"));
         m_settings->registerSetting("MapL10nApiKey", QString());

@@ -29,6 +29,7 @@
 #include "InstanceTask.h"
 #include "MapArchiveScanner.h"
 #include "MapMeta.h"
+#include "MapOptionsTxt.h"
 #include "MapTypes.h"
 #include "MapVariant.h"
 #include "tasks/Task.h"
@@ -55,6 +56,14 @@ struct MapImportOptions {
     QString hallSlug;
     /// 语言变体：原版 / 官中 / 汉化（含来源）。同时写进库索引。
     variant::Info variant;
+    /**
+     * 导入时写进 options.txt 的初始值（语言 / 键位 / 云 / 视野…）。
+     *
+     * `hasGameOptions == false` 时由 MapImportTask 退回全局设置
+     * （`MapOptions*` 那几个键），供不经过导入对话框的入口使用。
+     */
+    options::Defaults gameOptions;
+    bool hasGameOptions = false;
 };
 
 /**
@@ -128,14 +137,15 @@ class MapImportTask : public InstanceTask {
     QString m_loaderFallbackNote;
 
     /**
-     * 导入时要写进 options.txt 的偏好，**在构造时从全局设置读一次**。
+     * 导入时要写进 options.txt 的偏好，**在构造时定下来**。
      *
      * 构造发生在 UI 线程（三个调用点都在对话框里），而 `executeTask` 跑在线程池；
      * `SettingsObject` 不是线程安全的，所以不在任务线程里读。
+     *
+     * 来源二选一：导入对话框里玩家勾的那一套（`hasGameOptions`），
+     * 或全局设置里的默认值（不经过对话框的入口）。
      */
-    bool m_optionsSetChinese = false;
-    bool m_optionsSwapSprintSneak = false;
-    bool m_optionsFullscreen = true;
+    options::Defaults m_gameOptions;
 
     QString m_primaryWorldFolder;
     /// 已解出的世界目录（失败回滚用）

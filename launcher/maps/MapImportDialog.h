@@ -23,10 +23,12 @@
 
 #include "MapArchiveScanner.h"
 #include "MapImportTask.h"
+#include "MapOptionsTxt.h"
 #include "MapVariant.h"
 
 class QComboBox;
 class QDialogButtonBox;
+class QCheckBox;
 class QLabel;
 class QPushButton;
 class QLineEdit;
@@ -64,6 +66,10 @@ class MapImportDialog : public QDialog {
     QString effectiveVersion() const;
     /// 把「语言 / 来源」两个下拉拼成变体信息（label 保留文件名的原话）
     variant::Info variantFromUi() const;
+    /// 建「导入时的游戏设置」那一组（短标签 + 长 tooltip）
+    void buildGameOptionsGroup(QVBoxLayout* layout);
+    /// 把这一组复选框读成 options::Defaults
+    options::Defaults gameOptionsFromUi() const;
 
     const MapScanResult m_scan;
 
@@ -80,6 +86,16 @@ class MapImportDialog : public QDialog {
     QComboBox* m_sourceCombo = nullptr;
     /// 从文件名推断出来的原始结论（只用来给默认值与 label，不直接落库）
     variant::Info m_inferred;
+    /// 导入时要写进 options.txt 的初始值（勾选状态）
+    QCheckBox* m_optChinese = nullptr;
+    QCheckBox* m_optSprintSneak = nullptr;
+    QCheckBox* m_optFullscreen = nullptr;
+    QCheckBox* m_optClouds = nullptr;
+    QCheckBox* m_optAutoJump = nullptr;
+    QCheckBox* m_optPerspective = nullptr;
+    QCheckBox* m_optViewDistance = nullptr;
+    QCheckBox* m_optBobView = nullptr;
+    QCheckBox* m_optGamma = nullptr;
     /// 实例名的基础部分（世界名或文件名）；语言一变就在后面加「（简中汉化）」这类后缀
     QString m_baseName;
     QListWidget* m_evidenceList = nullptr;

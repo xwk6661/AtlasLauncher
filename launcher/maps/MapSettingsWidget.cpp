@@ -133,34 +133,22 @@ void MapSettingsWidget::buildGlobalGroups(QWidget* parent, QVBoxLayout* layout)
     });
     layout->addWidget(libraryBox);
 
-    // ── 导入时的游戏设置 ──
-    // 只影响"新建实例时写进 options.txt 的初始值"。玩家进游戏改过之后，启动器不再插手：
-    // 每次启动都强推一遍配置是最讨人厌的行为，这里刻意只写一次。
-    auto* optionsBox = new QGroupBox(tr("导入时的游戏设置"), parent);
-    auto* optionsLayout = new QVBoxLayout(optionsBox);
-    optionsLayout->setSpacing(6);
-
-    m_optionsChinese = new QCheckBox(tr("把游戏语言设为简体中文"), optionsBox);
-    m_optionsChinese->setToolTip(tr("写进实例的 options.txt（lang）。\n"
-                                    "1.13 起是 zh_cn，1.12 及更早是 zh_CN —— 写法不同，按版本自动选。"));
-    m_optionsSprintSneak = new QCheckBox(tr("对调 Shift / Ctrl：Shift 奔跑、Ctrl 蹲下"), optionsBox);
-    m_optionsSprintSneak->setToolTip(tr("MC 默认是 Ctrl 奔跑、Shift 蹲下，这里直接对调。\n"
-                                        "1.12 及更早写的是数字键码（29 / 42），1.13 起写 key.keyboard.*。"));
-    m_optionsFullscreen = new QCheckBox(tr("以全屏进入地图"), optionsBox);
-    m_optionsFullscreen->setToolTip(tr("写进 options.txt 的 fullscreen。\n\n"
-                                       "地图是「一张图就是一个世界」，全屏才是它本来的样子。\n"
-                                       "这一项只是新建实例时的初始值，进游戏后按 F11 随时能切回窗口。"));
-    optionsLayout->addWidget(m_optionsChinese);
-    optionsLayout->addWidget(m_optionsSprintSneak);
-    optionsLayout->addWidget(m_optionsFullscreen);
-
-    auto* optionsHint = new QLabel(tr("只在新建实例时写一次，之后在游戏里怎么改都不会被覆盖。"), optionsBox);
+    /**
+     * 「导入时的游戏设置」不再是设置页里的一组开关。
+     *
+     * 这些值只在**新建实例**那一刻有意义，而设置页要提前替未来的某次导入做决定，
+     * 玩家看不到"这次导入到底会写什么"。现在整套控件搬到了导入对话框里
+     * （逐次可见、逐次可改），这里只留一句指路；勾过的选择会被记住，
+     * 键仍是 `MapOptions*` 那一组，所以老配置照常生效。
+     */
+    auto* optionsHint = new QLabel(tr("导入时的游戏设置（语言、键位、云、视野…）在导入对话框里逐项确认；\n"
+                                      "上次的选择会被记住，下次导入自动带上。"),
+                                   parent);
     optionsHint->setWordWrap(true);
     optionsHint->setEnabled(false);
     optionsHint->setToolTip(tr("版本判不出来时，语言与键位一律跳过 ——\n"
                                "两代写法互不兼容，写错会让蹲/跑静默回到默认键位。"));
-    optionsLayout->addWidget(optionsHint);
-    layout->addWidget(optionsBox);
+    layout->addWidget(optionsHint);
 
     // ── 汉化翻译（OpenAI 兼容接口）──
     // 只用于"把导出的待译清单自动翻成中文"。不填也能用——导出 CSV 自己翻、再导入。
@@ -311,9 +299,6 @@ void MapSettingsWidget::loadSettings()
         return;
 
     m_libraryDir->setText(m_settings->get("MapLibraryDir").toString());
-    m_optionsChinese->setChecked(m_settings->get("MapOptionsForceChinese").toBool());
-    m_optionsSprintSneak->setChecked(m_settings->get("MapOptionsSwapSprintSneak").toBool());
-    m_optionsFullscreen->setChecked(m_settings->get("MapStartFullscreen").toBool());
     m_l10nApiBase->setText(m_settings->get("MapL10nApiBase").toString());
     m_l10nApiKey->setText(m_settings->get("MapL10nApiKey").toString());
     m_l10nModel->setText(m_settings->get("MapL10nModel").toString());
@@ -355,9 +340,6 @@ void MapSettingsWidget::saveSettings()
     m_settings->set("MapSkipExperimentalPrompt", m_skipPrompt->isChecked());
     m_settings->set("MapEnterDelay", m_enterDelay->value());
     m_settings->set("MapLibraryDir", m_libraryDir->text().trimmed());
-    m_settings->set("MapOptionsForceChinese", m_optionsChinese->isChecked());
-    m_settings->set("MapOptionsSwapSprintSneak", m_optionsSprintSneak->isChecked());
-    m_settings->set("MapStartFullscreen", m_optionsFullscreen->isChecked());
     m_settings->set("MapL10nApiBase", m_l10nApiBase->text().trimmed());
     m_settings->set("MapL10nApiKey", m_l10nApiKey->text().trimmed());
     m_settings->set("MapL10nModel", m_l10nModel->text().trimmed());

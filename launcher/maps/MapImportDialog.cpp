@@ -17,11 +17,13 @@
  */
 #include "MapImportDialog.h"
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFileInfo>
 #include <QFormLayout>
 #include <QFrame>
+#include <QGridLayout>
 #include <QGroupBox>
 #include <QLabel>
 #include <QLineEdit>
@@ -33,6 +35,7 @@
 
 #include <algorithm>
 
+#include "Application.h"
 #include "DataVersionTable.h"
 #include "HallMatcher.h"
 #include "MapTextUtils.h"
@@ -164,6 +167,8 @@ MapImportDialog::MapImportDialog(const MapScanResult& scan, QWidget* parent) : Q
     layout->addWidget(identityBox);
     connect(m_languageCombo, &QComboBox::currentIndexChanged, this, &MapImportDialog::languageChanged);
     languageChanged();
+
+    buildGameOptionsGroup(layout);
 
     m_confidenceLabel = new QLabel(this);
     m_confidenceLabel->setWordWrap(true);
@@ -411,6 +416,117 @@ variant::Info MapImportDialog::variantFromUi() const
     return info;
 }
 
+void MapImportDialog::buildGameOptionsGroup(QVBoxLayout* layout)
+{
+    /**
+     * 「导入时的游戏设置」。
+     *
+     * 这些东西只在**新建实例**时写一次，之后玩家在游戏里怎么改都不会被覆盖 ——
+     * 所以决定点必须在"看得见这次导入"的地方（就是这里），而不是设置页里提前替
+     * 未来某次导入做主。
+     *
+     * 标签一律写成「项目：取值」，短到一眼能扫；解释全部放 tooltip。
+     * 每个取值都由 options::applyDefaults 按版本落地，版本对不上的项直接跳过
+     * （见 MapOptionsTxt.h 的 supportsAutoJump / cloudsKey）。
+     */
+    auto* box = new QGroupBox(tr("导入时的游戏设置"), this);
+    box->setToolTip(tr("这些值只在新建实例时写一次 options.txt；之后在游戏里怎么改都不会被覆盖。\n"
+                       "每一项都会按地图版本调整写法，版本对不上的项自动跳过。"));
+    auto* grid = new QGridLayout(box);
+    grid->setHorizontalSpacing(ui::kSpaceL);
+    grid->setVerticalSpacing(ui::kSpaceS);
+    grid->setContentsMargins(ui::kSpaceM, ui::kSpaceM, ui::kSpaceM, ui::kSpaceM);
+
+    options::Defaults saved;
+    if (const auto* app = APPLICATION)
+        saved = options::defaultsFromSettings(app->settings());
+
+    auto make = [box](const QString& label, const QString& tip, bool checked) {
+        auto* check = new QCheckBox(label, box);
+        check->setToolTip(tip);
+        check->setChecked(checked);
+        return check;
+    };
+
+    m_optChinese = make(tr("语言：简体中文"),
+                        tr("把游戏语言写成简体中文（options.txt 的 lang）。\n"
+                           "1.13 起是 zh_cn，1.12 及更早是 zh_CN —— 按地图版本自动选。"),
+                        saved.setChinese);
+    m_optSprintSneak = make(tr("键位：Shift 跑 / Ctrl 蹲"),
+                            tr("MC 默认是 Ctrl 奔跑、Shift 蹲下，这一项直接对调。\n"
+                               "1.12 及更早写数字键码（29 / 42），1.13 起写 key.keyboard.*。\n"
+                               "版本判不出来时整组跳过 —— 写错一代会让蹲/跑静默回默认。"),
+                            saved.swapSprintSneak);
+    m_optFullscreen = make(tr("全屏进入"),
+                           tr("写 fullscreen:true。\n\n"
+                              "地图是「一张图就是一个世界」，全屏是它的正常形态。\n"
+                              "进游戏后按 F11 随时能切回窗口。"),
+                           saved.setFullscreen);
+    m_optClouds = make(tr("云：关闭"),
+                       tr("关掉云。1.8 起写 renderClouds，1.7 及更早写 clouds。\n"
+                          "1.19 起游戏自己写带引号的 \"false\"，这里跟着文件的方言走。\n"
+                          "纯观感 / 性能项，不影响存档。"),
+                       saved.disableClouds);
+    m_optAutoJump = make(tr("自动跳远：关闭"),
+                         tr("关掉 autoJump（1.8 起才有这个键，更早的版本自动跳过）。\n"
+                            "自动跳远会在你走到方块边缘时替你起跳 —— 在跑酷、压力板、\n"
+                            "需要精确落点的地图里常常帮倒忙。"),
+                         saved.disableAutoJump);
+    m_optPerspective = make(tr("切换视角：V"),
+                            tr("把「切换视角」从 F5 改到 V。1.12 及更早写 47（LWJGL2 的 V），\n"
+                               "1.13 起写 key.keyboard.v。\n"
+                               "F5 常被截图 / 录屏 / 显卡工具占用，改成 V 更少撞键。"),
+                            saved.perspectiveOnV);
+    m_optViewDistance = make(tr("视野：12 区块"),
+                             tr("写 renderDistance:12。\n"
+                                "老版本上限 16、新版本 32，超出会被游戏忽略，所以统一夹在 2–32。\n"
+                                "大图 + 远视野很吃内存，12 是画质与帧数的折中。"),
+                             saved.renderDistance > 0);
+    m_optBobView = make(tr("视角摇晃：关闭"),
+                        tr("关掉 bobView（走路时画面上下晃动）。\n"
+                           "容易晕 3D 的玩家建议关；对存档没有任何影响。"),
+                        saved.disableViewBobbing);
+    m_optGamma = make(tr("亮度：最亮"),
+                      tr("写 gamma:1.0（亮度拉满）。\n"
+                         "CTM / RPG 图里常有很暗的洞窟，默认亮度下看不清细节。\n"
+                         "不改游戏难度，只是把显示亮度调高。"),
+                      saved.brightestGamma);
+
+    grid->addWidget(m_optChinese, 0, 0);
+    grid->addWidget(m_optSprintSneak, 0, 1);
+    grid->addWidget(m_optFullscreen, 1, 0);
+    grid->addWidget(m_optClouds, 1, 1);
+    grid->addWidget(m_optAutoJump, 2, 0);
+    grid->addWidget(m_optPerspective, 2, 1);
+    grid->addWidget(m_optViewDistance, 3, 0);
+    grid->addWidget(m_optBobView, 3, 1);
+    grid->addWidget(m_optGamma, 4, 0);
+
+    auto* hint = new QLabel(tr("只写这一次；改过的项会记住，下次导入自动带上。"), box);
+    hint->setWordWrap(true);
+    hint->setFont(ui::metaFont(hint->font()));
+    hint->setStyleSheet(QStringLiteral("color: %1;").arg(ui::mutedTextColor().name()));
+    grid->addWidget(hint, 5, 0, 1, 2);
+
+    layout->addWidget(box);
+}
+
+options::Defaults MapImportDialog::gameOptionsFromUi() const
+{
+    options::Defaults defaults;
+    defaults.setChinese = m_optChinese->isChecked();
+    defaults.swapSprintSneak = m_optSprintSneak->isChecked();
+    defaults.setFullscreen = m_optFullscreen->isChecked();
+    defaults.fullscreen = true;
+    defaults.disableClouds = m_optClouds->isChecked();
+    defaults.disableAutoJump = m_optAutoJump->isChecked();
+    defaults.perspectiveOnV = m_optPerspective->isChecked();
+    defaults.renderDistance = m_optViewDistance->isChecked() ? 12 : 0;
+    defaults.disableViewBobbing = m_optBobView->isChecked();
+    defaults.brightestGamma = m_optGamma->isChecked();
+    return defaults;
+}
+
 MapImportOptions MapImportDialog::options() const
 {
     MapImportOptions options;
@@ -420,6 +536,8 @@ MapImportOptions MapImportDialog::options() const
     options.loaderVersion = m_loaderVersionEdit->text().trimmed();
     options.hallSlug = m_hallCombo->currentData().toString();
     options.variant = variantFromUi();
+    options.gameOptions = gameOptionsFromUi();
+    options.hasGameOptions = true;
 
     // 用户改过版本才记 decidedBy=user；没改就沿用自动判定
     if (m_versionTouched)
@@ -433,7 +551,11 @@ std::optional<MapImportOptions> MapImportDialog::ask(const MapScanResult& scan, 
     MapImportDialog dialog(scan, parent);
     if (dialog.exec() != QDialog::Accepted)
         return std::nullopt;
-    return dialog.options();
+    const auto options = dialog.options();
+    // 记住这次的选择：下一次导入对话框按它预填（"默认值"就是上次的决定）
+    if (auto* app = APPLICATION)
+        options::saveDefaultsToSettings(app->settings(), options.gameOptions);
+    return options;
 }
 
 }  // namespace maps

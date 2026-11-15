@@ -22,6 +22,8 @@
 
 #include <optional>
 
+class SettingsObject;
+
 namespace maps::options {
 
 /**
@@ -57,8 +59,33 @@ QString chineseLanguage(Format format);
 QString sneakValue(Format format);
 /// 同上，`key_key.sprint` 的值
 QString sprintValue(Format format);
+/// `key_key.togglePerspective` 的值（切换视角键，现代写 `key.keyboard.v`，老版写 47）
+QString perspectiveValue(Format format);
 
-/// 导入时要写进 options.txt 的东西（对应设置页的开关）
+/**
+ * 版本能力：某一项在**这个版本**上到底有没有那个键。
+ *
+ * 为什么要单独判：`options.txt` 里不存在的键会被游戏当成坏行跳过
+ * （`Skipping bad option`），不会坏档，但玩家会以为"勾了没生效"。
+ * 所以宁可少写一条，也不写一个该版本没有的键。
+ *
+ * 判不出（空串 / `unknown` / 认不出的形态）时全部返回 false —— 与"判不出代就一条都不写"同一条原则。
+ */
+bool supportsKeybinds(const QString& mcVersion);
+/// `autoJump` 是 1.8 才有的
+bool supportsAutoJump(const QString& mcVersion);
+/// 云的键名：1.8+ 叫 `renderClouds`，更早叫 `clouds`；判不出返回空串
+QString cloudsKey(const QString& mcVersion);
+/**
+ * 关云的取值要不要带引号。
+ *
+ * 1.19 起游戏自己写的是 `renderClouds:"false"`（三态字符串），1.18 及更早是 `renderClouds:false`。
+ * 两种写法在**本文件里**都会被读成"关"，但跟着游戏自己的方言写最稳 ——
+ * 而且如果文件里已经有这一行，`applyDefaults` 会直接沿用那一行的方言，不看版本。
+ */
+bool cloudsValueQuoted(const QString& mcVersion);
+
+/// 导入时要写进 options.txt 的东西
 struct Defaults {
     /// 把语言设成简体中文
     bool setChinese = false;
@@ -70,20 +97,50 @@ struct Defaults {
     bool setFullscreen = false;
     /// 配合 setFullscreen 的值
     bool fullscreen = true;
+    /// 云：关掉（`renderClouds` / 老版的 `clouds`）
+    bool disableClouds = false;
+    /// 自动跳远：关掉（`autoJump`）
+    bool disableAutoJump = false;
+    /// 切换视角改到 V（默认是 F5）
+    bool perspectiveOnV = false;
+    /// 视野距离（区块）；0 = 不写
+    int renderDistance = 0;
+    /// 关掉视角摇晃（`bobView`）
+    bool disableViewBobbing = false;
+    /// 亮度拉到最满（`gamma:1.0`）
+    bool brightestGamma = false;
 
     bool isEmpty() const
     {
-        return !setChinese && !swapSprintSneak && !skipAccessibilityOnboarding && !setFullscreen;
+        return !setChinese && !swapSprintSneak && !skipAccessibilityOnboarding && !setFullscreen && !disableClouds &&
+               !disableAutoJump && !perspectiveOnV && renderDistance <= 0 && !disableViewBobbing && !brightestGamma;
     }
 };
+
+/**
+ * 从启动器设置里读「导入时的游戏设置」。
+ *
+ * 导入对话框把它当作初始勾选状态，玩家改完点确定后由对话框写回设置
+ * （于是下一次导入记住这次的选择）；不经过对话框的入口也直接用它。
+ * `settings == nullptr` 时返回全 false（等于"什么都不写"）。
+ */
+Defaults defaultsFromSettings(SettingsObject* settings);
+
+/**
+ * 把 `defaults` 写回启动器设置（导入对话框点确定时调用）。
+ */
+void saveDefaultsToSettings(SettingsObject* settings, const Defaults& defaults);
 
 /**
  * 就地改写 options.txt 的行：键已存在就替换，不存在就追加，其余行一个字节不动。
  *
  * 幂等——同一份内容跑两遍，第二遍返回 0（`put` 只在值真的变了才算改动）。
+ *
+ * @param mcVersion 用来判「这个版本有没有这个键」（见 supportsAutoJump / cloudsKey）。
+ *        判不出时只写语言、键位对调、全屏这些跨版本稳定的项。
  * @return 实际改动的行数
  */
-int applyDefaults(QStringList& lines, Format format, const Defaults& defaults);
+int applyDefaults(QStringList& lines, Format format, const QString& mcVersion, const Defaults& defaults);
 
 /**
  * 从 options.txt 的现有行里判写法，用于版本判不出来时兜底。
