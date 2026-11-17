@@ -23,6 +23,11 @@
 
 class ToolTipFilter : public QObject {
     Q_OBJECT
+   public:
+    /// 必须能接 parent：这是一个装在 Application 上的长命过滤器，
+    /// 不挂父对象就是进程退出前都不会回收的一处泄漏。
+    explicit ToolTipFilter(QObject* parent = nullptr) : QObject(parent) {}
+
    protected:
     bool eventFilter(QObject* obj, QEvent* event);
 };

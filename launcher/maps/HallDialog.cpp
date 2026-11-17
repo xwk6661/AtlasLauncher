@@ -50,7 +50,7 @@ HallDialog::HallDialog(QWidget* parent) : QDialog(parent)
     resize(900, 560);
 
     m_api = new HallAPI(this);
-    // 设置项里可以换成等价反代（见 docs/atlas 02 §3.6）
+    // 设置项里可以换成等价反代（见 docs/atlas/01 §9）
     m_api->setEndpoint(APPLICATION->settings()->get("MapHallEndpoint").toString());
 
     auto* layout = new QVBoxLayout(this);

@@ -821,7 +821,7 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("MapOptionsForceChinese", true);
         m_settings->registerSetting("MapOptionsSwapSprintSneak", true);
         // 地图实例默认全屏进图：地图是「一张图一个世界」，全屏才是正常形态
-        // （曾被用来绕开「窗口模式整片白」，该问题 2026-11-13 已解决，见 05 文档 §6）
+        // （曾被用来绕开「窗口模式整片白」，该问题 2026-11-13 已解决，见 06 §66）
         m_settings->registerSetting("MapStartFullscreen", true);
         // 以下几项同样只在导入时写一次，默认全关 —— 玩家在导入对话框里勾过之后
         // 由对话框写回这里，于是下次导入自动带上（"记住上次的选择"）。
@@ -1302,7 +1302,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     }
 
     if (qgetenv("XDG_CURRENT_DESKTOP") == "gamescope") {
-        installEventFilter(new ToolTipFilter);
+        // 挂 parent：过滤器要活到进程结束，不挂父对象就没人回收
+        installEventFilter(new ToolTipFilter(this));
     }
 
     // the setup wizard applies the selected theme itself before it is shown
@@ -1707,6 +1708,16 @@ bool Application::launch(MinecraftInstance* instance,
 
 bool Application::kill(BaseInstance* instance)
 {
+    return killInstance(instance, true);
+}
+
+bool Application::forceKill(BaseInstance* instance)
+{
+    return killInstance(instance, false);
+}
+
+bool Application::killInstance(BaseInstance* instance, bool askUser)
+{
     if (!instance->isRunning()) {
         qWarning() << "Attempted to kill instance" << instance->id() << ", which isn't running.";
         return false;
@@ -1717,7 +1728,7 @@ bool Application::kill(BaseInstance* instance)
     auto& controller = extras.controller;
     locker.unlock();
     if (controller) {
-        return controller->abort();
+        return askUser ? controller->abort() : controller->forceAbort();
     }
     return true;
 }
@@ -2219,7 +2230,7 @@ void Application::refreshResourcePaths()
         return;
 
     // 只改这两个基址：meta / metacache 按数据目录解析，搬资源库时它们不动
-    // （见 02 §2.3 的边界说明）。
+    // （见 docs/atlas/01 §5.4 的边界说明）。
     if (m_metacache->setBase("asset_indexes", FS::PathCombine(resource::assetsDir(), "indexes")))
         qInfo() << "Resource paths: asset indexes now at" << FS::PathCombine(resource::assetsDir(), "indexes");
     if (m_metacache->setBase("libraries", resource::librariesDir()))

@@ -238,6 +238,13 @@ class Application : public QApplication {
                 shared_qobject_ptr<MinecraftAccount> accountToUse = nullptr,
                 const QString& offlineName = QString());
     bool kill(BaseInstance* instance);
+    /**
+     * 非交互强制结束：跳过「Kill Minecraft?」确认框。
+     *
+     * 给无人值守的自动流程用（地图的「退出即关」在窗口关不掉时的回退）。
+     * 走交互版会在 GUI 线程上 `exec()` 一个模态框 —— 玩家没看见就等于卡死。
+     */
+    bool forceKill(BaseInstance* instance);
     static void closeCurrentWindow();
 
    private slots:
@@ -257,6 +264,8 @@ class Application : public QApplication {
     void addRunningInstance();
     void subRunningInstance();
     bool shouldExitNow() const;
+    /// kill() / forceKill() 的共用实现
+    bool killInstance(BaseInstance* instance, bool askUser);
 
    private:
     QHash<QString, int> m_qsaveResources;

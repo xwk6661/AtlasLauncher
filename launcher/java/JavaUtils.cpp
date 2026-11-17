@@ -313,15 +313,25 @@ QList<QString> JavaUtils::FindJavaPaths()
     QList<JavaInstallPtr> LIBERICA64s = this->FindJavaFromRegistryKey(KEY_WOW64_64KEY, "SOFTWARE\\BellSoft\\Liberica", "InstallationPath");
     QList<JavaInstallPtr> LIBERICA32s = this->FindJavaFromRegistryKey(KEY_WOW64_32KEY, "SOFTWARE\\BellSoft\\Liberica", "InstallationPath");
 
+    // 老版 Oracle 安装包把 JRE 放在 `%ProgramFiles%\Java\jreN`，注册表里可能没有。
+    // 这里的根目录**不能写死 C:**：系统盘不一定是 C:，Program Files 也可能被改到别的盘。
+    const QString programFiles64 = qEnvironmentVariable("ProgramFiles");
+    const QString programFiles32 = qEnvironmentVariable("ProgramFiles(x86)");
+    auto appendLegacyOracle = [this, &java_candidates](const QString& root, const QString& relative) {
+        if (root.isEmpty())
+            return;
+        java_candidates.append(MakeJavaPtr(QDir::cleanPath(root + QLatin1Char('/') + relative)));
+    };
+
     // List x64 before x86
     java_candidates.append(JRE64s);
     java_candidates.append(NEWJRE64s);
     java_candidates.append(ADOPTOPENJRE64s);
     java_candidates.append(ADOPTIUMJRE64s);
     java_candidates.append(SEMERUJRE64s);
-    java_candidates.append(MakeJavaPtr("C:/Program Files/Java/jre8/bin/javaw.exe"));
-    java_candidates.append(MakeJavaPtr("C:/Program Files/Java/jre7/bin/javaw.exe"));
-    java_candidates.append(MakeJavaPtr("C:/Program Files/Java/jre6/bin/javaw.exe"));
+    appendLegacyOracle(programFiles64, QStringLiteral("Java/jre8/bin/javaw.exe"));
+    appendLegacyOracle(programFiles64, QStringLiteral("Java/jre7/bin/javaw.exe"));
+    appendLegacyOracle(programFiles64, QStringLiteral("Java/jre6/bin/javaw.exe"));
     java_candidates.append(JDK64s);
     java_candidates.append(NEWJDK64s);
     java_candidates.append(ADOPTOPENJDK64s);
@@ -337,9 +347,9 @@ QList<QString> JavaUtils::FindJavaPaths()
     java_candidates.append(ADOPTOPENJRE32s);
     java_candidates.append(ADOPTIUMJRE32s);
     java_candidates.append(SEMERUJRE32s);
-    java_candidates.append(MakeJavaPtr("C:/Program Files (x86)/Java/jre8/bin/javaw.exe"));
-    java_candidates.append(MakeJavaPtr("C:/Program Files (x86)/Java/jre7/bin/javaw.exe"));
-    java_candidates.append(MakeJavaPtr("C:/Program Files (x86)/Java/jre6/bin/javaw.exe"));
+    appendLegacyOracle(programFiles32, QStringLiteral("Java/jre8/bin/javaw.exe"));
+    appendLegacyOracle(programFiles32, QStringLiteral("Java/jre7/bin/javaw.exe"));
+    appendLegacyOracle(programFiles32, QStringLiteral("Java/jre6/bin/javaw.exe"));
     java_candidates.append(JDK32s);
     java_candidates.append(NEWJDK32s);
     java_candidates.append(ADOPTOPENJDK32s);

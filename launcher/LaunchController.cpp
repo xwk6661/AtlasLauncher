@@ -488,19 +488,33 @@ void LaunchController::onProgressRequested(Task* task) const
 
 bool LaunchController::abort()
 {
+    return abortInternal(true);
+}
+
+bool LaunchController::forceAbort()
+{
+    return abortInternal(false);
+}
+
+bool LaunchController::abortInternal(bool askUser)
+{
     if (!m_launcher) {
         return true;
     }
     if (!m_launcher->canAbort()) {
         return false;
     }
-    auto response = CustomMessageBox::selectable(m_parentWidget, tr("Kill Minecraft?"),
-                                                 tr("This can cause the instance to get corrupted and should only be used if Minecraft "
-                                                    "is frozen for some reason"),
-                                                 QMessageBox::Question, QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
-                        ->exec();
-    if (response == QMessageBox::Yes) {
-        return m_launcher->abort();
+    // askUser 且父窗口还活着才弹框。父窗口已经没了（实例窗口被关掉、页面切走）
+    // 时 exec() 就是那个「无人值守挂死」的坑，退化成直接结束。
+    if (askUser && !m_parentWidget.isNull()) {
+        auto response = CustomMessageBox::selectable(m_parentWidget, tr("Kill Minecraft?"),
+                                                     tr("This can cause the instance to get corrupted and should only be used if Minecraft "
+                                                        "is frozen for some reason"),
+                                                     QMessageBox::Question, QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes)
+                            ->exec();
+        if (response != QMessageBox::Yes) {
+            return false;
+        }
     }
-    return false;
+    return m_launcher->abort();
 }

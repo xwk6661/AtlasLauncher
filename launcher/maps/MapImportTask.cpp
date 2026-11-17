@@ -82,6 +82,22 @@ MapImportTask::MapImportTask(QString archivePath, MapScanResult scan, MapImportO
     }
 }
 
+/**
+ * 线程池里的那个 lambda 捕获的是**裸 this**（`QtConcurrent::run(..., [this]{...})`），
+ * 而 `abort()` 只置一个原子标志、不会等人。异步路径上如果任务先被销毁，
+ * 工作线程接下来碰的每一个成员都是悬空的 —— 这里必须先置取消位、再等它收工，
+ * 才能让成员按正常顺序析构。
+ *
+ * 等待发生在析构体里（早于成员析构、早于 ~QObject），所以工作线程投回来的
+ * `invokeMethod(... Qt::QueuedConnection)` 也只会在对象还活着时被投递/丢弃，不会打到半死的对象上。
+ */
+MapImportTask::~MapImportTask()
+{
+    m_abortRequested.store(true);
+    if (m_extractWatcher.isRunning())
+        m_extractWatcher.waitForFinished();
+}
+
 QString MapImportTask::instanceRoot() const
 {
     return m_stagingPath;
@@ -625,6 +641,14 @@ MapReinstallTask::MapReinstallTask(QString instanceRoot, MapMeta meta, bool back
     , m_archivePath(std::move(archivePath))
     , m_variant(std::move(variant))
 {
+}
+
+MapReinstallTask::~MapReinstallTask()
+{
+    // 同上：worker 捕获裸 this，析构必须等它把 abort 位看到并退出来
+    m_abortRequested.store(true);
+    if (m_watcher.isRunning())
+        m_watcher.waitForFinished();
 }
 
 void MapReinstallTask::executeTask()

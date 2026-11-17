@@ -40,6 +40,15 @@ class MapDiskCleanup {
      */
     static CleanupStats cleanStaleResidues(int maxAgeDays = 3);
 
+    /**
+     * 同上，但目标目录由调用方给：**这条重载不碰 Application / QSettings**，可在任意线程跑。
+     *
+     * 启动期清理跑在线程池里，而 `settings()` / `dataRoot()` / `resource::*Dir()` 都是
+     * GUI 线程的东西（后者还要读设置），退出阶段还可能已经析构 —— 所以取值统一在
+     * 调用线程算好，按值传进来。
+     */
+    static CleanupStats cleanStaleResidues(const QStringList& targetDirs, const QString& instancesDir, int maxAgeDays);
+
     /// 清理指定目录树（方便单元测试与独立扫描）
     static CleanupStats cleanDirectoryTree(const QString& rootDir, int maxAgeDays = 3);
 

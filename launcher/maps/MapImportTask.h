@@ -78,7 +78,7 @@ class MapImportTask : public InstanceTask {
 
    public:
     MapImportTask(QString archivePath, MapScanResult scan, MapImportOptions options);
-    ~MapImportTask() override = default;
+    ~MapImportTask() override;
 
     /// 提交成功后由调用方取用：主存档目录名（saves/ 下的那级）
     QString primaryWorldFolder() const { return m_primaryWorldFolder; }
@@ -172,7 +172,7 @@ class MapReinstallTask : public Task {
      */
     MapReinstallTask(QString instanceRoot, MapMeta meta, bool backupExisting = true, QString archivePath = {},
                      variant::Info variant = {});
-    ~MapReinstallTask() override = default;
+    ~MapReinstallTask() override;
 
     void executeTask() override;
     bool abort() override;

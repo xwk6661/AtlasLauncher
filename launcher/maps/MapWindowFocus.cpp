@@ -86,6 +86,11 @@ HWND findGameWindow(DWORD pid)
 /// SetForegroundWindow 对「不是前台进程」的调用方通常直接失败，先 attach 到前台线程
 void giveForeground(HWND hwnd)
 {
+    // EnumWindows 之后到这一拍之间，窗口可能已经被游戏自己关掉了；
+    // 对已销毁的 HWND 动前台/激活是未定义行为，先复核一次
+    if (hwnd == nullptr || !IsWindow(hwnd))
+        return;
+
     const HWND foreground = GetForegroundWindow();
     const DWORD foregroundThread = foreground != nullptr ? GetWindowThreadProcessId(foreground, nullptr) : 0;
     const DWORD ourThread = GetCurrentThreadId();
@@ -113,9 +118,13 @@ void armGameWindowFocus(MinecraftInstance* instance, int timeoutMs)
         return;
 
 #ifdef Q_OS_WIN
-    // 上一次的定时器还没收尾（同一实例连续启动）就直接作废，避免两个一起抢焦点
+    // 上一次的定时器还没收尾（同一实例连续启动）就彻底作废：
+    // 只 stop + deleteLater 是不够的 —— 对象真正销毁前仍在子对象列表里，findChild 还会
+    // 捡到它，连续启动就可能有两个表一起抢前台。断连接 + 抹名字，一次性断干净。
     if (auto* old = instance->findChild<QTimer*>(QString::fromLatin1(FOCUS_TIMER_NAME))) {
         old->stop();
+        old->disconnect();
+        old->setObjectName(QString());
         old->deleteLater();
     }
 
@@ -131,6 +140,8 @@ void armGameWindowFocus(MinecraftInstance* instance, int timeoutMs)
     QObject::connect(timer, &QTimer::timeout, timer, [timer, instance, startedAt, deadline, state] {
         auto finish = [timer] {
             timer->stop();
+            // 名字是「这个实例还有没有活的焦点表」的唯一索引，收工时必须让出来
+            timer->setObjectName(QString());
             timer->deleteLater();
         };
 
@@ -142,7 +153,11 @@ void armGameWindowFocus(MinecraftInstance* instance, int timeoutMs)
         }
         if (pid > 0) {
             HWND game = findGameWindow(static_cast<DWORD>(pid));
-            if (game != nullptr) {
+            // 句柄可能已被系统回收给别的窗口：动手前复核存活与 pid
+            DWORD gamePid = 0;
+            if (game != nullptr)
+                GetWindowThreadProcessId(game, &gamePid);
+            if (game != nullptr && IsWindow(game) && gamePid == static_cast<DWORD>(pid)) {
                 if (GetForegroundWindow() == game) {
                     // 连续 3 秒（12 拍）在前台、且已经盯满 30 秒才算稳住。
                     // 为什么不能更早收工：启动器的进度框要等游戏进程起来才关（约 T+17s），

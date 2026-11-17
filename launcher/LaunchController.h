@@ -34,6 +34,9 @@
  */
 
 #pragma once
+#include <QPointer>
+#include <QWidget>
+
 #include <tools/BaseProfiler.h>
 
 #include "minecraft/MinecraftInstance.h"
@@ -72,7 +75,18 @@ class LaunchController : public Task {
 
     bool abort() override;
 
+    /**
+     * 不弹确认框、不跑事件循环的强制结束。
+     *
+     * `abort()` 会先问一句「Kill Minecraft?」——它对人是合适的，对无人值守的自动流程
+     * （地图的「退出即关」回退通道）就是死锁：`exec()` 把 GUI 线程挂在模态框上，
+     * 玩家没看见窗口，游戏就永远退不掉。自动流程一律走这条。
+     */
+    bool forceAbort();
+
    private:
+    /// abort() 与 forceAbort() 的共用实现；askUser=false 时跳过确认
+    bool abortInternal(bool askUser);
     void login();
     void launchInstance();
     void decideAccount();
@@ -94,7 +108,9 @@ class LaunchController : public Task {
     BaseProfilerFactory* m_profiler = nullptr;
     QString m_offlineName;
     MinecraftInstance* m_instance = nullptr;
-    QWidget* m_parentWidget = nullptr;
+    /// 用 QPointer：实例窗口 / 主窗口可能在启动过程中被销毁，
+    /// 裸指针留着要么悬空、要么让确认框变成没有父窗口的野模态
+    QPointer<QWidget> m_parentWidget = nullptr;
     InstanceWindow* m_console = nullptr;
     MinecraftAccountPtr m_accountToUse = nullptr;
     AuthSessionPtr m_session = nullptr;

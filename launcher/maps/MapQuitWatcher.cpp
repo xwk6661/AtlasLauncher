@@ -59,6 +59,10 @@ int closeWindowsOfPid(qint64 pid)
             GetWindowThreadProcessId(hwnd, &windowPid);
             if (windowPid != ctx->pid)
                 return TRUE;
+            // EnumWindows 只给活着的窗口，但到这一拍之间它可能已经没了；对已销毁的 HWND
+            // 发消息是未定义行为，先复核
+            if (!IsWindow(hwnd))
+                return TRUE;
             // 只要顶层可见窗口：GLFW 还会建隐藏的消息窗、辅助窗
             if (!IsWindowVisible(hwnd) || GetWindow(hwnd, GW_OWNER) != nullptr)
                 return TRUE;
@@ -94,7 +98,9 @@ MapQuitWatcher::MapQuitWatcher(MinecraftInstance* instance) : QObject(instance),
     connect(m_killTimer, &QTimer::timeout, this, [this] {
         if (m_instance->isRunning()) {
             qDebug() << "Map quit watcher: game did not close by itself, killing" << m_instance->id();
-            APPLICATION->kill(m_instance);
+            // 必须走非交互通道：交互版会在 GUI 线程上 exec() 一个「Kill Minecraft?」模态框，
+            // 而这条路径本来就是「无人值守也要能关」的兜底
+            APPLICATION->forceKill(m_instance);
         }
     });
 
@@ -130,6 +136,8 @@ void MapQuitWatcher::hookTask()
 
 void MapQuitWatcher::onRunningChanged(bool running)
 {
+    // 新一代：上一轮排着的 10 秒兜底表就此作废
+    ++m_armGeneration;
     m_armed = false;
     m_fired = false;
     m_killTimer->stop();
@@ -168,11 +176,20 @@ void MapQuitWatcher::onGameLogLine(const QString& line)
         m_armed = true;
         m_armedAt.start();
         qDebug() << "Map quit watcher: player left the world, waiting for the save marker" << m_instance->id();
-        QTimer::singleShot(ARM_TIMEOUT_MS, this, [this] {
-            if (m_armed && !m_fired) {
-                qDebug() << "Map quit watcher: no save marker in time, closing anyway";
-                fire();
-            }
+        /**
+         * 兜底表带「代数」：只认自己那一代。
+         *
+         * 以前只查共享的 `m_armed`：玩家 10 秒内重启、再次离图时 m_armed 又是 true，
+         * 上一轮还没到点的表就会把这一轮提前关掉。代数 + m_armedAt 双重判定把这条路堵死。
+         */
+        const int generation = ++m_armGeneration;
+        QTimer::singleShot(ARM_TIMEOUT_MS, this, [this, generation] {
+            if (generation != m_armGeneration || !m_armed || m_fired)
+                return;
+            if (m_armedAt.elapsed() < ARM_TIMEOUT_MS)
+                return;  // 这一轮才刚开始，等它自己的表
+            qDebug() << "Map quit watcher: no save marker in time, closing anyway";
+            fire();
         });
         return;
     }
@@ -213,7 +230,7 @@ void MapQuitWatcher::closeGame()
 
     // 找不到窗口（无边框/被包装器接管）就直接让它退；标题画面没有任何未落盘数据
     qDebug() << "Map quit watcher: no game window found, terminating instance" << m_instance->id();
-    APPLICATION->kill(m_instance);
+    APPLICATION->forceKill(m_instance);
 }
 
 }  // namespace maps

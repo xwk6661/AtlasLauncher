@@ -118,7 +118,7 @@ auto DownloadMonitor::snapshot() -> DownloadSnapshot
 
         // 全局瞬时速率按活跃文件在窗口内的正向净增字节计算，
         // 绝不直接做 (out.bytesDone - m_lastBytes) 相减：一旦某个文件完成移出活跃列表，
-        // bytesDone 会瞬间下跌几 MB 到几十 MB，直接算出巨大负速度将仪表盘清零（06 §141）。
+        // bytesDone 会瞬间下跌几 MB 到几十 MB，直接算出巨大负速度将仪表盘清零（06 §44）。
         const double instant = double(totalIntervalBytes) * 1000.0 / double(dt);
         m_speed = kSmoothing * instant + (1.0 - kSmoothing) * m_speed;
         m_lastBytes = out.bytesDone;

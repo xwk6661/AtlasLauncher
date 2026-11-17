@@ -43,6 +43,42 @@ qint64 calculateDirectorySize(const QString& dirPath)
     return size;
 }
 
+/// 「要清哪些目录」这份纯数据。只在 GUI 线程结算，再整份交给工作线程。
+struct CleanupTargets {
+    QString instancesDir;
+    QStringList dirs;
+};
+
+/**
+ * 在**调用线程**把目标算成纯字符串。
+ *
+ * `APPLICATION_DYN->settings()`、`dataRoot()`、`resource::assetsDir()` 都读全局状态
+ * （后者还要读设置项），只能在 GUI 线程用；线程池里的 lambda 直接访问既是跨线程，
+ * 启动退出阶段还可能撞上已析构的 Application。
+ */
+CleanupTargets collectTargets()
+{
+    CleanupTargets targets;
+
+    // 1. instances/.tmp 孤儿临时目录（上次意外崩溃/强杀留下的半截导入）
+    if (APPLICATION_DYN && APPLICATION_DYN->settings())
+        targets.instancesDir = APPLICATION_DYN->settings()->get("InstanceDir").toString();
+    if (targets.instancesDir.isEmpty())
+        targets.instancesDir = FS::PathCombine(QDir::currentPath(), "instances");
+
+    // 2. assets / libraries / java / meta / instances 里的悬挂与过期 .part
+    targets.dirs << resource::assetsDir() << resource::librariesDir() << resource::javaDir();
+    if (APPLICATION_DYN)
+        targets.dirs << FS::PathCombine(APPLICATION_DYN->dataRoot(), "meta");
+    else
+        targets.dirs << FS::PathCombine(QDir::currentPath(), "meta");
+    if (!targets.instancesDir.isEmpty())
+        targets.dirs << targets.instancesDir;
+    targets.dirs.removeDuplicates();
+
+    return targets;
+}
+
 }  // namespace
 
 CleanupStats MapDiskCleanup::cleanDirectoryTree(const QString& rootDir, int maxAgeDays)
@@ -87,17 +123,15 @@ CleanupStats MapDiskCleanup::cleanDirectoryTree(const QString& rootDir, int maxA
 
 CleanupStats MapDiskCleanup::cleanStaleResidues(int maxAgeDays)
 {
+    const auto targets = collectTargets();
+    return cleanStaleResidues(targets.dirs, targets.instancesDir, maxAgeDays);
+}
+
+CleanupStats MapDiskCleanup::cleanStaleResidues(const QStringList& targetDirs, const QString& instancesDir, int maxAgeDays)
+{
     CleanupStats totalStats;
 
-    // 1. 清理 instances/.tmp 孤儿临时目录（上次意外崩溃/强杀留下的半截导入）
-    QString instancesDir;
-    if (APPLICATION_DYN && APPLICATION_DYN->settings()) {
-        instancesDir = APPLICATION_DYN->settings()->get("InstanceDir").toString();
-    }
-    if (instancesDir.isEmpty()) {
-        instancesDir = FS::PathCombine(QDir::currentPath(), "instances");
-    }
-
+    // 1. 清理 instances/.tmp 孤儿临时目录
     if (!instancesDir.isEmpty()) {
         const QString tmpDir = FS::PathCombine(instancesDir, ".tmp");
         if (QDir(tmpDir).exists()) {
@@ -114,22 +148,6 @@ CleanupStats MapDiskCleanup::cleanStaleResidues(int maxAgeDays)
     }
 
     // 2. 清理 assets, libraries, java, meta, instances 里的悬挂/过期 part 文件
-    QStringList targetDirs;
-    targetDirs << resource::assetsDir()
-               << resource::librariesDir()
-               << resource::javaDir();
-
-    if (APPLICATION_DYN) {
-        targetDirs << FS::PathCombine(APPLICATION_DYN->dataRoot(), "meta");
-    } else {
-        targetDirs << FS::PathCombine(QDir::currentPath(), "meta");
-    }
-    if (!instancesDir.isEmpty()) {
-        targetDirs << instancesDir;
-    }
-
-    targetDirs.removeDuplicates();
-
     for (const auto& path : targetDirs) {
         const auto stats = cleanDirectoryTree(path, maxAgeDays);
         totalStats.removedParallelPartFiles += stats.removedParallelPartFiles;
@@ -149,8 +167,10 @@ CleanupStats MapDiskCleanup::cleanStaleResidues(int maxAgeDays)
 
 void MapDiskCleanup::cleanAsync(int maxAgeDays)
 {
-    QThreadPool::globalInstance()->start([maxAgeDays]() {
-        cleanStaleResidues(maxAgeDays);
+    // 取值就在调用线程（GUI）做完，工作线程只拿到一份字符串清单
+    const auto targets = collectTargets();
+    QThreadPool::globalInstance()->start([targets, maxAgeDays]() {
+        cleanStaleResidues(targets.dirs, targets.instancesDir, maxAgeDays);
     });
 }
 

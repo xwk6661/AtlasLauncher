@@ -126,7 +126,7 @@ MapInstancePage::MapInstancePage(MinecraftInstance* instance, QWidget* parent) :
      * 卡片外观与评论一致（MapTheme::ui::cardStyle），字段名用次要色、值靠右占满剩余宽度。
      *
      * 注意内容**直接建进这一页**：以前先建到顶层再用 takeAt 搬进页签，QFormLayout
-     * 会丢掉拉伸约束，行距被撑开半屏（见 §5.2 第 48 条）。
+     * 会丢掉拉伸约束，行距被撑开半屏（见 06 §48）。
      */
     auto* minePage = new QWidget(this);
     auto* mineLayout = new QVBoxLayout(minePage);

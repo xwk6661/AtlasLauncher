@@ -67,6 +67,8 @@ class MapQuitWatcher : public QObject {
     /// 那个已经结束的任务（第一次启动时是 nullptr，所以靠重试躲过去了，第二次就静默失效）。
     QTimer* m_recheckTimer = nullptr;
     QElapsedTimer m_armedAt;
+    /// 「离图」轮次。兜底表与 fire 都只认自己那一代，防止 10 秒内重启再离图时被上一轮的表误关
+    int m_armGeneration = 0;
     /// 当前连着的任务；任务销毁后 QPointer 自动变空，下次核对就会重连
     QPointer<LaunchTask> m_hookedTask;
     QMetaObject::Connection m_logConnection;
