@@ -76,6 +76,17 @@ class MapLibraryPanel : public QWidget {
     void editVariant(const QString& file);
     /// 改「地图版本」（v1.0 这种，界面默认 1.0）
     void editMapVersion(const QString& file);
+    /// 重命名整张图（组标题右键）：写索引里的 `title`，只影响显示、不动分组键
+    void renameGroup(const QString& groupKey, const QString& currentTitle);
+    /// 重命名独立成图的那一条
+    void renameItem(const QString& file);
+    /**
+     * 组标题的统一算法：玩家改过的名字 → 站上标准名 → 索引显示名（去掉 ` - by xxx`）。
+     *
+     * 必须只有一处：折叠时的组标题、右键菜单里的当前名、重命名框的初值都用它，
+     * 否则"看到的名字"和"改的名字"会对不上。
+     */
+    QString groupTitleFor(const QList<LibraryItem>& list) const;
     /// 组标题菜单：信息 + 展开/收起 + 导入特定版本 + 整组类别/关联
     void showGroupContextMenu(const QString& groupKey, const QPoint& globalPos);
     /// 组内版本菜单：**只能**导入和改它自己的字段，碰不到组标题

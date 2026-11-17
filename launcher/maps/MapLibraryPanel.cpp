@@ -22,6 +22,7 @@
 #include "DataVersionTable.h"
 #include "FileSystem.h"
 #include "HallCache.h"
+#include "HallMatcher.h"
 #include "MapPackAttach.h"
 #include "MapMeta.h"
 
@@ -811,20 +812,10 @@ void MapLibraryPanel::rebuildTable()
             const auto& head = list.first();
             const int installedInGroup = groupInstalled(list);
 
-            // 组标题优先用站上的标准名（`Bitstream` 而不是 `Bitstream - by Gibbs & Asometric`）；
+            // 组标题优先用玩家改过的名字；没改过用站上的标准名
+            // （`Bitstream` 而不是 `Bitstream - by Gibbs & Asometric`）；
             // 没关联大厅才退回索引里的名字，并把 ` - by 作者` 这类尾巴去掉。
-            QString groupTitle = head.displayName();
-            if (!head.hallSlug.isEmpty()) {
-                const auto hallRow = HallCache::findListRow(head.hallSlug);
-                const QString hallName = hallRow.value(QStringLiteral("name")).toString();
-                if (!hallName.isEmpty())
-                    groupTitle = hallName;
-            }
-            static const QRegularExpression bySuffix(QStringLiteral("\\s*[-–—]\\s*by\\s+.*$"),
-                                                    QRegularExpression::CaseInsensitiveOption);
-            groupTitle.remove(bySuffix);
-            if (groupTitle.isEmpty())
-                groupTitle = head.displayName();
+            const QString groupTitle = groupTitleFor(list);
 
             // 标题只写图名，版本数不再摆在标题里 —— 折叠时组下面根本看不到行，
             // "（2 个版本）"只是在解释一个看不见的东西。数量放 tooltip。
@@ -1063,6 +1054,91 @@ void MapLibraryPanel::applyCategoryToGroup(const QString& groupKey, const QStrin
     });
 }
 
+QString MapLibraryPanel::groupTitleFor(const QList<LibraryItem>& list) const
+{
+    if (list.isEmpty())
+        return {};
+
+    // 改名是「整组写」的，所以组里任意一条带 title 就是这张图现在的名字；
+    // 全都空着才回落到自动推断。这一条必须排在站上标准名之前 ——
+    // 否则关联了大厅的组怎么改都改不动（站上的名字会一直盖住玩家的选择）。
+    for (const auto& item : list) {
+        if (!item.title.isEmpty())
+            return item.title;
+    }
+
+    int headIndex = 0;
+    for (int i = 0; i < list.size(); ++i) {
+        if (list.at(i).variant.isDefault) {
+            headIndex = i;
+            break;
+        }
+    }
+    const auto& head = list.at(headIndex);
+
+    QString groupTitle = head.displayName();
+    if (!head.hallSlug.isEmpty()) {
+        const auto hallRow = HallCache::findListRow(head.hallSlug);
+        const QString hallName = hallRow.value(QStringLiteral("name")).toString();
+        if (!hallName.isEmpty())
+            groupTitle = hallName;
+    }
+    static const QRegularExpression bySuffix(QStringLiteral("\\s*[-–—]\\s*by\\s+.*$"),
+                                            QRegularExpression::CaseInsensitiveOption);
+    groupTitle.remove(bySuffix);
+    return groupTitle.isEmpty() ? head.displayName() : groupTitle;
+}
+
+void MapLibraryPanel::renameGroup(const QString& groupKey, const QString& currentTitle)
+{
+    const auto list = m_library.groupItems(groupKey);
+    if (list.isEmpty())
+        return;
+
+    bool ok = false;
+    const QString text = QInputDialog::getText(this, tr("重命名这张图"),
+                                               tr("它在地图库里叫什么（留空 = 恢复自动推断）。\n"
+                                                  "只改显示名：不动文件名、不动分组，同组的几个语言版本也不会被拆开。"),
+                                               QLineEdit::Normal, currentTitle, &ok);
+    if (!ok)
+        return;
+
+    QStringList files;
+    for (const auto& item : list)
+        files << item.file;
+    if (!m_library.setTitleForItems(files, text)) {
+        QMessageBox::warning(this, tr("重命名失败"),
+                             tr("无法写入地图库索引：%1").arg(QDir::toNativeSeparators(MapLibrary::indexPath())));
+    }
+}
+
+void MapLibraryPanel::renameItem(const QString& file)
+{
+    LibraryItem item;
+    bool found = false;
+    for (const auto& candidate : m_library.items()) {
+        if (candidate.file == file) {
+            item = candidate;
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        return;
+
+    bool ok = false;
+    const QString text = QInputDialog::getText(this, tr("重命名这张图"),
+                                               tr("它在地图库里叫什么（留空 = 恢复自动推断）。\n"
+                                                  "只改显示名：不动文件名，也不影响识别出来的版本与语言。"),
+                                               QLineEdit::Normal, item.displayName(), &ok);
+    if (!ok)
+        return;
+    if (!m_library.setTitle(file, text)) {
+        QMessageBox::warning(this, tr("重命名失败"),
+                             tr("无法写入地图库索引：%1").arg(QDir::toNativeSeparators(MapLibrary::indexPath())));
+    }
+}
+
 void MapLibraryPanel::showItemContextMenu(const QPoint& pos)
 {
     // `customContextMenuRequested` 给的坐标**已经是视口坐标**（和 itemAt / indexAt 同一套）。
@@ -1134,6 +1210,10 @@ void MapLibraryPanel::showGroupContextMenu(const QString& groupKey, const QPoint
     QAction* toggle = menu.addAction(expanded ? tr("收起") : tr("展开"));
     connect(toggle, &QAction::triggered, this, [this, groupKey] { toggleGroup(groupKey); });
 
+    QAction* renameAction = menu.addAction(tr("重命名这张图…"));
+    connect(renameAction, &QAction::triggered, this,
+            [this, groupKey, current = groupTitleFor(list)] { renameGroup(groupKey, current); });
+
     // 不给"导入默认版本"：一组里哪个算默认是程序猜的，玩家要的是**自己挑一个**；
     // 两项并存时"默认"还会被当成推荐，点错就多建一个实例。
     QMenu* versions = menu.addMenu(tr("导入特定版本"));
@@ -1159,10 +1239,12 @@ void MapLibraryPanel::showGroupContextMenu(const QString& groupKey, const QPoint
     }
 
     if (defaultItem->hallSlug.isEmpty()) {
-        QAction* link = menu.addAction(tr("关联到大厅地图…"));
+        QAction* link = menu.addAction(tr("关联到 CTM 地图站条目…"));
         connect(link, &QAction::triggered, this, [this, files] { pickHallMap(files); });
     } else {
-        QAction* unlink = menu.addAction(tr("解除大厅关联（整组）"));
+        QAction* relink = menu.addAction(tr("更换 CTM 地图关联…"));
+        connect(relink, &QAction::triggered, this, [this, files] { pickHallMap(files); });
+        QAction* unlink = menu.addAction(tr("解除 CTM 地图关联（整组）"));
         connect(unlink, &QAction::triggered, this, [this, files] {
             for (const auto& file : files)
                 m_library.setHallLink(file, QString(), false);
@@ -1255,6 +1337,18 @@ void MapLibraryPanel::editMapVersion(const QString& file)
 
 void MapLibraryPanel::showStandaloneMenu(const QString& file, const QPoint& globalPos)
 {
+    LibraryItem item;
+    bool found = false;
+    for (const auto& candidate : m_library.items()) {
+        if (candidate.file == file) {
+            item = candidate;
+            found = true;
+            break;
+        }
+    }
+    if (!found)
+        return;
+
     const QString path = QFileInfo(QDir(MapLibrary::libraryDir()), file).absoluteFilePath();
 
     QMenu menu(this);
@@ -1262,22 +1356,16 @@ void MapLibraryPanel::showStandaloneMenu(const QString& file, const QPoint& glob
     QAction* openAction = menu.addAction(tr("打开所在目录"));
     menu.addSeparator();
 
+    QAction* renameAction = menu.addAction(tr("重命名这张图…"));
     QAction* variantAction = menu.addAction(tr("语言标签…"));
     QAction* versionAction = menu.addAction(tr("地图版本…"));
 
     // 类别：直接在这里改，不用把行拖到左边
     QMenu* categoryMenu = menu.addMenu(tr("类别"));
-    const QString currentCategory = [this, &file] {
-        for (const auto& item : m_library.items()) {
-            if (item.file == file)
-                return item.category;
-        }
-        return QString();
-    }();
     for (const auto& category : m_library.categories()) {
         QAction* action = categoryMenu->addAction(category.name);
         action->setCheckable(true);
-        action->setChecked(category.id == currentCategory);
+        action->setChecked(category.id == item.category);
         connect(action, &QAction::triggered, this, [this, file, id = category.id] { applyCategory(file, id); });
     }
 
@@ -1285,25 +1373,20 @@ void MapLibraryPanel::showStandaloneMenu(const QString& file, const QPoint& glob
     QMenu* groupMenu = menu.addMenu(tr("所属主"));
     QAction* standalone = groupMenu->addAction(tr("独立成图（不关联）"));
     standalone->setCheckable(true);
-    standalone->setChecked([this, &file] {
-        for (const auto& item : m_library.items())
-            if (item.file == file)
-                return item.hallSlug.isEmpty();
-        return true;
-    }());
+    standalone->setChecked(item.hallSlug.isEmpty());
     connect(standalone, &QAction::triggered, this, [this, file] { m_library.setHallLink(file, QString(), false); });
 
     groupMenu->addSeparator();
     // 现有图组：有大厅关联的按 slug 挂，没有的按英文名（本地分组）合
     QHash<QString, QString> slugNames;     // slug -> 显示名
     QHash<QString, QString> localNames;    // englishName -> 显示名
-    for (const auto& item : m_library.items()) {
-        if (!item.hallSlug.isEmpty()) {
-            if (!slugNames.contains(item.hallSlug))
-                slugNames.insert(item.hallSlug, item.displayName());
-        } else if (!item.englishName.isEmpty()) {
-            if (!localNames.contains(item.englishName))
-                localNames.insert(item.englishName, item.displayName());
+    for (const auto& candidate : m_library.items()) {
+        if (!candidate.hallSlug.isEmpty()) {
+            if (!slugNames.contains(candidate.hallSlug))
+                slugNames.insert(candidate.hallSlug, candidate.displayName());
+        } else if (!candidate.englishName.isEmpty()) {
+            if (!localNames.contains(candidate.englishName))
+                localNames.insert(candidate.englishName, candidate.displayName());
         }
     }
 
@@ -1314,6 +1397,7 @@ void MapLibraryPanel::showStandaloneMenu(const QString& file, const QPoint& glob
     for (const auto& slug : slugs) {
         QAction* action = groupMenu->addAction(tr("%1（%2）").arg(slugNames.value(slug), slug));
         action->setCheckable(true);
+        action->setChecked(slug == item.hallSlug);
         connect(action, &QAction::triggered, this, [this, file, slug] { m_library.setHallLink(file, slug, false); });
     }
 
@@ -1329,9 +1413,22 @@ void MapLibraryPanel::showStandaloneMenu(const QString& file, const QPoint& glob
             m_library.setEnglishName(file, name);
         });
     }
-    groupMenu->addSeparator();
-    QAction* searchHall = groupMenu->addAction(tr("从大厅搜索…"));
-    connect(searchHall, &QAction::triggered, this, [this, file] { pickHallMap({ file }); });
+
+    /**
+     * CTM 地图站关联放在**顶层**，不再藏进「所属主」。
+     *
+     * 对 CTM 这类图来说，"它对应站上的哪一条"是最常做的一件事；
+     * 以前要从「所属主 → 从大厅搜索…」进去，等于两层菜单后面的暗门。
+     * 关联之后子菜单里那几条「现有分组」依然可用（那是本地合并，不是站上关联）。
+     */
+    menu.addSeparator();
+    QAction* hallLinkAction = menu.addAction(item.hallSlug.isEmpty() ? tr("关联到 CTM 地图站条目…")
+                                                                    : tr("更换 CTM 地图站条目…"));
+    connect(hallLinkAction, &QAction::triggered, this, [this, file] { pickHallMap({ file }); });
+    if (!item.hallSlug.isEmpty()) {
+        QAction* unlinkAction = menu.addAction(tr("解除 CTM 地图关联"));
+        connect(unlinkAction, &QAction::triggered, this, [this, file] { m_library.setHallLink(file, QString(), false); });
+    }
 
     menu.addSeparator();
 
@@ -1349,6 +1446,8 @@ void MapLibraryPanel::showStandaloneMenu(const QString& file, const QPoint& glob
         QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
     } else if (chosen == attachAction) {
         attachResourcePack(file, path);
+    } else if (chosen == renameAction) {
+        renameItem(file);
     } else if (chosen == variantAction) {
         editVariant(file);
     } else if (chosen == versionAction) {
@@ -1555,33 +1654,90 @@ void MapLibraryPanel::pickHallMap(const QStringList& files)
     const auto snapshot = HallCache::load();
     if (!snapshot.isValid()) {
         QMessageBox::information(this, tr("还没有大厅数据"),
-                                 tr("先打开「添加实例 → CTM 地图」，点一次「更新数据」。"));
+                                 tr("先打开「添加实例 → CTM 地图」，点一次「更新数据」。\n"
+                                    "关联要对着站上的真实条目挑，本地得先有那份清单。"));
         return;
     }
 
+    // 本地这张图叫什么、判出来什么版本 —— 用来自动挑候选（与导入对话框同一套匹配器）
+    LibraryItem primary;
+    for (const auto& item : m_library.items()) {
+        if (item.file == files.first()) {
+            primary = item;
+            break;
+        }
+    }
+
+    HallMatchQuery query;
+    query.englishName = primary.englishName;
+    query.chineseName = primary.chineseName.isEmpty() ? primary.title : primary.chineseName;
+    query.fileName = primary.file;
+    query.mcVersion = primary.mcVersion;
+    const auto suggestions = HallMatcher::suggest(query, 5);
+    const QString currentSlug = primary.hallSlug;
+
     QDialog dialog(this);
-    dialog.setWindowTitle(tr("关联到 CTM 地图"));
-    dialog.resize(560, 460);
+    dialog.setWindowTitle(tr("关联到 CTM 地图站条目"));
+    dialog.resize(620, 520);
     auto* layout = new QVBoxLayout(&dialog);
+
+    auto* hint = new QLabel(files.size() > 1 ? tr("整组 %1 个语言版本会一起锚到同一条目上。").arg(files.size())
+                                             : tr("「%1」对应站上的哪一张？").arg(primary.displayName()),
+                            &dialog);
+    hint->setWordWrap(true);
+    layout->addWidget(hint);
+
     auto* filter = new QLineEdit(&dialog);
-    filter->setPlaceholderText(tr("按名字过滤（缓存里有 %1 张）").arg(snapshot.listRows.size()));
+    filter->setPlaceholderText(tr("按名字或 slug 过滤（缓存里有 %1 张）").arg(snapshot.listRows.size()));
     auto* list = new QListWidget(&dialog);
     layout->addWidget(filter);
     layout->addWidget(list, 1);
+
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
     layout->addWidget(buttons);
 
-    const auto rebuild = [list](const QJsonArray& rows, const QString& text) {
+    /**
+     * 列表 = 「推荐」+「全部条目」。
+     *
+     * 只给全部条目的话，玩家得在 2000+ 行里自己认名字（站上的名字常带 ` - by 作者`，
+     * 而本地包名可能是中文）；只给推荐又会在匹配器失手时无路可走。两段都留着，
+     * 推荐在上、并写清"为什么像"。
+     */
+    const auto rebuild = [list, suggestions](const QJsonArray& rows, const QString& text) {
         list->clear();
+        QSet<QString> seen;
+        const auto matches = [&text](const QString& name, const QString& slug) {
+            return text.isEmpty() || name.contains(text, Qt::CaseInsensitive) || slug.contains(text, Qt::CaseInsensitive);
+        };
+
+        int recommended = 0;
+        for (const auto& candidate : suggestions) {
+            if (!matches(candidate.name, candidate.slug))
+                continue;
+            auto* item = new QListWidgetItem(
+                QStringLiteral("★ %1  ·  %2  ·  MC %3").arg(candidate.name, candidate.reason, candidate.version));
+            item->setData(Qt::UserRole, candidate.slug);
+            item->setToolTip(tr("站上名称：%1\nMC 版本：%2\nslug：%3\n为什么像：%4（%5）")
+                                 .arg(candidate.name, candidate.version, candidate.slug, candidate.reason)
+                                 .arg(candidate.score, 0, 'f', 2));
+            list->addItem(item);
+            seen.insert(candidate.slug);
+            ++recommended;
+        }
+        if (recommended > 0) {
+            auto* separator = new QListWidgetItem(tr("── 全部条目 ──"));
+            separator->setFlags(Qt::NoItemFlags);
+            list->addItem(separator);
+        }
+
         int shown = 0;
         for (const auto& value : rows) {
             const auto row = value.toObject();
             const QString name = row.value(QStringLiteral("name")).toString();
             const QString slug = row.value(QStringLiteral("slug")).toString();
-            if (name.isEmpty() || slug.isEmpty())
+            if (name.isEmpty() || slug.isEmpty() || seen.contains(slug))
                 continue;
-            if (!text.isEmpty() && !name.contains(text, Qt::CaseInsensitive) &&
-                !slug.contains(text, Qt::CaseInsensitive))
+            if (!matches(name, slug))
                 continue;
 
             auto* item = new QListWidgetItem(QStringLiteral("%1  ·  %2  ·  MC %3")
@@ -1592,24 +1748,49 @@ void MapLibraryPanel::pickHallMap(const QStringList& files)
                 break;
         }
     };
+
+    // 初值就是把关键词填进过滤框的效果：先让人看到"像的"，但不清空全部
     rebuild(snapshot.listRows, QString());
 
     connect(filter, &QLineEdit::textChanged, &dialog,
             [rebuild, rows = snapshot.listRows](const QString& text) { rebuild(rows, text); });
     connect(list, &QListWidget::itemDoubleClicked, &dialog, &QDialog::accept);
+
+    auto* okButton = buttons->button(QDialogButtonBox::Ok);
+    okButton->setEnabled(false);
+    connect(list, &QListWidget::currentItemChanged, &dialog, [okButton](QListWidgetItem* current, QListWidgetItem*) {
+        okButton->setEnabled(current != nullptr && (current->flags() & Qt::ItemIsEnabled));
+    });
     connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+
+    // 已关联的预选那一条。没关联时**只在推荐足够确定时**预选：
+    // 第一名分数够高、且明显领先第二名 —— 和导入对话框同一条规则，避免手快点错就写进索引。
+    for (int i = 0; i < list->count(); ++i) {
+        if (!currentSlug.isEmpty() && list->item(i)->data(Qt::UserRole).toString() == currentSlug) {
+            list->setCurrentRow(i);
+            break;
+        }
+    }
+    if (list->currentItem() == nullptr && !suggestions.isEmpty() && suggestions.first().score >= 0.9 &&
+        (suggestions.size() == 1 || suggestions.first().score - suggestions.at(1).score >= 0.1) &&
+        list->count() > 0) {
+        list->setCurrentRow(0);
+    }
 
     if (dialog.exec() != QDialog::Accepted)
         return;
     auto* current = list->currentItem();
     if (current == nullptr)
         return;
+
     // 组标题上选的关联对整个组生效：同一张图的几个语言版本必须锚在同一个 slug 上，
-    // 否则分组又会散开
+    // 否则分组又会散开。界面上点过就算人工确认（verified），自动匹配永远不写 true。
     const QString slug = current->data(Qt::UserRole).toString();
+    if (slug.isEmpty())
+        return;
     for (const auto& file : files)
-        m_library.setHallLink(file, slug, false);
+        m_library.setHallLink(file, slug, true);
 }
 
 }  // namespace maps

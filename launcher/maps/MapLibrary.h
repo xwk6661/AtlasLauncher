@@ -51,6 +51,16 @@ struct LibraryItem {
     QString englishName;
     QString mapVersion;    ///< 地图自己的版本号，例如 v1.1.15
     QString chineseName;
+    /**
+     * 玩家右键「重命名」写下的显示名。**优先级最高，且不参与分组键**。
+     *
+     * 为什么不直接改 `chineseName`：分组键在没关联大厅时用的是
+     * `englishName`，englishName 空着时退回 `chineseName` —— 直接改中文名
+     * 可能把同一张图的几个语言版本拆成两组（[06 §88] 之后一直守的那条）。
+     * 单独一个字段只影响**显示**，改名永远是安全的。
+     * 空串 = 没有改过，显示名照旧按 中文名 → 英文名 → 文件名 推。
+     */
+    QString title;
     QString note;
     qint64 bytes = 0;
     bool installed = false;         ///< 是否有实例仍指向它
@@ -64,7 +74,7 @@ struct LibraryItem {
     /// 语言变体：原版 / 官中 / 汉化，整包还是资源包
     variant::Info variant;
 
-    /// 显示名：中文名 → 英文名 → 文件名
+    /// 显示名：重命名（title） → 中文名 → 英文名 → 文件名
     QString displayName() const;
     /// 徽章文本：`[1.16.5] Final Paradox v1.1.15`
     QString badge() const;
@@ -147,6 +157,15 @@ class MapLibrary : public QObject {
     bool setVariant(const QString& file, const variant::Info& info);
     /// 改索引里的英文名。没有大厅关联时，分组键就是它 —— 用来把包合并到某个本地分组
     bool setEnglishName(const QString& file, const QString& englishName);
+    /**
+     * 改**显示名**（右键「重命名」）。空串 = 清掉，回到自动推断。
+     *
+     * 只动 `title`，不动 `englishName` / `chineseName`，所以既不会把一组拆开，
+     * 也不会影响别的入口按原名做的匹配。
+     */
+    bool setTitle(const QString& file, const QString& title);
+    /// 整组重命名（组标题右键）：一次写盘，同组几个语言版本看到的名字保持一致
+    bool setTitleForItems(const QStringList& files, const QString& title);
     /// 把同组里的默认变体设为这一个（其它同组条目的 default 清掉）
     bool setDefaultVariant(const QString& file);
     /// 取同一组的全部条目（含自己），给「这张图有哪几个语言版本」用

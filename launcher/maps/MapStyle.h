@@ -18,6 +18,7 @@
 #pragma once
 
 #include <QAbstractItemView>
+#include <QAbstractScrollArea>
 #include <QColor>
 #include <QFont>
 #include <QFrame>
@@ -25,6 +26,7 @@
 #include <QLabel>
 #include <QMargins>
 #include <QPushButton>
+#include <QScrollBar>
 #include <QString>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -172,6 +174,54 @@ inline void tuneList(QAbstractItemView* view)
     if (view == nullptr)
         return;
     view->setFrameShape(QFrame::NoFrame);
+}
+
+// ── 滚动区 ────────────────────────────────────────────────────────────────
+/**
+ * 细滚动条：透明轨道、无上下箭头，只剩一根半透明圆角滑杆（悬停变亮）。
+ *
+ * 为什么：Windows 原生滚动条会在内容区右缘切出一道带箭头的槽 + 浅色轨道，
+ * 深色主题下比内容本身还显眼（大厅「简介」页签里就有一条，2026-11-17 反馈）。
+ * 这里**不关闭滚动** —— 只是把"始终存在的槽"换成"需要时才出现的滑杆"，
+ * 内容依然能滚、也依然看得出还有内容。
+ *
+ * 颜色取自 palette（`bodyTextColor`），亮暗两套主题共用。
+ */
+inline void applyOverlayScrollBar(QAbstractScrollArea* area)
+{
+    if (area == nullptr)
+        return;
+    const QColor base = bodyTextColor();
+    const auto rgba = [base](int alpha) {
+        return QStringLiteral("rgba(%1,%2,%3,%4)").arg(base.red()).arg(base.green()).arg(base.blue()).arg(alpha);
+    };
+
+    area->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    area->verticalScrollBar()->setStyleSheet(QStringLiteral(R"(
+QScrollBar:vertical {
+    background: transparent;
+    width: 8px;
+    margin: 0;
+    border: none;
+}
+QScrollBar::handle:vertical {
+    background: %1;
+    min-height: 28px;
+    border-radius: 3px;
+}
+QScrollBar::handle:vertical:hover {
+    background: %2;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
+    height: 0;
+    border: none;
+    background: none;
+}
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+    background: none;
+}
+)")
+                                     .arg(rgba(38), rgba(96)));
 }
 
 /// 空态提示：居中、次要色，不要用一整张失败面板吓人

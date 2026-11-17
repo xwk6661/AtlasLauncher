@@ -106,6 +106,8 @@ QList<CategoryInfo> MapLibrary::defaultCategories()
 
 QString LibraryItem::displayName() const
 {
+    if (!title.isEmpty())
+        return title;
     if (!chineseName.isEmpty())
         return chineseName;
     if (!englishName.isEmpty())
@@ -185,6 +187,7 @@ LibraryItem itemFromJson(const QJsonObject& object, const QString& dir)
     item.englishName = object.value("englishName").toString();
     item.mapVersion = object.value("mapVersion").toString();
     item.chineseName = object.value("chineseName").toString();
+    item.title = object.value("title").toString();
     item.note = object.value("note").toString();
     item.bytes = static_cast<qint64>(object.value("bytes").toDouble());
 
@@ -209,6 +212,11 @@ QJsonObject itemToJson(const LibraryItem& item, const QJsonObject& previous)
     object.insert("englishName", item.englishName);
     object.insert("mapVersion", item.mapVersion);
     object.insert("chineseName", item.chineseName);
+    // 没改过名就别往索引里塞空字段 —— 和一个空 `hall` 对象同理，看着像"改过"
+    if (item.title.isEmpty())
+        object.remove("title");
+    else
+        object.insert("title", item.title);
     object.insert("note", item.note);
     object.insert("bytes", static_cast<double>(item.bytes));
 
@@ -682,6 +690,34 @@ bool MapLibrary::setEnglishName(const QString& file, const QString& englishName)
         return true;
     }
     return false;
+}
+
+bool MapLibrary::setTitle(const QString& file, const QString& title)
+{
+    return setTitleForItems({ file }, title);
+}
+
+bool MapLibrary::setTitleForItems(const QStringList& files, const QString& title)
+{
+    if (files.isEmpty())
+        return true;
+
+    const QString wanted = title.trimmed();
+    const QSet<QString> targets(files.begin(), files.end());
+    bool touched = false;
+    for (auto& item : m_items) {
+        if (!targets.contains(item.file) || item.title == wanted)
+            continue;
+        item.title = wanted;
+        touched = true;
+    }
+    if (!touched)
+        return true;
+    if (!saveIndex())
+        return false;
+
+    emit changed();
+    return true;
 }
 
 bool MapLibrary::setDefaultVariant(const QString& file)

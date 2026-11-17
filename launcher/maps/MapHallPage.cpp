@@ -248,7 +248,7 @@ MapHallPage::MapHallPage(NewInstanceDialog* dialog, QWidget* parent) : QWidget(p
     buildUi();
 
     m_api = new HallAPI(this);
-    // 设置项里可以换成等价反代（见 docs/atlas 02 §3.6）
+    // 设置项里可以换成等价反代（见 docs/atlas/01 §9）
     m_api->setEndpoint(APPLICATION->settings()->get("MapHallEndpoint").toString());
 
     connect(m_api, &HallAPI::searchDone, this, &MapHallPage::onSearchDone);
@@ -621,6 +621,8 @@ void MapHallPage::buildUi()
     aboutScroll->setWidgetResizable(true);
     aboutScroll->setFrameShape(QFrame::NoFrame);
     aboutScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    // 详情面板只有两个方向的宽度，原生滚动条那圈带箭头的槽太抢眼
+    ui::applyOverlayScrollBar(aboutScroll);
 
     auto* aboutBody = new QWidget(aboutScroll);
     auto* aboutBodyLayout = new QVBoxLayout(aboutBody);
@@ -659,6 +661,7 @@ void MapHallPage::buildUi()
     reviewsScroll->setFrameShape(QFrame::NoFrame);
     // 评论卡片按宽度换行，永远不该出现横向滚动条（2026-11-02 用户反馈）
     reviewsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    ui::applyOverlayScrollBar(reviewsScroll);
     m_reviewBox = new QWidget(reviewsScroll);
     m_reviewLayout = new QVBoxLayout(m_reviewBox);
     m_reviewLayout->setContentsMargins(0, 0, ui::kSpaceS, 0);
@@ -685,6 +688,7 @@ void MapHallPage::buildUi()
     mineScroll->setWidgetResizable(true);
     mineScroll->setFrameShape(QFrame::NoFrame);
     mineScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    ui::applyOverlayScrollBar(mineScroll);
 
     m_mineBody = new QWidget(mineScroll);
     m_mineLayout = new QVBoxLayout(m_mineBody);
