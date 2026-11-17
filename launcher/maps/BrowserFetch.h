@@ -85,6 +85,9 @@ class BrowserFetch : public QObject {
     void cleanup();
 
     QProcess* m_proc = nullptr;
+    /// 60 秒死线。**必须是成员**：以前是每次尝试 new 一个，cleanup() 又把会停掉它的
+    /// finished 槽 disconnect 了，于是旧表到期后会对**复用 m_proc 的下一次请求**开杀。
+    QTimer* m_killTimer = nullptr;
     QUrl m_url;
     int m_attempts = 3;
     /// 本机可用浏览器的有序列表（Edge 优先）。某个浏览器连一次 DOM 都没吐出来时换下一个：

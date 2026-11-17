@@ -92,6 +92,15 @@ MapCoverLoader::MapCoverLoader(QObject* parent) : QObject(parent)
     m_timer->setSingleShot(true);
     connect(m_timer, &QTimer::timeout, this, &MapCoverLoader::dispatch);
 
+    m_browserKiller = new QTimer(this);
+    m_browserKiller->setSingleShot(true);
+    // 只看「此刻挂着的那个浏览器进程」，到点还在跑才杀。谁起表谁停表 ——
+    // finishBatch / finished / errorOccurred 三条收尾路径都会停，不会误杀下一个进程。
+    connect(m_browserKiller, &QTimer::timeout, this, [this] {
+        if (m_browser != nullptr && m_browser->state() != QProcess::NotRunning)
+            m_browser->kill();
+    });
+
     m_nam = new QNetworkAccessManager(this);
     m_ownNam = true;
 }
@@ -170,10 +179,61 @@ void MapCoverLoader::setNetwork(QNetworkAccessManager* nam)
 {
     if (nam == nullptr)
         return;
+    if (m_nam == nam)
+        return;
+    // 换 NAM 之前把在途的工作收干净：旧 NAM 析构时 reply 不会发 finished，
+    // m_pendingReplies 归不了零 → m_busy 永远 true → 封面从此不再加载
+    cancelInFlight();
+    if (m_namGuard)
+        QObject::disconnect(m_namGuard);
+    // 页面窗口关掉会把它的 NAM 一起带走；那时也要把状态机复位，等下次排队
+    m_namGuard = connect(nam, &QObject::destroyed, this, &MapCoverLoader::cancelInFlight);
     if (m_ownNam && m_nam != nullptr)
         m_nam->deleteLater();
     m_nam = nam;
     m_ownNam = false;
+}
+
+void MapCoverLoader::cancelInFlight()
+{
+    for (auto& reply : m_directReplies) {
+        if (reply.isNull())
+            continue;
+        reply->disconnect(this);
+        reply->abort();
+        reply->deleteLater();
+    }
+    m_directReplies.clear();
+    m_pendingReplies = 0;
+    if (m_browser != nullptr) {
+        m_browser->disconnect(this);
+        m_browser->kill();
+        m_browser->deleteLater();
+        m_browser = nullptr;
+    }
+    if (m_browserKiller != nullptr)
+        m_browserKiller->stop();
+    if (!m_browserProfile.isEmpty()) {
+        QDir(m_browserProfile).removeRecursively();
+        m_browserProfile.clear();
+    }
+    m_directQueue.clear();
+    m_browserQueue.clear();
+
+    // 这一批没跑完的重新排队（已经在内存/磁盘里的就不必了，否则会重复发 coverReady）
+    QStringList requeue;
+    for (const auto& url : m_batch) {
+        if (m_bad.contains(url) || !cached(url).isNull())
+            continue;
+        if (!m_queued.contains(url)) {
+            m_queued.insert(url);
+            requeue.append(url);
+        }
+    }
+    m_batch.clear();
+    m_queue = requeue + m_queue;
+    m_busy = false;
+    schedule();
 }
 
 void MapCoverLoader::setTransportMode(const QString& mode)
@@ -344,9 +404,11 @@ void MapCoverLoader::tryDirect()
         request.setTransferTimeout(DIRECT_TIMEOUT_MS);
 
         auto* reply = m_nam->get(request);
+        m_directReplies.append(reply);
         connect(reply, &QNetworkReply::finished, this, [this, reply, url] {
             const auto body = reply->readAll();
             const auto error = reply->error();
+            m_directReplies.removeAll(reply);
             reply->deleteLater();
 
             QImage image;
@@ -496,19 +558,12 @@ void MapCoverLoader::startBrowser()
         QUrl::fromLocalFile(pagePath).toString(),
     });
 
-    auto* killer = new QTimer(this);
-    killer->setSingleShot(true);
-    connect(killer, &QTimer::timeout, this, [this, killer] {
-        killer->deleteLater();
-        if (m_browser != nullptr && m_browser->state() != QProcess::NotRunning)
-            m_browser->kill();
-    });
-    killer->start(BROWSER_TIMEOUT_MS);
+    m_browserKiller->start(BROWSER_TIMEOUT_MS);
+    QProcess* proc = m_browser;
 
-    connect(m_browser, &QProcess::finished, this, [this, killer](int code, QProcess::ExitStatus status) {
-        killer->stop();
-        killer->deleteLater();
-        if (m_browser == nullptr)
+    connect(m_browser, &QProcess::finished, this, [this, proc](int code, QProcess::ExitStatus status) {
+        m_browserKiller->stop();
+        if (m_browser == nullptr || m_browser != proc)
             return;
 
         const auto dom = m_browser->readAllStandardOutput();
@@ -559,6 +614,8 @@ void MapCoverLoader::startBrowser()
     connect(m_browser, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error != QProcess::FailedToStart)
             return;
+        // 起不来也要停表：以前这里不停，45 秒后旧表会去杀下一次 startBrowser 的进程
+        m_browserKiller->stop();
         QDir(m_browserProfile).removeRecursively();
         m_browserProfile.clear();
         if (m_browser != nullptr) {
@@ -608,6 +665,9 @@ void MapCoverLoader::failUrl(const QString& url, const QString& reason)
 
 void MapCoverLoader::finishBatch()
 {
+    // 收尾就把表停掉：这一批结束了，看门狗没有存在的理由
+    if (m_browserKiller != nullptr)
+        m_browserKiller->stop();
     if (m_browser != nullptr) {
         m_browser->disconnect(this);
         m_browser->kill();

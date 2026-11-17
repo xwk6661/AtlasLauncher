@@ -162,7 +162,7 @@ Request::Request(const Spec& spec) : m_options(spec.options), m_url(spec.url), m
         if (!m_parallel && m_reply == nullptr)
             return;
 
-        // 窗口按"秒"打印（保持 05 §7 里 `No response in 20 seconds` 这个排查关键字），
+        // 窗口按"秒"打印（保持 04 §6 里 `No response in 20 seconds` 这个排查关键字），
         // 被 PRISM_NET_IDLE_TIMEOUT_MS 压到 1 秒以下时退化成毫秒
         const bool inSeconds = m_idleTimeoutMs >= 1000;
         qCWarning(m_logCat) << getUid().toString() << (m_gotAnyResponse ? "Transfer idle for" : "No response in")
@@ -539,7 +539,15 @@ auto Request::handleRedirect() -> bool
         emitFailed(tr("Too many redirects"));
         return true;
     }
-    executeTask();
+    // 必须延后一拍再重开：此刻还在 QNetworkReply::finished 的槽里，立刻 executeTask()
+    // 会在信号派发过程中 m_reply.reset()，把正在发信号的 reply 析构掉。
+    // 重试路径（tryNetworkRetry）早就改用定时器规避了同一件事，这里以前漏改。
+    QTimer::singleShot(0, this, [this] {
+        // 这一拍的间隙里可能已经被 abort()：那边已经发过 aborted/finished，别再开一轮
+        if (getState() == Task::State::AbortedByUser)
+            return;
+        executeTask();
+    });
 
     return true;
 }

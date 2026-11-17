@@ -98,16 +98,29 @@ bool BrowserFetch::available()
     return !browserPath().isEmpty();
 }
 
-BrowserFetch::BrowserFetch(QObject* parent) : QObject(parent) {}
+BrowserFetch::BrowserFetch(QObject* parent) : QObject(parent)
+{
+    m_killTimer = new QTimer(this);
+    m_killTimer->setSingleShot(true);
+    // 只有一张表：到点只杀「此刻挂在这个对象上的那个进程」。谁来起表、谁负责停表 ——
+    // cleanup() 与 finished/errorOccurred 都会停，所以不会误杀下一次尝试的进程。
+    connect(m_killTimer, &QTimer::timeout, this, [this] {
+        if (m_proc != nullptr && m_proc->state() != QProcess::NotRunning)
+            m_proc->kill();  // 触发 finished，交给统一收尾
+    });
+}
 
 BrowserFetch::~BrowserFetch()
 {
     cleanup();
-
 }
 
 void BrowserFetch::cleanup()
 {
+    // 死线表一定要停：它捕获的是「当前这次尝试」，表停不下来就会在后续请求上开杀
+    if (m_killTimer != nullptr)
+        m_killTimer->stop();
+
     if (m_proc != nullptr) {
         m_proc->disconnect(this);
         if (m_proc->state() != QProcess::NotRunning) {
@@ -249,20 +262,12 @@ go();
         QUrl::fromLocalFile(pagePath).toString(),
     });
 
-    auto* timer = new QTimer(this);
-    timer->setSingleShot(true);
-    connect(timer, &QTimer::timeout, this, [this, timer] {
-        timer->deleteLater();
-        if (m_proc != nullptr && m_proc->state() != QProcess::NotRunning) {
-            m_proc->kill();  // 触发 finished，交给下面统一收尾
-        }
-    });
-    timer->start(60000);
+    m_killTimer->start(60000);
+    QProcess* proc = m_proc;
 
-    connect(m_proc, &QProcess::finished, this, [this, remaining, timer, profileDir](int code, QProcess::ExitStatus status) {
-        timer->stop();
-        timer->deleteLater();
-        if (m_proc == nullptr)
+    connect(m_proc, &QProcess::finished, this, [this, remaining, proc, profileDir](int code, QProcess::ExitStatus status) {
+        m_killTimer->stop();
+        if (m_proc == nullptr || m_proc != proc)
             return;
 
         const QByteArray out = m_proc->readAllStandardOutput();
@@ -363,11 +368,10 @@ go();
         emit finished(false, {}, reason);
     });
 
-    connect(m_proc, &QProcess::errorOccurred, this, [this, timer](QProcess::ProcessError error) {
+    connect(m_proc, &QProcess::errorOccurred, this, [this](QProcess::ProcessError error) {
         if (error != QProcess::FailedToStart)
             return;  // 其它错误由 finished 统一处理
-        timer->stop();
-        timer->deleteLater();
+        m_killTimer->stop();
         cleanup();
         emit finished(false, {}, tr("浏览器启动失败：%1").arg(m_url.toString()));
     });

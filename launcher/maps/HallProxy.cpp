@@ -19,12 +19,13 @@
 
 #include <QDateTime>
 #include <QDir>
+#include <QElapsedTimer>
 #include <QList>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QSettings>
 #include <QTcpSocket>
 #include <QUrl>
-
-#include <iterator>
 
 #include "Application.h"
 #include "settings/SettingsObject.h"
@@ -55,19 +56,53 @@ QString normalizeProxyUrl(const QString& raw)
     return QStringLiteral("http://%1").arg(value);
 }
 
-/// 这个代理端口真的有人监听吗（900ms 超时，探不通就当没有）
-bool proxyAlive(const QString& url)
-{
-    const QUrl parsed(url);
-    if (!parsed.isValid() || parsed.host().isEmpty())
-        return false;
-    const int port = parsed.port(parsed.scheme() == QLatin1String("https") ? 443 : 80);
+/// 常见的代理端口（Clash / v2rayN / sing-box 默认**不开**系统代理，也不写环境变量）
+constexpr int kLocalProxyPorts[] = { 7890, 7897, 7891, 10808, 10809, 1080, 2080, 2081, 8889, 4780 };
 
-    QTcpSocket socket;
-    socket.connectToHost(parsed.host(), static_cast<quint16>(port));
-    const bool ok = socket.waitForConnected(900);
-    socket.abort();
-    return ok;
+/**
+ * 一批候选里挑出**第一个真有人监听**的。
+ *
+ * 为什么需要：Clash / v2rayN / sing-box 默认不开「系统代理」、也不写环境变量，
+ * 而它们确实在 127.0.0.1 上开着 HTTP 入口。只读环境变量 + 注册表的话，
+ * 用户明明开着代理，启动器却报「没有检测到代理」。
+ *
+ * 实现上一次性全部 connectToHost，再按总预算顺序等第一个连上的 —— 以前是
+ * 每个候选各 waitForConnected(600/900)，最坏 2.4 秒全卡在 GUI 线程上。
+ *
+ * 仍然是**同步**的：调用方拿到 HallProxyInfo 就要立刻配置 QNAM，异步化要改 HallAPI
+ * 取到代理之后才发请求的时序；这里先把最坏耗时压到一个预算内。
+ */
+QString firstAlive(const QStringList& candidates)
+{
+    if (candidates.isEmpty())
+        return {};
+
+    QList<QTcpSocket*> sockets;
+    sockets.reserve(candidates.size());
+    for (const auto& candidate : candidates) {
+        auto* socket = new QTcpSocket();
+        sockets.append(socket);
+        const QUrl parsed(candidate);
+        if (!parsed.isValid() || parsed.host().isEmpty())
+            continue;
+        const int port = parsed.port(parsed.scheme() == QLatin1String("https") ? 443 : 80);
+        socket->connectToHost(parsed.host(), static_cast<quint16>(port));
+    }
+
+    constexpr int BUDGET_MS = 900;
+    QElapsedTimer clock;
+    clock.start();
+
+    QString found;
+    for (int i = 0; i < sockets.size() && found.isEmpty(); ++i) {
+        const int remaining = BUDGET_MS - static_cast<int>(clock.elapsed());
+        if (remaining <= 0)
+            break;
+        if (sockets.at(i)->waitForConnected(remaining))
+            found = candidates.at(i);
+    }
+    qDeleteAll(sockets);
+    return found;
 }
 
 /// Windows「Internet 选项 → 局域网设置」里那个代理（浏览器用的就是它）
@@ -100,37 +135,6 @@ QString fromWindowsSystemProxy()
 #endif
 }
 
-/**
- * 扫一遍本机常见的代理端口。
- *
- * 为什么需要：Clash / v2rayN / sing-box 默认**不开**「系统代理」，也不写环境变量，
- * 而它们确实在 127.0.0.1 上开着 HTTP 入口。只读环境变量 + 注册表的话，
- * 用户明明开着代理，启动器却报「没有检测到代理」。
- *
- * 实现上并发探测：先全部 connectToHost，再逐个 waitForConnected(600)，
- * 最坏情况总耗时约 600ms（不是 10 × 600ms）。
- */
-QString fromLocalPorts()
-{
-    static const int kPorts[] = { 7890, 7897, 7891, 10808, 10809, 1080, 2080, 2081, 8889, 4780 };
-
-    QList<QTcpSocket*> sockets;
-    sockets.reserve(std::size(kPorts));
-    for (int port : kPorts) {
-        auto* socket = new QTcpSocket();
-        socket->connectToHost(QStringLiteral("127.0.0.1"), static_cast<quint16>(port));
-        sockets.append(socket);
-    }
-
-    QString found;
-    for (int i = 0; i < sockets.size() && found.isEmpty(); ++i) {
-        if (sockets.at(i)->waitForConnected(600))
-            found = QStringLiteral("http://127.0.0.1:%1").arg(kPorts[i]);
-    }
-    qDeleteAll(sockets);
-    return found;
-}
-
 QNetworkProxy makeProxy(const QString& url)
 {
     const QUrl parsed(url);
@@ -145,6 +149,9 @@ QNetworkProxy makeProxy(const QString& url)
 /// 解析结果缓存：探活要建 TCP，不能每个请求都跑（AIO 的 INFO_TTL 也是 10s）
 HallProxyInfo g_cachedProxy;
 qint64 g_cachedAt = 0;
+/// 缓存是进程级的全局状态，解析函数可能被多个对象调用（大厅页 / 详情对话框）：
+/// 读写都要过这把锁，否则解析结果可能被写到一半读走
+QMutex g_cachedMutex;
 
 HallProxyInfo direct(const QString& from, const QString& note)
 {
@@ -206,6 +213,7 @@ bool shouldBypassProxy(const QString& host)
 
 void invalidateHallProxyCache()
 {
+    QMutexLocker locker(&g_cachedMutex);
     g_cachedAt = 0;
 }
 
@@ -216,10 +224,14 @@ HallProxyInfo resolveHallProxy(const QString& host)
         return direct(QStringLiteral("none"), QStringLiteral("本机/内网地址，不走代理"));
 
     const qint64 now = QDateTime::currentMSecsSinceEpoch();
-    if (g_cachedAt != 0 && now - g_cachedAt < 10000)
-        return g_cachedProxy;
+    {
+        QMutexLocker locker(&g_cachedMutex);
+        if (g_cachedAt != 0 && now - g_cachedAt < 10000)
+            return g_cachedProxy;
+    }
 
     const auto remember = [now](const HallProxyInfo& info) {
+        QMutexLocker locker(&g_cachedMutex);
         g_cachedProxy = info;
         g_cachedAt = now;
         return info;
@@ -238,20 +250,31 @@ HallProxyInfo resolveHallProxy(const QString& host)
         return remember(usingProxy(url, QStringLiteral("manual"), QStringLiteral("手动代理 %1").arg(url)));
     }
 
-    // auto：环境变量优先，但必须探活（用户说"我没开代理"时，那个地址往往是别的程序留下的）
+    // auto：环境变量 → 系统代理 → 本机常见端口，按这个优先级挑第一个真有人监听的。
+    // 环境变量也要探活：用户说"我没开代理"时，那个地址往往是别的程序留下的。
     const QString env = normalizeProxyUrl(fromEnvironment());
-    if (!env.isEmpty() && proxyAlive(env))
-        return remember(usingProxy(env, QStringLiteral("env"), QStringLiteral("环境变量代理 %1").arg(env)));
-
     const QString system = normalizeProxyUrl(fromWindowsSystemProxy());
-    if (!system.isEmpty() && system != env && proxyAlive(system))
-        return remember(usingProxy(system, QStringLiteral("system"), QStringLiteral("系统代理 %1").arg(system)));
 
-    // 最后扫本机端口：Clash/v2rayN 这类默认不写系统代理，玩家常以为"我已经开了"
-    const QString local = fromLocalPorts();
-    if (!local.isEmpty() && local != env && local != system && proxyAlive(local))
-        return remember(usingProxy(local, QStringLiteral("local-port"),
-                                   QStringLiteral("自动发现的本地代理 %1").arg(local)));
+    QStringList candidates;
+    if (!env.isEmpty())
+        candidates << env;
+    if (!system.isEmpty() && !candidates.contains(system))
+        candidates << system;
+    for (int port : kLocalProxyPorts) {
+        const QString url = QStringLiteral("http://127.0.0.1:%1").arg(port);
+        if (!candidates.contains(url))
+            candidates << url;
+    }
+
+    const QString alive = firstAlive(candidates);
+    if (!alive.isEmpty()) {
+        if (alive == env)
+            return remember(usingProxy(alive, QStringLiteral("env"), QStringLiteral("环境变量代理 %1").arg(alive)));
+        if (alive == system)
+            return remember(usingProxy(alive, QStringLiteral("system"), QStringLiteral("系统代理 %1").arg(alive)));
+        return remember(usingProxy(alive, QStringLiteral("local-port"),
+                                   QStringLiteral("自动发现的本地代理 %1").arg(alive)));
+    }
 
     const QString stale = env.isEmpty() ? system : env;
     return remember(direct(QStringLiteral("none"),

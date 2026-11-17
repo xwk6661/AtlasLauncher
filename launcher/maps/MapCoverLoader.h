@@ -28,6 +28,7 @@
 #include <QStringList>
 
 class QNetworkAccessManager;
+class QNetworkReply;
 class QProcess;
 class QTimer;
 
@@ -102,6 +103,14 @@ class MapCoverLoader : public QObject {
     void tryDirect();
     void startBrowser();
     void finishBatch();
+    /**
+     * 取消「当前这一批」的所有在途工作，并把状态机复位、未完成的 URL 重新排队。
+     *
+     * 本来只在 `setNetwork()` 换网络管理器时调用：外部 NAM（大厅的 `HallAPI`）析构时，
+     * 挂在它下面的 reply 不会发 `finished`，`m_pendingReplies` 永远归不了零，
+     * `m_busy` 会一直是 true —— 表现为「封面只加载过第一批，之后再也不动」。
+     */
+    void cancelInFlight();
     void acceptImage(const QString& url, const QByteArray& bytes, bool alreadyThumbnail);
     void failUrl(const QString& url, const QString& reason);
     void rememberImage(const QString& url, const QImage& image);
@@ -115,6 +124,8 @@ class MapCoverLoader : public QObject {
 
     QPointer<QNetworkAccessManager> m_nam;
     bool m_ownNam = false;
+    /// 外部 NAM 析构时自动收尾（换网络管理器 / 大厅页面关闭都会走到）
+    QMetaObject::Connection m_namGuard;
     QString m_cacheDir;
     QString m_transport = QStringLiteral("auto");
 
@@ -134,11 +145,16 @@ class MapCoverLoader : public QObject {
     QList<QString> m_batch;
     QStringList m_directQueue;
     QStringList m_browserQueue;
+    /// 直连在途的 reply。切网络管理器 / 页面关闭时要主动 abort —— 否则它们静默消失
+    QList<QPointer<QNetworkReply>> m_directReplies;
     int m_pendingReplies = 0;
     int m_batchOk = 0;
     int m_batchFailed = 0;
 
     QProcess* m_browser = nullptr;
+    /// 浏览器看门狗。**必须是成员**：以前每次 startBrowser 都 new 一个，
+    /// 而 errorOccurred / finishBatch 两条收尾路径不停表，旧表到期会杀掉后来的进程。
+    QTimer* m_browserKiller = nullptr;
     QString m_browserProfile;
 };
 
