@@ -342,6 +342,9 @@ Result<> MapLaunchPrep::prepare(MinecraftInstance* instance, const MapMeta& meta
         }
 
         case Track::Plain:
+            // 「跳过确认页」与「自动进图」是两件事：玩家从主菜单手动进图，这一页一样会挡。
+            // 开关本身在 tryInjectIntroSkip 里判；关掉时它会把上一次写进 JvmArgs 的注入摘干净。
+            tryInjectIntroSkip(instance, meta, &plan);
             break;
     }
 
