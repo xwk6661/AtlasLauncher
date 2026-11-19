@@ -90,6 +90,27 @@ if ($LASTEXITCODE -ne 0) { throw 'install (bundle) failed' }
 & $cmake --install $build --config $Config --component portable --prefix $out
 if ($LASTEXITCODE -ne 0) { throw 'install (portable) failed' }
 
+# Java helper jars (JavaCheck / NewLaunch / NewLaunchLegacy). install_jar() used to
+# dump them into the "Unspecified" component, which none of the three install steps
+# above selects - so the zip shipped without jars\JavaCheck.jar and every Java check
+# died with "Java checker library could not be found" (launch refused + Detect hung).
+# The CMake files now say COMPONENT Runtime; this copy is the belt-and-braces path
+# for a build tree that was configured before that change, and the check below makes
+# a regression fail the package instead of silently producing a broken launcher.
+$jarsOut = Join-Path $out 'jars'
+if (-not (Test-Path (Join-Path $jarsOut 'JavaCheck.jar'))) {
+    $jarsSrc = Join-Path $build 'jars'
+    if (Test-Path $jarsSrc) {
+        New-Item -ItemType Directory -Force -Path $jarsOut | Out-Null
+        Copy-Item (Join-Path $jarsSrc '*.jar') $jarsOut -Force
+    }
+}
+foreach ($jar in @('JavaCheck.jar', 'NewLaunch.jar', 'NewLaunchLegacy.jar')) {
+    if (-not (Test-Path (Join-Path $jarsOut $jar))) {
+        throw "jars\$jar is missing from the package - the launcher would refuse to launch and could not detect Java."
+    }
+}
+
 # Release links the shared VC++ runtime (/MD). windeployqt runs with
 # --no-compiler-runtime (upstream expects an installer to add the redist), so a zip
 # that must work on a clean machine has to carry the CRT DLLs itself. Only the

@@ -11,4 +11,8 @@ set(SRC
 )
 
 add_jar(JavaCheck ${SRC})
-install_jar(JavaCheck "${JARS_DEST_DIR}")
+# COMPONENT Runtime: without it the jar lands in "Unspecified", which the Windows
+# portable packaging (tools/package-windows.ps1) never installs - the launcher then
+# ships without jars/JavaCheck.jar and every Java check fails with
+# "Java checker library could not be found".
+install_jar(JavaCheck DESTINATION "${JARS_DEST_DIR}" COMPONENT Runtime)

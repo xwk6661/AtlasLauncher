@@ -35,6 +35,7 @@
 
 #include "JavaChecker.h"
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <QMap>
 #include <QProcess>
@@ -53,7 +54,17 @@ void JavaChecker::executeTask()
     QString checkerJar = JavaUtils::getJavaCheckPath();
 
     if (checkerJar.isEmpty()) {
-        qDebug() << "Java checker library could not be found. Please check your installation.";
+        // Returning without a signal leaves the task "running" forever: ConcurrentTask then
+        // never finishes, so Java auto-detection spins with no result and the launch step
+        // reports nothing useful. Fail with the reason instead - callers show it and move on.
+        const QString expected = FS::PathCombine(QCoreApplication::applicationDirPath(), "jars", "JavaCheck.jar");
+        qWarning() << "Java checker library could not be found. Expected at:" << expected;
+
+        Result result = { m_path, m_id };
+        result.errorLog = "jars/JavaCheck.jar is missing from the launcher installation (" + expected + ")";
+        result.validity = Result::Validity::Errored;
+        emit checkFinished(result);
+        emitFailed(result.errorLog);
         return;
     }
 #ifdef Q_OS_WIN

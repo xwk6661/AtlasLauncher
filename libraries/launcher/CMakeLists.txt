@@ -40,5 +40,7 @@ set(LEGACY_SRC
 
 add_jar(NewLaunch ${SRC})
 add_jar(NewLaunchLegacy ${LEGACY_SRC} INCLUDE_JARS NewLaunch)
-install_jar(NewLaunch "${JARS_DEST_DIR}")
-install_jar(NewLaunchLegacy "${JARS_DEST_DIR}")
+# COMPONENT Runtime - same reason as libraries/javacheck: the "Unspecified" component
+# is not part of the Windows portable package, so the jars would be missing at runtime.
+install_jar(NewLaunch DESTINATION "${JARS_DEST_DIR}" COMPONENT Runtime)
+install_jar(NewLaunchLegacy DESTINATION "${JARS_DEST_DIR}" COMPONENT Runtime)
