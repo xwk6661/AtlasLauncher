@@ -1,11 +1,12 @@
 # Atlas · 文档索引
 
-**Atlas** 是一个以地图为中心的 Minecraft 启动器（12.0.0-dev，C++/Qt 6.8，基于 Prism Launcher）：
+**Atlas** 是一个以地图为中心的 Minecraft 启动器（12.0.0，C++/Qt 6.8，基于 Prism Launcher）：
 把 AIO 版（`Minecraft-AIO`，独立仓库）的「点地图进图」搬到原生 Qt 上 ——
 **点一张地图卡片，直接落进它的世界；版本由程序从存档推断。**
 
 > 现在能用到什么程度：状态与待办看 [04](04-进度与待办.md)，每项功能验到哪一档看 [05](05-验证记录.md)。
-> 一句话：构建与 32 个套件全绿；1.20+ 与 1.8.9 / 1.12 Forge / 1.16.5 / 1.19.3 已真机跑通；
+> 一句话：构建与 33 个套件全绿；1.20+ 与 1.8.9 / 1.12 Forge / 1.16.5 / 1.19.3 已真机跑通；
+> 真机与数据都在 Release 便携版 `E://Program File\AtlasLaucher`，Debug 只做界面；
 > 地图库与导入对话框的近期界面改动还没在真实窗口点过。分支 `feature/map-launcher`。
 
 ---
@@ -16,11 +17,11 @@
 | --- | --- | --- |
 | **README.md**（本文） | 索引、30 秒速览、代码地图、术语 | 第一次进来 |
 | [`01-设计.md`](01-设计.md) | **为什么**这么做、**怎么设计**：三条硬约束、与 Prism 的关系、路线取舍、数据模型、模块职责、两条主流程、下载栈、大厅通道、地图库模型、里程碑验收、风险 | 改设计之前 |
-| [`02-构建与运行.md`](02-构建与运行.md) | **怎么跑起来**：工具链、五个环境坑、沙箱配方、测试命令与基线、资源库、打包 | 换机器、构建报错 |
+| [`02-构建与运行.md`](02-构建与运行.md) | **怎么跑起来**：工具链、五个环境坑、沙箱配方、测试命令与基线、资源库、打包与**数据迁移** | 换机器、构建报错、搬家 |
 | [`03-决策与坑.md`](03-决策与坑.md) | **哪些弯路走过、哪些决定不许推翻** | 想改既有行为之前 |
 | [`04-进度与待办.md`](04-进度与待办.md) | **现在到哪了**：里程碑、已完成、P0–P2 待办、数据档案、接手第一小时 | 接手第一小时 |
 | [`05-验证记录.md`](05-验证记录.md) | **验到哪一档**：L0–L3 定义、功能 × 档位 × 证据矩阵、未验证清单、环境问题 | 想写"已完成"之前 |
-| [`06-变更记录.md`](06-变更记录.md) | **改过什么、为什么**（§2–§91 档案，编号可被代码与提交引用） | 查某个行为是哪来的 |
+| [`06-变更记录.md`](06-变更记录.md) | **改过什么、为什么**（§2–§97 档案，编号可被代码与提交引用） | 查某个行为是哪来的 |
 | [`agent-matrix.md`](agent-matrix.md) | **哪些版本能自动进图**：60 张符号表逐张对真实 client jar 的复核结果 | 怀疑某版本停在主菜单时 |
 | [`审查清单-2026-11-17.md`](审查清单-2026-11-17.md) | **一次审查的过程留档**（19 项）；结论已并入 [06 §89](06-变更记录.md) | 想追某条修复是怎么来的 |
 
@@ -50,6 +51,7 @@
 - Java 按版本自动选：≤1.16.5 → 8、1.17 → 16、1.18–1.20.4 → 17、1.20.5+ → 21、26.x → 21；导入与每次启动前各核一次，
   只改「没手选过」的实例，判不出或没装对版本就什么都不做；实例「启动」页签可看推荐、一键应用；
 - 下载自己找路：断点续传、空闲/龟速两道看门狗、镜像↔官方互备、8 连接池 + 大文件 16 段；
+  素材清单按 `assetIndex.sha1` 复用，上游重发索引才重下；
 - 大厅整库本地化（2287 张，离线可搜可看）；封面缓存；失败页只回答三个问题；
 - 本地地图库按「图」分组并默认收起，同一张图的英文原版/简中/繁中收在一个组标题下；
   右键分三级，可**重命名**（只改显示、不拆组）、可**关联到 CTM 地图站条目**（带候选与理由）；
@@ -89,8 +91,11 @@
 资源：`launcher/resources/maps/dataversion.json`（483 版本）· `series.json`（系列代码 → 站上系列名）·
 `launcher/resources/agents/`（`quickboot.jar` + `introskip.jar` + `introskip.json` + 60 张符号表）。
 
-测试：32 个套件 / 436 项；地图相关 `MapArchiveScan`、`MapOptionsTxt`、`MapVariant`、`MapPackAttach`、`JavaRecommend`、
-`MapSeriesNames`、`ModPresets`、`DownloadSource`、`RequestRetry`（明细见 [02 §5](02-构建与运行.md)）。
+测试：33 个套件 / 443 项；地图相关 `MapArchiveScan`、`MapOptionsTxt`、`MapVariant`、`MapPackAttach`、`JavaRecommend`、
+`MapSeriesNames`、`ModPresets`、`DownloadSource`、`RequestRetry`、`AssetIndexCache`（明细见 [02 §5](02-构建与运行.md)）。
+
+资源库与迁移：库坐标与「四种换库」看 [02 §6.1–6.2](02-构建与运行.md)，打包之后怎么把现有数据搬进便携根看
+[02 §6.4](02-构建与运行.md)（`tools/migrate-data.ps1`）。
 
 ---
 
@@ -100,7 +105,10 @@
 $repo = "E:\llmUsage\AtlasLauncher"
 & "$repo\build\run-configure.ps1" -Action configure
 & "$repo\build\run-configure.ps1" -Action build-debug
+
+# 界面调试：Debug 版靠 --dir 指向真实便携根，数据不复制
 build\run-atlas-debug.cmd
+# 真机跑图：E:\Program File\AtlasLaucher\atlas.exe
 
 # 测试（单套件；全套走 ctest）
 cd "$repo\build\win-local\Debug"; .\LauncherTests.exe MapArchiveScan_test
@@ -124,6 +132,6 @@ cd "$repo\build\win-local\Debug"; .\LauncherTests.exe MapArchiveScan_test
 | **introskip** | `introskip.jar`，把 `WorldOpenFlows.askForBackup` 改成直接 `loadLevel`，跳过「实验性设置」页 |
 | **浏览器通道** | 借本机 Edge/Chrome 无头模式取数据/取封面。目标站被封的是 SNI，Qt 没有 ECH |
 | **大厅本地库** | `<数据目录>/maps/hall-cache.json`，整库拉全量，之后全部本地计算 |
-| **便携模式** | exe 旁放 `portable.txt`，数据根 = exe 目录（当前 Debug 目录即如此） |
+| **便携模式** | exe 旁放 `portable.txt`，数据根 = exe 目录（当前真实根：`E://Program File\AtlasLaucher`；Debug 只留 `portable.txt` 当 UI 沙箱） |
 | **系列标签** | 实例名前缀 `[US1]` / `[RC3]`；网格里显示成名字下方药丸，文本由 `SeriesNames` 翻译 |
 | **验证档位** | L0 编译 / L1 单测 / L2 真实产物 / L3 真机（[05 §1](05-验证记录.md)） |
