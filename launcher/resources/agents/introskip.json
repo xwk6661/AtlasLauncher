@@ -4,10 +4,10 @@
   "versions": {
     "1.16.5": {
       "class": "djz",
+      "defer": true,
       "desc": "(Ldjz$a;Ljava/lang/String;ZLjava/lang/Runnable;)V",
       "index": 4,
-      "method": "a",
-      "defer": true
+      "method": "a"
     },
     "1.19": {
       "class": "eok",
@@ -93,6 +93,18 @@
       "index": 3,
       "method": "a"
     },
+    "1.21.10": {
+      "class": "gsq",
+      "desc": "(Lfih$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.21.11": {
+      "class": "gyk",
+      "desc": "(Lfni$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
     "1.21.2": {
       "class": "fzj",
       "desc": "(Lewc$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
@@ -114,6 +126,30 @@
     "1.21.5": {
       "class": "gfe",
       "desc": "(Lfah$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.21.6": {
+      "class": "gkx",
+      "desc": "(Lfcs$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.21.7": {
+      "class": "gkx",
+      "desc": "(Lfcs$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.21.8": {
+      "class": "gky",
+      "desc": "(Lfcs$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
+      "index": 3,
+      "method": "a"
+    },
+    "1.21.9": {
+      "class": "gsq",
+      "desc": "(Lfih$c;ZLjava/lang/Runnable;Ljava/lang/Runnable;)V",
       "index": 3,
       "method": "a"
     }
