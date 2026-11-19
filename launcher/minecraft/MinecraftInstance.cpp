@@ -248,6 +248,9 @@ void MinecraftInstance::loadSpecificSettings()
         m_settings->registerOverride(global_settings->getSetting("MapSafeExit"), mapBehaviorsOverride);
         m_settings->registerOverride(global_settings->getSetting("MapSkipExperimentalPrompt"), mapBehaviorsOverride);
         m_settings->registerOverride(global_settings->getSetting("MapEnterDelay"), mapBehaviorsOverride);
+        // 按地图版本自动挑 Java（maps::JavaRecommend）。和上面三项同一层覆盖语义：
+        // 实例里没勾覆盖时读全局，勾了才用实例自己的开关。
+        m_settings->registerOverride(global_settings->getSetting("MapAutoJava"), mapBehaviorsOverride);
 
         // Legacy-related options
         auto legacySettings = m_settings->registerSetting("OverrideLegacySettings", false);

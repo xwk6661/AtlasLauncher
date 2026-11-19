@@ -62,6 +62,11 @@ class MapSettingsWidget : public QWidget {
    private:
     void buildBehaviorGroup(QWidget* parent, QVBoxLayout* layout);
     void buildGlobalGroups(QWidget* parent, QVBoxLayout* layout);
+    /// 实例作用域才有：按该实例的 MC 版本推荐/设定 Java
+    void buildJavaGroup(QWidget* parent, QVBoxLayout* layout);
+    void refreshJavaChoices();
+    void startJavaScan(bool forceReload);
+    void applySelectedJava();
 
     MinecraftInstance* m_instance = nullptr;
     SettingsObject* m_settings = nullptr;
@@ -70,7 +75,18 @@ class MapSettingsWidget : public QWidget {
     QCheckBox* m_autoEnter = nullptr;
     QCheckBox* m_safeExit = nullptr;
     QCheckBox* m_skipPrompt = nullptr;
+    QCheckBox* m_autoJava = nullptr;
     QSpinBox* m_enterDelay = nullptr;
+
+    // 仅实例作用域：Java 推荐
+    QGroupBox* m_javaBox = nullptr;
+    QLabel* m_javaNeed = nullptr;
+    QLabel* m_javaCurrent = nullptr;
+    QLabel* m_javaHint = nullptr;
+    QComboBox* m_javaCombo = nullptr;
+    QPushButton* m_javaApply = nullptr;
+    QPushButton* m_javaRefresh = nullptr;
+    bool m_javaScanPending = false;
 
     // 以下仅全局作用域可见
     QLineEdit* m_libraryDir = nullptr;

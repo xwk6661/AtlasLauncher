@@ -812,6 +812,9 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("MapAutoEnter", true);          // 启动时直接进图
         m_settings->registerSetting("MapSafeExit", true);           // 退出后判定落盘并回写统计
         m_settings->registerSetting("MapEnterDelay", 1);            // Agent 进图前等待秒数
+        // 按地图的 MC 版本自动挑 Java（maps/JavaRecommend）：导入后与每次启动前各算一次，
+        // 只在实例没有"玩家手选且文件还在"的路径时才写入。关掉后一律不碰实例的 Java 设置。
+        m_settings->registerSetting("MapAutoJava", true);
         // 1.20+：地图自带改过世界生成的数据包时，原版会先弹「不支持使用实验性设置的世界」，
         // quickPlay 会停在那一页。开着就注入 introskip agent 直接加载（不动世界数据）
         m_settings->registerSetting("MapSkipExperimentalPrompt", true);

@@ -32,6 +32,7 @@ set(TEST_SOURCES
     MapSeriesNames_test.cpp
     MapPackAttach_test.cpp
     ModPresets_test.cpp
+    JavaRecommend_test.cpp
     DownloadSource_test.cpp
     RequestRetry_test.cpp
 )

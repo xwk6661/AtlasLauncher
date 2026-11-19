@@ -33,6 +33,7 @@
 #include "Application.h"
 #include "DataVersionTable.h"
 #include "HallCache.h"
+#include "JavaRecommend.h"
 #include "MapHallLink.h"
 #include "MapLibrary.h"
 #include "MapMeta.h"
@@ -278,6 +279,15 @@ Result<> MapImportTask::createInstance()
         m_instance->settings()->set("JoinWorldOnLaunch", worldFolderFor(0));
 
     components->saveNow();
+
+    // 导入时就把 Java 定下来：这一步只依赖「MC 版本 → 需要哪个 Java」与本地已装的运行时，
+    // 不碰网络。玩家没手选过（新实例本来就没选过），所以切换是安全的；
+    // 关掉 MapAutoJava 时这里什么都不做，留给 Prism 既有的自动 Java 流程。
+    if (const auto java = autoSelectForInstance(m_instance.get(), m_mcVersion); java.applied)
+        qInfo() << "Map java: 导入时为新实例选用" << java.path << "—" << java.reason;
+    else if (!java.problem.isEmpty())
+        qDebug() << "Map java: 导入时未自动选择 —" << java.problem;
+
     return {};
 }
 

@@ -19,6 +19,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDir>
 #include <QFileDialog>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -33,14 +34,45 @@
 #include <algorithm>
 
 #include "Application.h"
+#include "BaseVersionList.h"
 #include "HallAPI.h"
 #include "HallProxy.h"
+#include "JavaRecommend.h"
 #include "MapTheme.h"
 #include "MapStyle.h"
+#include "java/JavaInstallList.h"
 #include "minecraft/MinecraftInstance.h"
 #include "settings/SettingsObject.h"
+#include "tasks/Task.h"
 
 namespace maps {
+
+namespace {
+
+/// 下拉框里那一行：名字 + 主版本 + 具体版本（名字已经能说明版本时不重复）
+QString describeCandidate(const JavaCandidate& candidate)
+{
+    QString text = candidate.label;
+    if (candidate.major > 0) {
+        text += QStringLiteral("（Java %1").arg(candidate.major);
+        if (!candidate.version.isEmpty() && candidate.version != QString::number(candidate.major))
+            text += QStringLiteral(" · %1").arg(candidate.version);
+        if (candidate.major > 0 && !candidate.is64)
+            text += QStringLiteral(" · 32 位");
+        text += QStringLiteral("）");
+    }
+    return text;
+}
+
+QString majorsText(const QList<int>& majors)
+{
+    QStringList parts;
+    for (int major : majors)
+        parts.append(QString::number(major));
+    return parts.join(QStringLiteral(" / "));
+}
+
+}  // namespace
 
 MapSettingsWidget::MapSettingsWidget(MinecraftInstance* instance, QWidget* parent) : QWidget(parent), m_instance(instance)
 {
@@ -67,6 +99,8 @@ MapSettingsWidget::MapSettingsWidget(MinecraftInstance* instance, QWidget* paren
     buildBehaviorGroup(body, layout);
     if (m_instance == nullptr)
         buildGlobalGroups(body, layout);
+    else
+        buildJavaGroup(body, layout);
 
     layout->addStretch(1);
     scroll->setWidget(body);
@@ -92,9 +126,15 @@ void MapSettingsWidget::buildBehaviorGroup(QWidget* parent, QVBoxLayout* layout)
     m_skipPrompt->setToolTip(tr("地图自带改过世界生成的数据包时，1.20+ 每次加载都会先问一次；\n"
                                 "勾上后由随包的 Java Agent 直接执行「我知道我在做什么」，不动世界数据。\n"
                                 "只对 1.20+ 生效，且只认表里有的版本。"));
+    m_autoJava = new QCheckBox(tr("启动前按地图版本自动选择 Java"), m_behaviorBox);
+    m_autoJava->setToolTip(tr("按这张地图的 MC 版本挑一个本地已装的 Java：\n"
+                              "1.16.5 及更早 → 8，1.17 → 16，1.18–1.20.4 → 17，1.20.5+ → 21，26.x → 21。\n"
+                              "只挑版本对得上的，找不到就什么都不做；\n"
+                              "你在下面（或「Java」页）手动选过的实例不会被改写。"));
     boxLayout->addWidget(m_autoEnter);
     boxLayout->addWidget(m_safeExit);
     boxLayout->addWidget(m_skipPrompt);
+    boxLayout->addWidget(m_autoJava);
 
     auto* form = new QFormLayout();
     form->setContentsMargins(0, 0, 0, 0);
@@ -108,6 +148,168 @@ void MapSettingsWidget::buildBehaviorGroup(QWidget* parent, QVBoxLayout* layout)
     boxLayout->addLayout(form);
 
     layout->addWidget(m_behaviorBox);
+}
+
+void MapSettingsWidget::buildJavaGroup(QWidget* parent, QVBoxLayout* layout)
+{
+    m_javaBox = new QGroupBox(tr("Java 运行时"), parent);
+    auto* boxLayout = new QVBoxLayout(m_javaBox);
+    boxLayout->setSpacing(ui::kSpaceS);
+
+    m_javaNeed = new QLabel(m_javaBox);
+    m_javaNeed->setWordWrap(true);
+
+    m_javaCurrent = new QLabel(m_javaBox);
+    m_javaCurrent->setWordWrap(true);
+    m_javaCurrent->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    m_javaCombo = new QComboBox(m_javaBox);
+    m_javaCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
+    m_javaCombo->setMinimumContentsLength(28);
+
+    auto* buttonRow = new QHBoxLayout();
+    m_javaApply = new QPushButton(tr("使用选中的 Java"), m_javaBox);
+    m_javaRefresh = new QPushButton(tr("重新检测"), m_javaBox);
+    m_javaApply->setToolTip(tr("写进这个实例：勾上「覆盖 Java 路径」并把路径指过去。\n"
+                               "选的是推荐项时仍算「自动选的」，版本变了会跟着换；\n"
+                               "选别的就是手选，之后不再被自动流程改写。"));
+    m_javaRefresh->setToolTip(tr("重新扫一遍本机 Java（注册表 / 常见目录 / Mojang 托管运行时）。"));
+    buttonRow->addWidget(m_javaApply);
+    buttonRow->addWidget(m_javaRefresh);
+    buttonRow->addStretch(1);
+
+    m_javaHint = ui::makeMuted(QString(), m_javaBox);
+    m_javaHint->setWordWrap(true);
+    m_javaHint->setTextInteractionFlags(Qt::TextSelectableByMouse);
+
+    boxLayout->addWidget(m_javaNeed);
+    boxLayout->addWidget(m_javaCurrent);
+    boxLayout->addWidget(m_javaCombo);
+    boxLayout->addLayout(buttonRow);
+    boxLayout->addWidget(m_javaHint);
+    layout->addWidget(m_javaBox);
+
+    connect(m_javaApply, &QPushButton::clicked, this, &MapSettingsWidget::applySelectedJava);
+    connect(m_javaRefresh, &QPushButton::clicked, this, [this] { startJavaScan(true); });
+
+    startJavaScan(false);
+}
+
+void MapSettingsWidget::startJavaScan(bool forceReload)
+{
+    if (m_instance == nullptr || m_javaCombo == nullptr)
+        return;
+
+    auto* list = APPLICATION->javalist();
+    if (list == nullptr) {
+        refreshJavaChoices();
+        return;
+    }
+    if (!forceReload && list->isLoaded()) {
+        refreshJavaChoices();
+        return;
+    }
+    if (m_javaScanPending)
+        return;
+
+    m_javaScanPending = true;
+    m_javaApply->setEnabled(false);
+    m_javaHint->setText(tr("正在检测本机 Java…"));
+    auto task = list->getLoadTask(true);
+    if (!task) {
+        m_javaScanPending = false;
+        refreshJavaChoices();
+        return;
+    }
+    connect(task.get(), &Task::finished, this, [this] {
+        m_javaScanPending = false;
+        refreshJavaChoices();
+    });
+}
+
+void MapSettingsWidget::refreshJavaChoices()
+{
+    if (m_instance == nullptr || m_javaCombo == nullptr)
+        return;
+
+    auto* settings = m_instance->settings();
+    const auto requirement = requirementForInstance(m_instance);
+    const auto recommendation = recommend(requirement, collectCandidates());
+
+    if (requirement.isKnown()) {
+        const QString source = requirement.source == QLatin1String("meta") ? tr("版本元数据") : tr("版本表");
+        m_javaNeed->setText(tr("这个版本需要 Java %1（依据：%2）。").arg(majorsText(requirement.majors), source));
+    } else {
+        m_javaNeed->setText(tr("判不出这个版本需要哪个 Java，不会自动改动。"));
+    }
+
+    const QString path = settings->get("JavaPath").toString();
+    const bool overridden = settings->get("OverrideJavaLocation").toBool();
+    const QString cached = settings->get("JavaVersion").toString();
+    if (path.isEmpty()) {
+        m_javaCurrent->setText(tr("当前：未设置（启动时交给 Prism 的自动 Java 流程）"));
+    } else {
+        const QString prefix = overridden ? tr("实例指定") : tr("跟随全局");
+        const QString versionText = cached.isEmpty() ? QString() : tr("（Java %1）").arg(cached);
+        m_javaCurrent->setText(tr("当前：%1 %2%3").arg(prefix, QDir::toNativeSeparators(path), versionText));
+    }
+
+    m_javaCombo->clear();
+    if (recommendation.ok) {
+        m_javaCombo->addItem(tr("★ 推荐：%1").arg(describeCandidate(recommendation.chosen)), recommendation.chosen.path);
+        m_javaCombo->setItemData(0, QDir::toNativeSeparators(recommendation.chosen.path), Qt::ToolTipRole);
+        for (const auto& alternate : recommendation.alternates) {
+            m_javaCombo->addItem(describeCandidate(alternate), alternate.path);
+            m_javaCombo->setItemData(m_javaCombo->count() - 1, QDir::toNativeSeparators(alternate.path), Qt::ToolTipRole);
+        }
+    } else {
+        m_javaCombo->addItem(tr("没有找到符合要求的 Java"), QString());
+    }
+    m_javaApply->setEnabled(!m_javaCombo->currentData().toString().isEmpty());
+    m_javaHint->setText(recommendation.ok ? recommendation.reason : recommendation.problem);
+    m_javaHint->setStyleSheet(QStringLiteral("color: %1;")
+                                  .arg(recommendation.ok ? ui::mutedTextColor().name() : ui::warningColorName()));
+}
+
+void MapSettingsWidget::applySelectedJava()
+{
+    if (m_instance == nullptr || m_javaCombo == nullptr)
+        return;
+
+    const QString path = m_javaCombo->currentData().toString();
+    if (path.isEmpty())
+        return;
+
+    const auto requirement = requirementForInstance(m_instance);
+    const auto recommendation = recommend(requirement, collectCandidates());
+
+    // 从推荐结果里找回完整的候选信息（major / version / label），别重扫一遍猜
+    JavaCandidate chosen;
+    bool found = false;
+    if (recommendation.ok && recommendation.chosen.path == path) {
+        chosen = recommendation.chosen;
+        found = true;
+    } else if (recommendation.ok) {
+        for (const auto& alternate : recommendation.alternates) {
+            if (alternate.path == path) {
+                chosen = alternate;
+                found = true;
+                break;
+            }
+        }
+    }
+    if (!found)
+        return;
+
+    // 选推荐项 → 仍归自动流程管（版本变了会换）；选其它 → 玩家手选，之后不再自动改写
+    const bool automatic = recommendation.ok && recommendation.chosen.path == chosen.path;
+    QString error;
+    if (!applyToInstance(m_instance, chosen, automatic, &error)) {
+        m_javaHint->setStyleSheet(QStringLiteral("color: %1;").arg(ui::warningColorName()));
+        m_javaHint->setText(error);
+        return;
+    }
+    refreshJavaChoices();
 }
 
 void MapSettingsWidget::buildGlobalGroups(QWidget* parent, QVBoxLayout* layout)
@@ -247,6 +449,7 @@ void MapSettingsWidget::loadSettings()
     m_autoEnter->setChecked(m_settings->get("MapAutoEnter").toBool());
     m_safeExit->setChecked(m_settings->get("MapSafeExit").toBool());
     m_skipPrompt->setChecked(m_settings->get("MapSkipExperimentalPrompt").toBool());
+    m_autoJava->setChecked(m_settings->get("MapAutoJava").toBool());
     m_enterDelay->setValue(m_settings->get("MapEnterDelay").toInt());
 
     if (m_instance != nullptr)
@@ -276,11 +479,13 @@ void MapSettingsWidget::saveSettings()
             m_settings->set("MapAutoEnter", m_autoEnter->isChecked());
             m_settings->set("MapSafeExit", m_safeExit->isChecked());
             m_settings->set("MapSkipExperimentalPrompt", m_skipPrompt->isChecked());
+            m_settings->set("MapAutoJava", m_autoJava->isChecked());
             m_settings->set("MapEnterDelay", m_enterDelay->value());
         } else {
             m_settings->reset("MapAutoEnter");
             m_settings->reset("MapSafeExit");
             m_settings->reset("MapSkipExperimentalPrompt");
+            m_settings->reset("MapAutoJava");
             m_settings->reset("MapEnterDelay");
         }
         return;
@@ -289,6 +494,7 @@ void MapSettingsWidget::saveSettings()
     m_settings->set("MapAutoEnter", m_autoEnter->isChecked());
     m_settings->set("MapSafeExit", m_safeExit->isChecked());
     m_settings->set("MapSkipExperimentalPrompt", m_skipPrompt->isChecked());
+    m_settings->set("MapAutoJava", m_autoJava->isChecked());
     m_settings->set("MapEnterDelay", m_enterDelay->value());
     m_settings->set("MapLibraryDir", m_libraryDir->text().trimmed());
     m_settings->set("MapHallEndpoint", m_hallEndpoint->text().trimmed());

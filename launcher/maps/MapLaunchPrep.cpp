@@ -28,6 +28,7 @@
 #include "BaseInstance.h"
 #include "DataVersionTable.h"
 #include "FileSystem.h"
+#include "JavaRecommend.h"
 #include "MapOptionsTxt.h"
 #include "minecraft/MinecraftInstance.h"
 #include "minecraft/PackProfile.h"
@@ -248,6 +249,17 @@ Result<> MapLaunchPrep::prepare(MinecraftInstance* instance, const MapMeta& meta
 {
     if (instance == nullptr)
         return std::unexpected{ QStringLiteral("实例不存在") };
+
+    // 按版本核对一次 Java：只在该实例「没有玩家手选的路径」时才写。
+    // 放在 plan() 之前 —— 选轨道与 Java 无关，但启动前必须先把运行时定下来，
+    // 否则 CheckJava 会拿全局那个 Java 8 去开 1.21 的地图（VerifyJavaInstall 直接判失败）。
+    if (!meta.worlds.isEmpty()) {
+        const auto java = autoSelectForInstance(instance, meta.version.mcVersion);
+        if (java.applied)
+            qInfo() << "Map java:" << instance->name() << "自动选用" << java.path << "—" << java.reason;
+        else if (!java.problem.isEmpty())
+            qInfo() << "Map java:" << instance->name() << "未自动选择：" << java.problem;
+    }
 
     auto plan = MapLaunchPrep::plan(instance, meta, worldFolder);
     plan.applicable = true;

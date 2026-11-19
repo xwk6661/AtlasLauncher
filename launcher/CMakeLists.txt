@@ -772,6 +772,8 @@ set(MAPS_SOURCES
     maps/AgentBootstrap.cpp
     maps/MapLaunchPrep.h
     maps/MapLaunchPrep.cpp
+    maps/JavaRecommend.h
+    maps/JavaRecommend.cpp
     maps/HallTypes.h
     maps/HallProxy.h
     maps/HallProxy.cpp
