@@ -110,6 +110,9 @@ $repo = "E:\llmUsage\AtlasLauncher"
 build\run-atlas-debug.cmd
 # 真机跑图：E:\Program File\AtlasLaucher\atlas.exe
 
+# 改完代码 → 一条命令上机（构建 → 打包 → 覆盖便携根；/E 不删数据，-DryRun 只体检）
+& "$repo\tools\deploy-local.ps1"
+
 # 测试（单套件；全套走 ctest）
 cd "$repo\build\win-local\Debug"; .\LauncherTests.exe MapArchiveScan_test
 ```

@@ -64,6 +64,9 @@
 & .\build\run-configure.ps1 -Action build-release
 & .\tools\package-windows.ps1 -Config Release    # → dist\Atlas-12.0.0-win64-release.zip
 
+# 一条命令上机：构建 → 打包 → 覆盖便携根（/E 不删数据，装完比 exe 哈希；-DryRun 只体检）
+& .\tools\deploy-local.ps1
+
 # 运行
 #   真机：E:/Program File/AtlasLaucher/atlas.exe（便携根 = 数据根）
 #   界面调试：build\run-atlas-debug.cmd（自动带 --dir 指向便携根，不复制数据）
