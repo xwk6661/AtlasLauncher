@@ -35,6 +35,7 @@ set(TEST_SOURCES
     JavaRecommend_test.cpp
     DownloadSource_test.cpp
     RequestRetry_test.cpp
+    AssetIndexCache_test.cpp
 )
 
 # NOTE(@getchoo): Very funny way of aliasing the Qt generated `main` test functions to respective filenames

@@ -43,6 +43,10 @@ struct AssetsIndex {
 namespace AssetsUtils {
 bool loadAssetsIndexJson(const QString& assetsId, const QString& path, AssetsIndex& index);
 
+/// 本地这份素材清单是不是版本 json 声明的那一份（sha1 与大小都比）。
+/// 一致就不用再下载清单；不一致说明本地缺、被截断，或者上游重发过这份索引。
+bool indexFileMatches(const QString& path, const QString& expectedSha1, qint64 expectedSize);
+
 QDir getAssetsDir(const QString& assetsId, const QString& resourcesFolder);
 
 /// Reconstruct a virtual assets folder for the given assets ID and return the folder

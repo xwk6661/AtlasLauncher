@@ -15,6 +15,8 @@
 
 #include "net/ApiRequest.h"
 
+#include <QTimer>
+
 AssetUpdateTask::AssetUpdateTask(MinecraftInstance* inst)
 {
     m_inst = inst;
@@ -28,6 +30,19 @@ void AssetUpdateTask::executeTask()
     auto assets = profile->getMinecraftAssets();
     QUrl indexUrl = assets->url;
     QString localPath = assets->id + ".json";
+
+    // 清单先按内容认一次：与版本 json 声明的一致就直接用本地文件。
+    // 以前这里无条件 `setStale(true)`，每次启动都要把清单重新拉一遍（1.21.1 约 450 KB）；
+    // 反过来，上游重发过索引时声明的 sha1 会变，这时照旧下载，所以不会漏掉"索引变了"。
+    const QString localIndexPath = FS::PathCombine(resource::assetsDir(), "indexes", localPath);
+    if (AssetsUtils::indexFileMatches(localIndexPath, assets->sha1, assets->size)) {
+        setStatus(tr("Assets index is up to date."));
+        qInfo() << "Asset index already matches its sha1, skipping download:" << localIndexPath;
+        // 不能在 executeTask() 里同步往下走：Task 还在启动过程中，直接发信号会被当成"没跑完"
+        QTimer::singleShot(0, this, &AssetUpdateTask::assetIndexFinished);
+        return;
+    }
+
     auto job = makeShared<NetJob>(tr("Asset index for %1").arg(m_inst->name()), APPLICATION->network());
 
     auto metacache = APPLICATION->metacache();

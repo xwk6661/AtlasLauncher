@@ -37,6 +37,7 @@
 #include <QDebug>
 #include <QDir>
 #include <QDirListing>
+#include <QFile>
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -156,6 +157,34 @@ bool loadAssetsIndexJson(const QString& assetsId, const QString& path, AssetsInd
     }
 
     return true;
+}
+
+// 清单本身也按内容认：版本 json 里的 `assetIndex.sha1` 就是上游对这份清单的承诺。
+// 一致 = 上游没重发过这份清单 → 直接用本地文件，不必每次启动都向 Mojang 走一趟
+// （1.21.1 的 `17.json` 450 KB，实测每次启动都要重下）。不一致 → 调用方照旧下载。
+bool indexFileMatches(const QString& path, const QString& expectedSha1, qint64 expectedSize)
+{
+    if (expectedSha1.isEmpty())
+        return false;
+
+    const QFileInfo info(path);
+    if (!info.isFile() || info.size() <= 0)
+        return false;
+    // 元数据给了大小就先比大小：少了这步，见到截断文件也要白算一遍哈希
+    if (expectedSize > 0 && info.size() != expectedSize)
+        return false;
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly))
+        return false;
+
+    QCryptographicHash sha1(QCryptographicHash::Sha1);
+    const bool hashed = sha1.addData(&file);
+    file.close();
+    if (!hashed)
+        return false;
+
+    return QString::fromLatin1(sha1.result().toHex()).compare(expectedSha1, Qt::CaseInsensitive) == 0;
 }
 
 // FIXME: ugly code duplication
