@@ -1672,7 +1672,9 @@ bool Application::launch(MinecraftInstance* instance,
 
         // 「退出存档后关游戏」：挂上不会有副作用。
         // 现代版本认离开存档与全部落盘；老版本 / Agent 轨道认 EXIT_SAFE；均在确认落盘后才关闭。
-        if (mapPlan.applicable && mapPlan.autoEnter && mapPlan.closeOnQuit)
+        // 只看 closeOnQuit，不看 autoEnter：玩家自己从主菜单进图，退出存档后一样应该关游戏
+        // （2026-11-19 实测：`autoEnter && closeOnQuit` 会让"关了自动进图"变成"退出手动进的世界也不关"）。
+        if (mapPlan.applicable && mapPlan.closeOnQuit)
             maps::MapQuitWatcher::attach(instance);
 
         // quickPlay 会跳过标题画面直接进图，而游戏窗口是被「创建」出来的、默认不抢前台。
