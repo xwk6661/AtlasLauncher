@@ -20,10 +20,12 @@
 #include <QApplication>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFutureWatcher>
 #include <QHBoxLayout>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QVBoxLayout>
+#include <QtConcurrent>
 
 #include "MapArchiveScanner.h"
 #include "MapImportDialog.h"
@@ -123,33 +125,45 @@ void LocalLibraryPage::importFromPath(const QString& path)
     if (path.isEmpty() || !QFileInfo::exists(path))
         return;
 
+    /**
+     * 扫描要打开归档、遍历条目、读 `level.dat`：大包在真机上要几秒。
+     * 以前是同步调用 + 等待光标 —— 那几秒里整个窗口都不动（审查 P1-5）。
+     * 现在丢线程池，扫完再回 UI 线程弹对话框。
+     */
     QApplication::setOverrideCursor(Qt::WaitCursor);
-    const auto scanned = MapArchiveScanner::scan(path);
-    QApplication::restoreOverrideCursor();
+    auto* watcher = new QFutureWatcher<Result<MapScanResult>>(this);
+    connect(watcher, &QFutureWatcher<Result<MapScanResult>>::finished, this, [this, watcher, path] {
+        watcher->deleteLater();
+        QApplication::restoreOverrideCursor();
 
-    if (!scanned || scanned->worlds.isEmpty()) {
-        CustomMessageBox::selectable(this, tr("不是地图存档"),
-                                     tr("这个文件里没有找到包含 level.dat 的 Minecraft 世界。\n"
-                                        "如果它其实是整合包，请到「导入」页当作整合包导入。"),
-                                     QMessageBox::Warning)
-            ->show();
-        return;
-    }
+        const auto scanned = watcher->result();
+        if (!scanned || scanned->worlds.isEmpty()) {
+            CustomMessageBox::selectable(this, tr("不是地图存档"),
+                                         tr("这个文件里没有找到包含 level.dat 的 Minecraft 世界。\n"
+                                            "如果它其实是整合包，请到「导入」页当作整合包导入。"),
+                                         QMessageBox::Warning)
+                ->show();
+            return;
+        }
 
-    // 与导入页同一条路：确认版本 / 加载器 / 关联 / 语言，点导入就建实例
-    const auto options = MapImportDialog::ask(*scanned, this);
-    if (!options)
-        return;
+        // 与导入页同一条路：确认版本 / 加载器 / 关联 / 语言，点导入就建实例
+        const auto options = MapImportDialog::ask(*scanned, this);
+        if (!options)
+            return;
 
-    auto chosen = *options;
-    if (chosen.displayName.trimmed().isEmpty())
-        chosen.displayName = QFileInfo(path).completeBaseName();
+        auto chosen = *options;
+        if (chosen.displayName.trimmed().isEmpty())
+            chosen.displayName = QFileInfo(path).completeBaseName();
 
-    if (m_dialog == nullptr)
-        return;
-    m_dialog->setSuggestedPack(chosen.displayName, new MapImportTask(path, *scanned, chosen));
-    m_dialog->setSuggestedIcon("default");
-    m_dialog->accept();
+        if (m_dialog == nullptr)
+            return;
+        m_dialog->setSuggestedPack(chosen.displayName, new MapImportTask(path, *scanned, chosen));
+        m_dialog->setSuggestedIcon("default");
+        m_dialog->accept();
+    });
+
+    watcher->setFuture(QtConcurrent::run(QThreadPool::globalInstance(),
+                                         [path]() { return MapArchiveScanner::scan(path); }));
 }
 
 }  // namespace maps

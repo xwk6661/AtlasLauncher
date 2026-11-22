@@ -65,6 +65,8 @@ class MapResourcePage : public QWidget, public BasePage {
     QGridLayout* m_statusGrid = nullptr;
     QWidget* m_statusBody = nullptr;
     ElidedLabel* m_rootPath = nullptr;
+    /// 迁移在后台跑，避免重复点「应用资源库」起两个 copy
+    bool m_migrating = false;
 };
 
 }  // namespace maps

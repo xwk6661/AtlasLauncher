@@ -25,6 +25,7 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFutureWatcher>
 #include <QGroupBox>
 #include <QGridLayout>
 #include <QHBoxLayout>
@@ -32,11 +33,19 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QProgressDialog>
+#include <QPointer>
 #include <QPushButton>
 #include <QResizeEvent>
+#include <QTimer>
 #include <QTreeWidget>
 #include <QVBoxLayout>
+#include <QtConcurrent>
+
+#include <atomic>
+#include <memory>
 
 #include "Application.h"
 #include "FileSystem.h"
@@ -344,39 +353,96 @@ void MapResourcePage::applyNow()
         return;
     }
 
-    QProgressDialog progress(tr("正在迁移资源…"), QString(), 0, 100, this);
-    progress.setWindowTitle(tr("资源库"));
-    progress.setWindowModality(Qt::WindowModal);
-    progress.setCancelButton(nullptr);  // 复制到一半取消会留下半套文件，干脆不给取消
-    progress.setMinimumDuration(0);
-    progress.setValue(0);
+    if (m_migrating)
+        return;
 
-    const QStringList errors = ResourceStore::apply(root, m_migrate->isChecked(),
-                                                    [&progress](int done, int total, const QString& file) {
-                                                        progress.setMaximum(qMax(1, total));
-                                                        progress.setValue(done);
-                                                        progress.setLabelText(tr("正在迁移 %1（%2 / %3）").arg(file).arg(done).arg(total));
-                                                        QCoreApplication::processEvents();
-                                                    });
-    progress.close();
+    /**
+     * 迁移可能要搬几个 GB，**不能占 UI 线程**。
+     *
+     * 原来是同步调用 + `QCoreApplication::processEvents()` 喂进度条：界面虽然能重绘，
+     * 但整个 apply 都跑在 UI 线程上，而且 processEvents 会重入事件循环 —— 迁移中
+     * 关掉设置页时 `this` 可能先被销毁（审查 P1-4）。
+     *
+     * 现在：工作线程只写一个共享的进度结构，UI 侧用 150 ms 的表去读 —— 跨线程调用
+     * **一次都不进 Qt 控件**，所以退出/关页时不会踩悬空对象。
+     */
+    struct MigrationProgress {
+        std::atomic<int> done{ 0 };
+        std::atomic<int> total{ 0 };
+        QMutex fileMutex;
+        QString file;
+    };
+    auto progressState = std::make_shared<MigrationProgress>();
 
-    // 文件已经在目标位置，下载账本（metacache 的 libraries / asset_indexes 基址）必须一起挪。
-    // 少了这一步：本次会话仍按旧根解析 → 判定"文件不存在" → 条目被除名写盘 → 重启后整份重下；
-    // classpath 也会继续指向旧目录，客户端直接 ClassNotFoundException。
-    APPLICATION->refreshResourcePaths();
+    const bool move = m_migrate->isChecked();
+    auto* progress = new QProgressDialog(tr("正在迁移资源…"), QString(), 0, 100, this);
+    progress->setWindowTitle(tr("资源库"));
+    progress->setWindowModality(Qt::WindowModal);
+    progress->setCancelButton(nullptr);  // 复制到一半取消会留下半套文件，干脆不给取消
+    progress->setMinimumDuration(0);
+    progress->setValue(0);
+    progress->setAttribute(Qt::WA_DeleteOnClose);
 
-    if (errors.isEmpty()) {
-        m_status->setVisible(true);
-        m_status->setStyleSheet(QStringLiteral("color: %1;").arg(ui::successColorName()));
-        m_status->setText(tr("已迁移到 %1，下载账本已同步（立即生效，不用重启）。"
-                             "如果目标位置本来就有别的启动器的资源，已有的那份会按 sha1 直接认下来，不会重下。")
-                              .arg(QDir::toNativeSeparators(root)));
-    } else {
-        m_status->setVisible(true);
-        m_status->setStyleSheet(QStringLiteral("color: %1;").arg(ui::warningColorName()));
-        m_status->setText(tr("有 %1 项没完成：\n· %2").arg(errors.size()).arg(errors.join(QStringLiteral("\n· "))));
-    }
-    refreshStatus();
+    m_migrating = true;
+    QPointer<QProgressDialog> guard(progress);
+
+    auto* ticker = new QTimer(this);
+    ticker->setInterval(150);
+    connect(ticker, &QTimer::timeout, this, [guard, progressState] {
+        if (guard.isNull())
+            return;
+        const int total = progressState->total.load();
+        if (total <= 0)
+            return;
+        const int done = progressState->done.load();
+        QString file;
+        {
+            QMutexLocker lock(&progressState->fileMutex);
+            file = progressState->file;
+        }
+        guard->setMaximum(qMax(1, total));
+        guard->setValue(done);
+        guard->setLabelText(tr("正在迁移 %1（%2 / %3）").arg(file).arg(done).arg(total));
+    });
+    ticker->start();
+
+    auto* watcher = new QFutureWatcher<QStringList>(this);
+    connect(watcher, &QFutureWatcher<QStringList>::finished, this, [this, watcher, guard, ticker, root] {
+        watcher->deleteLater();
+        ticker->stop();
+        ticker->deleteLater();
+        if (!guard.isNull())
+            guard->close();
+        m_migrating = false;
+
+        // 文件已经在目标位置，下载账本（metacache 的 libraries / asset_indexes 基址）必须一起挪。
+        // 少了这一步：本次会话仍按旧根解析 → 判定"文件不存在" → 条目被除名写盘 → 重启后整份重下；
+        // classpath 也会继续指向旧目录，客户端直接 ClassNotFoundException。
+        APPLICATION->refreshResourcePaths();
+
+        const QStringList errors = watcher->result();
+        if (errors.isEmpty()) {
+            m_status->setVisible(true);
+            m_status->setStyleSheet(QStringLiteral("color: %1;").arg(ui::successColorName()));
+            m_status->setText(tr("已迁移到 %1，下载账本已同步（立即生效，不用重启）。"
+                                 "如果目标位置本来就有别的启动器的资源，已有的那份会按 sha1 直接认下来，不会重下。")
+                                  .arg(QDir::toNativeSeparators(root)));
+        } else {
+            m_status->setVisible(true);
+            m_status->setStyleSheet(QStringLiteral("color: %1;").arg(ui::warningColorName()));
+            m_status->setText(tr("有 %1 项没完成：\n· %2").arg(errors.size()).arg(errors.join(QStringLiteral("\n· "))));
+        }
+        refreshStatus();
+    });
+
+    watcher->setFuture(QtConcurrent::run(QThreadPool::globalInstance(), [root, move, progressState] {
+        return ResourceStore::apply(root, move, [progressState](int done, int total, const QString& file) {
+            progressState->done.store(done);
+            progressState->total.store(total);
+            QMutexLocker lock(&progressState->fileMutex);
+            progressState->file = file;
+        });
+    }));
 }
 
 bool MapResourcePage::apply()
