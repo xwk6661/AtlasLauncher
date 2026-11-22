@@ -75,6 +75,17 @@
 
 #include <functional>
 
+#ifdef Q_OS_WIN
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
+#  ifndef WIN32_LEAN_AND_MEAN
+#    define WIN32_LEAN_AND_MEAN
+#  endif
+#  include <windows.h>
+#  include <shlobj.h>
+#endif
+
 namespace maps {
 
 namespace {
@@ -1644,17 +1655,108 @@ void MapLibraryPanel::deleteMaps(const QStringList& files)
     }
 }
 
+#ifdef Q_OS_WIN
+namespace {
+
+/**
+ * 注册表某个键的**默认值**（空值名）。读不到返回空串。
+ *
+ * 用 `RegGetValueW` 而不是 QSettings：`Folder\shell` 下的默认值是**没有名字**的那个值，
+ * QSettings 那套"用点号/Default 取默认值"的写法在注册表后端上不保证能取到。
+ */
+QString readRegDefault(HKEY root, const QString& subKey)
+{
+    wchar_t buffer[2048];
+    DWORD bytes = sizeof(buffer);
+    const LONG result = RegGetValueW(root, reinterpret_cast<LPCWSTR>(subKey.utf16()), nullptr, RRF_RT_REG_SZ, nullptr,
+                                     buffer, &bytes);
+    if (result != ERROR_SUCCESS)
+        return {};
+    const int length = static_cast<int>(bytes / sizeof(wchar_t)) - 1;  // bytes 含结尾的 \0
+    return QString::fromWCharArray(buffer, qMax(0, length)).trimmed();
+}
+
+/// 这台机器"打开文件夹"用的是哪个动词：`HKCU\Software\Classes` 覆盖优先，其次 `HKCR`。
+/// 装了 Directory Opus 的 Explorer Replacement 时是 `openindopus`，原装系统是 `open`。
+QString folderOpenVerb()
+{
+    QString verb = readRegDefault(HKEY_CURRENT_USER, QStringLiteral("Software\\Classes\\Folder\\shell"));
+    if (verb.isEmpty())
+        verb = readRegDefault(HKEY_CLASSES_ROOT, QStringLiteral("Folder\\shell"));
+    if (verb.compare(QLatin1String("none"), Qt::CaseInsensitive) == 0)
+        return {};
+    return verb;
+}
+
+/// 动词对应的命令行，例如 `"D:\…\dopusrt.exe" /nodde /idlist,%I,%L`
+QString commandForVerb(const QString& verb)
+{
+    const QString key = QStringLiteral("Folder\\shell\\%1\\command").arg(verb);
+    QString command = readRegDefault(HKEY_CURRENT_USER, QStringLiteral("Software\\Classes\\") + key);
+    if (command.isEmpty())
+        command = readRegDefault(HKEY_CLASSES_ROOT, key);
+    return command;
+}
+
+/// 命令行里的可执行文件（第一段，可能带引号）
+QString executableFromCommand(const QString& command)
+{
+    const QString trimmed = command.trimmed();
+    if (trimmed.startsWith(QLatin1Char('"'))) {
+        const int end = trimmed.indexOf(QLatin1Char('"'), 1);
+        if (end > 1)
+            return trimmed.mid(1, end - 1);
+    }
+    return trimmed.section(QLatin1Char(' '), 0, 0);
+}
+
+/// 交给系统外壳：打开的文件夹并选中文件（Uses 资源管理器；不做任何命令行拼串）
+bool revealWithShell(const QString& path)
+{
+    const PIDLIST_ABSOLUTE idl = ILCreateFromPathW(reinterpret_cast<PCWSTR>(path.utf16()));
+    if (idl == nullptr)
+        return false;
+    const HRESULT hr = SHOpenFolderAndSelectItems(idl, 0, nullptr, 0);
+    ILFree(idl);
+    return SUCCEEDED(hr);
+}
+
+}  // namespace
+#endif
+
 void MapLibraryPanel::revealInExplorer(const QString& path)
 {
 #ifdef Q_OS_WIN
-    if (QFileInfo::exists(path)) {
-        // `/select,` 必须和路径拼成**一个**参数：分成两个参数时 explorer 会忽略后面那个
-        const QString arg = QStringLiteral("/select,") + QDir::toNativeSeparators(path);
-        if (QProcess::startDetached(QStringLiteral("explorer.exe"), { arg }))
-            return;
+    const QFileInfo info(path);
+    if (info.exists()) {
+        /**
+         * 「打开所在目录」要按**这台机器**的文件管理器走，不能硬编码 explorer.exe：
+         * 装了 Directory Opus（Explorer Replacement）之后，`Folder\shell` 的默认动词是
+         * `openindopus`，硬调资源管理器等于绕开用户的选择。
+         *
+         * 三种情况（[06 §114]）：
+         *   · 默认动词是 DOpus → `dopusrt.exe /cmd Go "<文件>"`（DOpus 官方给的说法，
+         *     一条命令就到"所在目录 + 选中该文件"）；
+         *   · 资源管理器 / 没有自定义动词 → `SHOpenFolderAndSelectItems`；
+         *     旧的 `explorer.exe /select,<路径>` 在带空格的路径上会被 Qt 整体加引号，
+         *     explorer 解析失败后退回「文档」—— 用户实际撞到的就是这一条；
+         *   · 别的管理器（Total Commander 等）→ 交给外壳打开目录（不做选中，也不猜参数）。
+         */
+        const QString verb = folderOpenVerb();
+        const QString program = verb.isEmpty() ? QString() : executableFromCommand(commandForVerb(verb));
+
+        if (program.endsWith(QLatin1String("dopusrt.exe"), Qt::CaseInsensitive)) {
+            const QStringList args = { QStringLiteral("/cmd"), QStringLiteral("Go"),
+                                       QDir::toNativeSeparators(info.absoluteFilePath()) };
+            if (QProcess::startDetached(program, args))
+                return;
+        } else if (program.isEmpty() || program.endsWith(QLatin1String("explorer.exe"), Qt::CaseInsensitive)) {
+            if (revealWithShell(info.absoluteFilePath()))
+                return;
+        }
     }
 #endif
-    // 文件不在了（或不是 Windows）：退回"打开所在目录"，至少让人看到位置
+    // 文件不在了、或上面几条都没成：退回"打开所在目录"，至少让人看到位置
     QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).absolutePath()));
 }
 
