@@ -192,6 +192,8 @@ constexpr int kMarkerSize = 12;
 /// 组内版本行的高度：**约半行**。子行只写"哪个语言版本"，不需要正常行的高度
 constexpr int kChildRowHeight = 16;
 constexpr int kDefaultRowHeight = 30;
+/// 左侧分类栏宽度：等宽字体下「MiniGame (  2)」正好放得下，再宽就白占表格的位置
+constexpr int kCategoryBarWidth = 92;
 
 /**
  * 「└」折号：地图行最前面的图标位。
@@ -485,13 +487,13 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     // 左侧分类栏容器：固定宽度（8.1）。分类名都在 3~8 个字符内，132px 纯属浪费表格的地方，
     // 收到 92px：等宽字体下「MiniGame (  2)」正好放得下，右边表格多出 40px 给地图名。
     auto* catContainer = new QWidget(this);
-    catContainer->setFixedWidth(92);
+    catContainer->setFixedWidth(kCategoryBarWidth);
     auto* catLayout = new QVBoxLayout(catContainer);
     catLayout->setContentsMargins(0, 0, 0, 0);
     catLayout->setSpacing(4);
 
     m_categories = new CategoryList(this);
-    m_categories->setFixedWidth(92);
+    m_categories->setFixedWidth(kCategoryBarWidth);
     // 与右侧表格一样去掉原生边框：两者并排时，一个有线一个没线会显得歪
     m_categories->setFrameShape(QFrame::NoFrame);
     // 等宽字体 + 整数号：分类名长短不一，比例字体下每一行的计数永远对不齐（「CTM (9)」vs「MiniGame (2)」）

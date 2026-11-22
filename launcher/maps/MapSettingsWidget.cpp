@@ -38,6 +38,7 @@
 #include "HallAPI.h"
 #include "HallProxy.h"
 #include "JavaRecommend.h"
+#include "MapCoverLoader.h"
 #include "MapTheme.h"
 #include "MapStyle.h"
 #include "java/JavaInstallList.h"
@@ -385,6 +386,38 @@ void MapSettingsWidget::buildGlobalGroups(QWidget* parent, QVBoxLayout* layout)
     m_hallProxyUrl = new QLineEdit(hallBox);
     m_hallProxyUrl->setPlaceholderText(QStringLiteral("http://127.0.0.1:7890"));
     hallForm->addRow(tr("代理地址"), m_hallProxyUrl);
+
+    /**
+     * 封面缓存：磁盘上只增不减（内存那份有 LRU，磁盘没有），给一个显式清理入口。
+     * 清掉不会丢任何玩家数据 —— 下次打开大厅按需重下（审查 P2-5）。
+     */
+    auto* coverRow = new QWidget(hallBox);
+    auto* coverLayout = new QHBoxLayout(coverRow);
+    coverLayout->setContentsMargins(0, 0, 0, 0);
+    auto* clearCovers = new QPushButton(tr("清空封面缓存…"), coverRow);
+    auto* coverSize = new QLabel(coverRow);
+    coverLayout->addWidget(clearCovers);
+    coverLayout->addWidget(coverSize, 1);
+    hallForm->addRow(tr("封面缓存"), coverRow);
+
+    const auto refreshCoverSize = [coverSize] {
+        const QDir dir(MapCoverLoader::instance()->cacheDir());
+        const auto files = dir.entryInfoList({ QStringLiteral("*.jpg"), QStringLiteral("*.png") }, QDir::Files);
+        qint64 bytes = 0;
+        for (const auto& entry : files)
+            bytes += entry.size();
+        coverSize->setText(tr("%1 个文件，%2 MB")
+                               .arg(static_cast<int>(files.size()))
+                               .arg(QString::number(bytes / 1024.0 / 1024.0, 'f', 1)));
+    };
+    refreshCoverSize();
+
+    connect(clearCovers, &QPushButton::clicked, this, [this, refreshCoverSize] {
+        const int removed = MapCoverLoader::instance()->clearDiskCache();
+        refreshCoverSize();
+        m_probeResult->setText(tr("已清空 %1 个封面缓存文件（下次打开大厅会按需重下）。").arg(removed));
+    });
+
     hallLayout->addLayout(hallForm);
 
     // 「测试连接」：存配置、立刻打一次真查询，把耗时 / 结果 / 走的哪条出口摆出来
