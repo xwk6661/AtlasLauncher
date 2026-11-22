@@ -152,6 +152,29 @@ class MapImportTask : public InstanceTask {
     QStringList m_extractedWorldDirs;
     std::unique_ptr<MinecraftInstance> m_instance;
 
+    /**
+     * 工作线程只**算**、不写共享状态。
+     *
+     * 库索引（`map-library.json`）与大厅缓存（`hall-cache.json` 的 slug 索引）都是
+     * 进程内共享的：UI 侧的本地库面板、实例卡片也在读它们。在工作线程里直接
+     * 读改写会和 UI 撞车（丢更新 + 审查 P0-1/P0-3），所以这里只把结果攒下来，
+     * 回到 `onExtractionFinished()`（UI 线程）再落盘。
+     */
+    struct LibraryRegistration {
+        bool valid = false;
+        QString archiveCopy;
+        QString mcVersion;
+        QString englishName;
+        QString chineseName;
+        QString hallSlug;
+        variant::Info variant;
+    } m_libraryRegistration;
+    /// 大厅关联（`hall-link.json`）也回 UI 线程写：标题要从 HallCache 查
+    QString m_pendingHallSlug;
+
+    void registerInLibrary();
+    void writeHallLink();
+
     std::atomic<bool> m_abortRequested{false};
     QFutureWatcher<Result<>> m_extractWatcher;
 

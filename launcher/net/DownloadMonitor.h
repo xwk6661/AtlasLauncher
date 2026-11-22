@@ -21,6 +21,7 @@
 #include <QElapsedTimer>
 #include <QHash>
 #include <QList>
+#include <QMutex>
 #include <QObject>
 #include <QSet>
 #include <QString>
@@ -85,6 +86,8 @@ class DownloadMonitor : public QObject {
     explicit DownloadMonitor(QObject* parent = nullptr);
 
    private:
+    /// 保护 m_jobs：NetJob 的构造/析构与界面的 500ms 轮询不一定在同一个线程
+    mutable QMutex m_mutex;
     QSet<NetJob*> m_jobs;
     QElapsedTimer m_clock;
     qint64 m_lastBytes = 0;

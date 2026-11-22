@@ -126,6 +126,7 @@
 
 // 地图启动器：所有启动入口的统一准备点（见 launch()）
 #include "maps/MapDiskCleanup.h"
+#include "maps/HallCache.h"
 #include "maps/MapLaunchPrep.h"
 #include "maps/MapPage.h"
 #include "maps/MapQuitWatcher.h"
@@ -1515,6 +1516,9 @@ void Application::performMainStartupAction()
         const QString tempRoot = FS::PathCombine(instDir, ".tmp");
         FS::deletePath(tempRoot);
         maps::MapDiskCleanup::cleanAsync();
+        // 大厅快照的 slug 索引（3.6 MB）后台解析一次：本地库/实例卡片第一次查它时
+        // 就不再由 UI 线程付这笔钱（审查 P1-3）
+        maps::HallCache::warmAsync();
     }
 
     if (!m_urlsToImport.isEmpty()) {

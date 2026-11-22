@@ -241,6 +241,11 @@ void MapImportTask::onExtractionFinished()
     }
 
     setProgress(4, 5);
+    // 共享状态（库索引 / 大厅关联）回 UI 线程再写：工作线程只算了结果，
+    // 直接写会和本地库面板、实例卡片抢同一份文件（审查 P0-3）
+    registerInLibrary();
+    writeHallLink();
+
     // downloadFiles 内部会发 emitSucceeded（不需要下载时立刻发，需要时下载完再发），
     // 这里不能再补一次，否则 InstanceStaging 会收到两遍成功信号。
     setStatus(tr("正在下载游戏文件…"));
@@ -377,6 +382,10 @@ Result<> MapImportTask::deployResources()
     for (const auto& resource : m_scan.resources) {
         if (resource.kind != ScannedResource::Kind::ResourcePack)
             continue;
+        // 关闭对话框时析构会在 UI 线程等这个任务收工：每个文件都查一次取消位，
+        // 免得"玩家点了取消还要等一整个资源包"（审查 P1-6）
+        if (m_abortRequested.load())
+            return std::unexpected{ tr("导入已被取消") };
         const QString target =
             FS::PathCombine(minecraftRoot(), "resourcepacks", baseNameOf(resource.entryPath));
         if (const auto result = extractEntry(resource.entryPath, target); !result)
@@ -386,6 +395,8 @@ Result<> MapImportTask::deployResources()
     for (const auto& resource : m_scan.resources) {
         if (resource.kind != ScannedResource::Kind::BundledMod)
             continue;
+        if (m_abortRequested.load())
+            return std::unexpected{ tr("导入已被取消") };
         const QString target = FS::PathCombine(minecraftRoot(), "mods", baseNameOf(resource.entryPath));
         if (const auto result = extractEntry(resource.entryPath, target); !result)
             return result;
@@ -513,12 +524,26 @@ Result<> MapImportTask::writeMetadata()
     meta.importedAt = QDateTime::currentDateTimeUtc();
     meta.variant = m_options.variant;  // 这个实例是原版还是哪个语言的翻译
 
+    // 封面：世界自带的 icon.png 直接提升为实例图标。
+    // **必须在归档被移进地图库之前读**：importIntoLibrary() 是"移动"（跨盘才退化成复制 + 删除），
+    // 之后再用原路径打开必然失败。这里曾经放在移动之后，于是每张新导入的地图都丢图标，
+    // 日志只留一行 `cover extraction failed: … Failed to open archive file <原路径>`（06 §109）。
+    if (!primary.iconPath.isEmpty()) {
+        const QString target = FS::PathCombine(instanceRoot(), "icon.png");
+        if (const auto result = extractEntry(primary.iconPath, target); !result) {
+            qWarning() << "Map import: cover extraction failed:" << result.error();
+        }
+    }
+
     // 把压缩包归入地图库：原路径可能是下载目录 / U 盘，删掉就再也装不回来了
     const QString libraryCopy = MapRepository::importIntoLibrary(m_scan.archivePath);
     if (!libraryCopy.isEmpty()) {
         meta.archive.libraryCopy = libraryCopy;
-        // 顺手把这次识别到的版本/名字补进库索引，免得界面上一直显示"未识别"。
-        // 世界名是中文就当中文名，否则当英文名 —— 只做归类，不做翻译。
+        // 归档已经不在原路径上了：之后任何"按 m_archivePath 再打开一次"的读取都改走库副本。
+        // 现在这条路径上已经没有别的读取点，留着是为了下次有人加代码时不会再踩同一个坑。
+        m_archivePath = libraryCopy;
+        // 顺手把这次识别到的版本/名字攒起来，回 UI 线程再写库索引。
+        // 索引是进程内共享的（本地库面板也在读），工作线程直接读改写会和它撞车。
         const QString worldName = text::stripFormattingCodes(primary.level.levelName);
         bool hasChinese = false;
         for (const auto ch : worldName) {
@@ -527,39 +552,60 @@ Result<> MapImportTask::writeMetadata()
                 break;
             }
         }
-        MapLibrary::rememberImported(libraryCopy, primary.version.mcVersion, hasChinese ? QString() : worldName,
-                                     hasChinese ? worldName : QString(), m_options.hallSlug, m_options.variant);
+        m_libraryRegistration.valid = true;
+        m_libraryRegistration.archiveCopy = libraryCopy;
+        m_libraryRegistration.mcVersion = primary.version.mcVersion;
+        m_libraryRegistration.englishName = hasChinese ? QString() : worldName;
+        m_libraryRegistration.chineseName = hasChinese ? worldName : QString();
+        m_libraryRegistration.hallSlug = m_options.hallSlug;
+        m_libraryRegistration.variant = m_options.variant;
     }
 
-    // 关联到 CTM 地图：实例自己的 hall-link.json（与实例页「关联到 CTM 地图」同一份文件）。
-    // 标题/UUID 从本地大厅缓存取，取不到就只写 slug —— 有 slug 就够查简介与评论。
-    if (!m_options.hallSlug.isEmpty()) {
-        MapHallLink link;
-        link.slug = m_options.hallSlug;
-        const auto row = HallCache::findListRow(m_options.hallSlug);
-        if (!row.isEmpty()) {
-            link.mapUuid = row.value(QStringLiteral("map_uuid")).toString();
-            link.title = row.value(QStringLiteral("name")).toString();
-        }
-        link.linkedAt = QDateTime::currentDateTimeUtc();
-        QString linkError;
-        if (!link.save(instanceRoot(), &linkError))
-            qWarning() << "Map import: hall-link save failed:" << linkError;
-    }
+    // 大厅关联：标题/UUID 要从 HallCache 查（共享缓存），同样留到 UI 线程写
+    m_pendingHallSlug = m_options.hallSlug;
 
     QString error;
     if (!meta.save(instanceRoot(), &error))
         return std::unexpected{ error };
 
-    // 封面：世界自带的 icon.png 直接提升为实例图标
-    if (!primary.iconPath.isEmpty()) {
-        const QString target = FS::PathCombine(instanceRoot(), "icon.png");
-        if (const auto result = extractEntry(primary.iconPath, target); !result) {
-            qWarning() << "Map import: cover extraction failed:" << result.error();
-        }
-    }
-
     return {};
+}
+
+/**
+ * 把这次导入登记进库索引（**必须在 UI 线程调用**）。
+ *
+ * `MapLibrary::rememberImported()` 是"读整份索引 → 改一条 → 写回"，而 UI 侧的
+ * 本地库面板持有同一份文件的内存副本、改名/分类时也会整份写回。两边并发时后写的
+ * 会覆盖前写的 —— 表现是"新导入的包在库里消失"或"刚改的分类被还原"（审查 P0-3）。
+ */
+void MapImportTask::registerInLibrary()
+{
+    if (!m_libraryRegistration.valid)
+        return;
+    m_libraryRegistration.valid = false;
+    MapLibrary::rememberImported(m_libraryRegistration.archiveCopy, m_libraryRegistration.mcVersion,
+                                 m_libraryRegistration.englishName, m_libraryRegistration.chineseName,
+                                 m_libraryRegistration.hallSlug, m_libraryRegistration.variant);
+}
+
+/// 写实例自己的 `hall-link.json`（UI 线程）：标题/UUID 来自共享的大厅缓存
+void MapImportTask::writeHallLink()
+{
+    if (m_pendingHallSlug.isEmpty())
+        return;
+
+    MapHallLink link;
+    link.slug = m_pendingHallSlug;
+    const auto row = HallCache::findListRow(m_pendingHallSlug);
+    if (!row.isEmpty()) {
+        link.mapUuid = row.value(QStringLiteral("map_uuid")).toString();
+        link.title = row.value(QStringLiteral("name")).toString();
+    }
+    link.linkedAt = QDateTime::currentDateTimeUtc();
+    QString linkError;
+    if (!link.save(instanceRoot(), &linkError))
+        qWarning() << "Map import: hall-link save failed:" << linkError;
+    m_pendingHallSlug.clear();
 }
 
 Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMeta& meta,
@@ -633,6 +679,24 @@ Result<> MapImportTask::reinstallWorlds(const QString& instanceRoot, const MapMe
         if (!FS::move(tempDir, finalDir)) {
             FS::deletePath(tempDir);
             return std::unexpected{ tr("无法把解压结果移动到 %1").arg(finalDir) };
+        }
+    }
+
+    // 图标：06 §109 之前装出来的实例都没有 icon.png（导入时归档已被移走），而"重装"是玩家手上
+    // 唯一会重新解一次包的动作，所以顺手补一次。**只在缺图标时补** —— 玩家自己换过的图标不覆盖。
+    const QString iconTarget = FS::PathCombine(instanceRoot, "icon.png");
+    if (!QFile::exists(iconTarget)) {
+        for (const auto& world : meta.worlds) {
+            // 与 MapArchiveScanner 一致：世界根为空时图标就在归档根上
+            const QString entry =
+                world.sourceRoot.isEmpty() ? QStringLiteral("icon.png") : world.sourceRoot + QStringLiteral("/icon.png");
+            const auto data = reader.readFile(entry);
+            if (!data)
+                continue;
+            QFile out(iconTarget);
+            if (out.open(QIODevice::WriteOnly) && out.write(*data) == data->size())
+                break;
+            FS::deletePath(iconTarget);
         }
     }
 

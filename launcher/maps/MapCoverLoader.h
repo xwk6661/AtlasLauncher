@@ -64,6 +64,18 @@ class MapCoverLoader : public QObject {
 
     static MapCoverLoader* instance();
 
+    /**
+     * 收尾：停表、杀浏览器进程、清临时 profile。可重复调用。
+     *
+     * 由 `aboutToQuit` 触发（也由析构兜底）。不能只靠析构：这个对象挂在 `qApp` 下，
+     * 静态析构发生在 `QCoreApplication` 之后，那时停 QTimer / 收 QProcess 都是错的
+     * （审查 P0-2）。
+     */
+    void shutdown();
+
+    /// 清空磁盘封面缓存（设置页「清空封面缓存」用），返回删掉的文件数
+    int clearDiskCache();
+
     /// 占位封面：按标题画一个稳定色块 + 首字母（取不到真图时不至于留一块空白）
     static QPixmap placeholderCover(const QString& title, int width, int height);
 
@@ -156,6 +168,7 @@ class MapCoverLoader : public QObject {
     /// 而 errorOccurred / finishBatch 两条收尾路径不停表，旧表到期会杀掉后来的进程。
     QTimer* m_browserKiller = nullptr;
     QString m_browserProfile;
+    bool m_shutdown = false;
 };
 
 }  // namespace maps

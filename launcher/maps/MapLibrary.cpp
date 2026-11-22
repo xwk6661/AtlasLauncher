@@ -26,6 +26,8 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
@@ -239,8 +241,18 @@ QJsonObject itemToJson(const LibraryItem& item, const QJsonObject& previous)
     return object;
 }
 
+/**
+ * 索引文件的进程内互斥。
+ *
+ * 正常路径上所有"读-改-写"都在 UI 线程（导入任务的登记已经挪回主线程，见
+ * `MapImportTask::registerInLibrary()`），这把锁是给"以后有人在别处再读一次"
+ * 留的兜底：`QSaveFile` 只保证"单次写入原子"，挡不住两个线程各自拿着旧快照覆盖。
+ */
+QMutex g_indexFileMutex;
+
 QJsonObject readIndexObject(const QString& path)
 {
+    QMutexLocker lock(&g_indexFileMutex);
     QFile file(path);
     if (!file.open(QIODevice::ReadOnly))
         return {};
@@ -255,6 +267,7 @@ QJsonObject readIndexObject(const QString& path)
 
 bool writeIndexObject(const QString& path, const QJsonObject& root)
 {
+    QMutexLocker lock(&g_indexFileMutex);
     if (!FS::ensureFolderPathExists(QFileInfo(path).absolutePath()))
         return false;
     // 原子写：先写临时文件再改名，中途被杀不会留下半截索引

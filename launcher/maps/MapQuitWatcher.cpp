@@ -217,7 +217,21 @@ void MapQuitWatcher::closeGame()
     const qint64 pid = task != nullptr ? task->pid() : -1;
 
 #ifdef Q_OS_WIN
-    const int closed = pid > 0 ? closeWindowsOfPid(pid) : 0;
+    /**
+     * 先拿进程句柄、再枚举窗口。
+     *
+     * `isRunning()` 与 `EnumWindows` 之间游戏可能刚好退出，Windows 会把 PID 回收给
+     * 下一个进程；那时按 PID 找到的窗口属于别人，`WM_CLOSE` 就打到无关程序上
+     * （审查 P0-4）。句柄在手期间 PID 不会被复用，顺便还能确认它真的还活着。
+     */
+    HANDLE process = pid > 0 ? OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, FALSE,
+                                           static_cast<DWORD>(pid))
+                             : nullptr;
+    const bool stillRunning = process != nullptr && WaitForSingleObject(process, 0) == WAIT_TIMEOUT;
+    const int closed = stillRunning ? closeWindowsOfPid(pid) : 0;
+    if (process != nullptr)
+        CloseHandle(process);
+
     if (closed > 0) {
         qDebug() << "Map quit watcher: asked the game window to close, pid" << pid;
         // 走游戏自己的退出流程；真的不动再强制结束

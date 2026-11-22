@@ -121,14 +121,28 @@ void BrowserFetch::cleanup()
     if (m_killTimer != nullptr)
         m_killTimer->stop();
 
-    if (m_proc != nullptr) {
-        m_proc->disconnect(this);
-        if (m_proc->state() != QProcess::NotRunning) {
-            m_proc->kill();
-            m_proc->waitForFinished(3000);
-        }
-        m_proc->deleteLater();
-        m_proc = nullptr;
+    if (m_proc == nullptr)
+        return;
+
+    /**
+     * **不等**进程退出。
+     *
+     * 原来这里是 `kill(); waitForFinished(3000);`，而 `get()` 每次开新请求前都会先
+     * cleanup()：只要上一次是超时被杀、或浏览器正在自更新，界面就会白屏最多 3 秒
+     * （审查 P0-5）。现在把"回收"交给 `finished`，自己立刻返回。
+     */
+    QProcess* dying = m_proc;
+    m_proc = nullptr;
+    dying->disconnect(this);
+
+    if (dying->state() != QProcess::NotRunning) {
+        QObject::connect(dying, &QProcess::finished, dying, &QObject::deleteLater);
+        dying->kill();
+        // 兜底：kill 之后正常情况下一定有 finished；卡在不可中断状态时 5 秒后自己删。
+        // 以 dying 作为 context，进程对象先被删时这张表会自动取消，不会二次 delete。
+        QTimer::singleShot(5000, dying, &QObject::deleteLater);
+    } else {
+        dying->deleteLater();
     }
 }
 

@@ -35,6 +35,7 @@
 #include <QProcess>
 #include <QStandardPaths>
 #include <QTemporaryDir>
+#include <QThread>
 #include <QTimer>
 #include <QUrl>
 
@@ -107,19 +108,70 @@ MapCoverLoader::MapCoverLoader(QObject* parent) : QObject(parent)
 
 MapCoverLoader::~MapCoverLoader()
 {
+    shutdown();
+}
+
+void MapCoverLoader::shutdown()
+{
+    if (m_shutdown)
+        return;
+    m_shutdown = true;
+
+    if (m_timer != nullptr)
+        m_timer->stop();
+    if (m_browserKiller != nullptr)
+        m_browserKiller->stop();
+
     if (m_browser != nullptr) {
         m_browser->disconnect(this);
-        m_browser->kill();
-        m_browser->waitForFinished(2000);
+        if (m_browser->state() != QProcess::NotRunning) {
+            m_browser->kill();
+            m_browser->waitForFinished(2000);
+        }
+        m_browser->deleteLater();
+        m_browser = nullptr;
     }
-    if (!m_browserProfile.isEmpty())
+    if (!m_browserProfile.isEmpty()) {
         QDir(m_browserProfile).removeRecursively();
+        m_browserProfile.clear();
+    }
+}
+
+int MapCoverLoader::clearDiskCache()
+{
+    QDir dir(cacheDir());
+    if (!dir.exists())
+        return 0;
+
+    int removed = 0;
+    const auto entries = dir.entryInfoList({ QStringLiteral("*.jpg"), QStringLiteral("*.png") }, QDir::Files);
+    for (const auto& entry : entries) {
+        if (QFile::remove(entry.absoluteFilePath()))
+            ++removed;
+    }
+
+    m_memory.clear();
+    m_lru.clear();
+    m_bad.clear();
+    m_attempts.clear();
+    return removed;
 }
 
 MapCoverLoader* MapCoverLoader::instance()
 {
-    static MapCoverLoader loader;
-    return &loader;
+    // 必须是 GUI 线程首次创建：对象里有 QTimer，QPixmap 也在 UI 侧用
+    Q_ASSERT(QCoreApplication::instance() == nullptr ||
+             QThread::currentThread() == QCoreApplication::instance()->thread());
+    static MapCoverLoader* loader = [] {
+        // 挂到 qApp 下而不是函数内静态：静态析构晚于 QCoreApplication，
+        // 那时停表/收进程都会出问题（审查 P0-2）。退出前由 aboutToQuit 主动 shutdown。
+        auto* app = QCoreApplication::instance();
+        auto* created = new MapCoverLoader(app);
+        if (app != nullptr)
+            QObject::connect(app, &QCoreApplication::aboutToQuit, created, &MapCoverLoader::shutdown);
+        return created;
+    }();
+    return loader;
 }
 
 QPixmap MapCoverLoader::placeholderCover(const QString& title, int width, int height)

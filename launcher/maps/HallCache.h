@@ -90,6 +90,14 @@ static bool detailsCoverList(const HallSnapshot& snapshot);
      * 没缓存、没命中都返回空对象 —— 调用方据此决定"不显示"。
      */
     static QJsonObject findListRow(const QString& slug);
+
+    /**
+     * 预热 slug 索引（读盘 + 解析 3.6 MB）。同步版本留给后台线程调用；
+     * `warmAsync()` 在启动时丢进线程池，避免"第一次打开本地库"替启动器付这笔解析费。
+     * 两个线程同时预热是安全的：结果幂等，后到的覆盖先到的。
+     */
+    static void warm();
+    static void warmAsync();
 };
 
 }  // namespace maps

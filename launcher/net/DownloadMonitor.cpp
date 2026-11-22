@@ -20,6 +20,9 @@
 
 #include <algorithm>
 
+#include <QCoreApplication>
+#include <QMutexLocker>
+
 #include "net/NetJob.h"
 #include "net/Request.h"
 
@@ -39,18 +42,23 @@ DownloadMonitor::DownloadMonitor(QObject* parent) : QObject(parent)
 
 auto DownloadMonitor::instance() -> DownloadMonitor*
 {
-    static DownloadMonitor monitor;
-    return &monitor;
+    // 与 MapCoverLoader 同一个理由：挂着 qApp 而不是函数内静态，退出时由 Qt 的对象树
+    // 在 QCoreApplication 之前回收（审查 P0-2）
+    static DownloadMonitor* monitor = new DownloadMonitor(QCoreApplication::instance());
+    return monitor;
 }
 
 void DownloadMonitor::registerJob(NetJob* job)
 {
-    if (job != nullptr)
-        m_jobs.insert(job);
+    if (job == nullptr)
+        return;
+    QMutexLocker lock(&m_mutex);
+    m_jobs.insert(job);
 }
 
 void DownloadMonitor::unregisterJob(NetJob* job)
 {
+    QMutexLocker lock(&m_mutex);
     m_jobs.remove(job);
 }
 
@@ -58,6 +66,8 @@ auto DownloadMonitor::snapshot() -> DownloadSnapshot
 {
     DownloadSnapshot out;
 
+    // 迭代期间禁止别的线程构造/析构 NetJob：这里要解引用它们
+    QMutexLocker lock(&m_mutex);
     for (auto* job : m_jobs) {
         // 只统计"正在跑"的：已经跑完但还没析构的 NetJob 还留着 m_done，
         // 把它算进来会让"文件 45 / 320"里的总数越来越大。

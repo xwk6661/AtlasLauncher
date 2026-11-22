@@ -22,9 +22,13 @@
 #include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMutex>
+#include <QMutexLocker>
 #include <QSaveFile>
 #include <QHash>
 #include <QSet>
+#include <QThreadPool>
+#include <QtConcurrent>
 
 #include "Application.h"
 #include "FileSystem.h"
@@ -33,6 +37,32 @@ namespace maps {
 namespace {
 constexpr int CACHE_SCHEMA = 1;
 constexpr const char* CACHE_FILE = "hall-cache.json";
+
+/**
+ * slug 索引的进程内缓存。
+ *
+ * 谁会同时碰它：导入任务在**工作线程**里查站上标题（`MapImportTask`），
+ * 本地库面板与实例卡片在 **UI 线程**里查同一张表。原来这张表是函数内静态
+ * `QHash`，没有锁 —— 一边 `clear()+insert()` 重哈希、另一边 `value()` 就是
+ * 未定义行为（审查 P0-1）。现在：锁只保护"命中判断 / 整体换入"，解析在锁外，
+ * 所以 UI 不会被 3.6 MB 的解析按住。
+ */
+QMutex g_indexMutex;
+QHash<QString, QJsonObject> g_index;
+QDateTime g_indexStamp;
+
+QHash<QString, QJsonObject> buildIndex(const HallSnapshot& snapshot)
+{
+    QHash<QString, QJsonObject> built;
+    built.reserve(snapshot.listRows.size());
+    for (const auto& value : snapshot.listRows) {
+        const QJsonObject row = value.toObject();
+        const QString key = row.value(QStringLiteral("slug")).toString();
+        if (!key.isEmpty())
+            built.insert(key, row);
+    }
+    return built;
+}
 }  // namespace
 
 QString HallCache::path()
@@ -118,36 +148,61 @@ QJsonObject HallCache::findListRow(const QString& slug)
     if (slug.isEmpty())
         return {};
 
-    static QHash<QString, QJsonObject> rows;
-    static QDateTime loadedAt;
-
     const QFileInfo info(path());
     if (!info.exists()) {
-        rows.clear();
-        loadedAt = QDateTime();
+        QMutexLocker lock(&g_indexMutex);
+        g_index.clear();
+        g_indexStamp = QDateTime();
         return {};
     }
 
     // 文件被同步流程整体换掉时 mtime 会变，此时重建成索引
-    if (rows.isEmpty() || info.lastModified() != loadedAt) {
-        rows.clear();
-        const HallSnapshot snapshot = load();
-        rows.reserve(snapshot.listRows.size());
-        for (const auto& value : snapshot.listRows) {
-            const QJsonObject row = value.toObject();
-            const QString key = row.value(QStringLiteral("slug")).toString();
-            if (!key.isEmpty())
-                rows.insert(key, row);
-        }
-        loadedAt = info.lastModified();
+    const QDateTime stamp = info.lastModified();
+    {
+        QMutexLocker lock(&g_indexMutex);
+        if (!g_index.isEmpty() && stamp == g_indexStamp)
+            return g_index.value(slug);
     }
 
-    return rows.value(slug);
+    const HallSnapshot snapshot = load();
+    QMutexLocker lock(&g_indexMutex);
+    g_index = buildIndex(snapshot);
+    g_indexStamp = stamp;
+    return g_index.value(slug);
+}
+
+void HallCache::warm()
+{
+    const QFileInfo info(path());
+    if (!info.exists())
+        return;
+
+    const QDateTime stamp = info.lastModified();
+    {
+        QMutexLocker lock(&g_indexMutex);
+        if (!g_index.isEmpty() && stamp == g_indexStamp)
+            return;
+    }
+
+    const HallSnapshot snapshot = load();
+    QMutexLocker lock(&g_indexMutex);
+    g_index = buildIndex(snapshot);
+    g_indexStamp = stamp;
+}
+
+void HallCache::warmAsync()
+{
+    // 启动时就把 3.6 MB 解析掉：这份表第一次被查往往发生在"打开本地库"这种
+    // 该立刻出画面的动作里（审查 P1-3）。
+    QtConcurrent::run(QThreadPool::globalInstance(), [] { HallCache::warm(); });
 }
 
 void HallCache::clear()
 {
     QFile::remove(path());
+    QMutexLocker lock(&g_indexMutex);
+    g_index.clear();
+    g_indexStamp = QDateTime();
 }
 
 qint64 HallCache::sizeBytes()
