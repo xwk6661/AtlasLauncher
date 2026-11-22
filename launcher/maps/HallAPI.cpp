@@ -1043,25 +1043,27 @@ void HallAPI::reviews(const QString& mapUuid, int limit, int offset)
     m_reviewOffset = std::max(0, offset);
 
     /**
-     * 本地快照里有这张图的评论 → 直接分页返回（连同总数），不再发请求。
-     * 例外：快照的评论上限是 1000 条，正好拉满说明可能被截断，此时缺评论的图仍走网络。
+     * 本地快照里有这张图的评论 → 直接分页返回，不再发请求。
+     *
+     * 之前的判据是"快照的评论总数 < 1000 才算完整"，可本机的快照正好拉满 1000 条，
+     * 于是**每一张图**的评论都走网络；网络一断，页面就被顶成"连接被掐断"（2026-11-22 反馈）。
+     * 现在改成：只要有这张图的行就用缓存（哪怕窗口外还有更老的评论），
+     * 只有"缓存里一行都没有、而且快照被 1000 截断"这种确实说不准的情况才联网问一次。
      */
     if (m_snapshot.isValid()) {
         const auto rows = m_reviewRowsByMap.value(mapUuid);
-        /**
-         * 整库同步只拉最近 1000 条评论（跨所有地图），所以**不能**拿它当某张图的全部：
-         * 老图的评论大多落在这个窗口之外，界面就会显示成「评论（2）」，而站上有 6 条以上。
-         * 只有"这一批没拉满 1000"时才敢说缓存是全量的。
-         */
-        const bool complete = m_snapshot.reviewRows.size() < 1000;
-        if (complete && (!rows.isEmpty() || rows.isEmpty())) {
+        const bool capped = m_snapshot.reviewRows.size() >= 1000;
+        if (!rows.isEmpty() || !capped) {
             QList<HallReview> page;
             for (int i = m_reviewOffset; i < rows.size() && page.size() < lim; ++i)
                 page.append(reviewFromJson(rows.at(i)));
             const int total = rows.size();
             m_reply = nullptr;
+            // 窗口被截断时 rows.size() 只是"能看到几条"，不是总数
+            const bool totalKnown = !capped;
             QMetaObject::invokeMethod(
-                this, [this, page, total, offset] { emit reviewsDone(page, total, true, offset); }, Qt::QueuedConnection);
+                this, [this, page, total, totalKnown, offset] { emit reviewsDone(page, total, totalKnown, offset); },
+                Qt::QueuedConnection);
             return;
         }
     }

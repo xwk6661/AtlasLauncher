@@ -71,6 +71,13 @@ class HallAPI : public QObject {
     bool hasLibrary() const { return m_snapshot.isValid(); }
     /// 有库但详情覆盖不全（旧版同步留下的）：界面据此自动重同步
     bool libraryIncomplete() const { return m_libraryIncomplete; }
+    /**
+     * 最近一次请求是不是"附加信息"（评论 / 用户名）。
+     *
+     * 这类请求失败**不该**把整个大厅顶成失败页：列表与详情都还在本地，
+     * 只是某一个图的评论没取到（离线时尤其常见）。页面据此把失败降级成一行提示。
+     */
+    bool lastRequestIsAuxiliary() const { return m_kind == Request::Reviews || m_kind == Request::Users; }
     QDateTime libraryFetchedAt() const { return m_snapshot.fetchedAt; }
     int libraryItemCount() const { return m_items.size(); }
     qint64 libraryBytes() const;

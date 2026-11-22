@@ -653,7 +653,7 @@ void MapInstancePage::pickHallMap()
     const auto items = m_hall->libraryItems();
     if (items.isEmpty()) {
         CustomMessageBox::selectable(
-            this, tr("还没有本地地图库"),
+            this, tr("还没有大厅数据"),
             tr("大厅数据还没下载。打开「添加实例 → CTM 地图」，点一次「下载地图库」，回来就能在这里关联。"),
             QMessageBox::Information)
             ->show();
@@ -786,7 +786,7 @@ void MapInstancePage::refreshHallTabs()
         if (m_aboutInfo != nullptr)
             setAboutFacts({});
         requestAboutCover({}, m_link.title);
-        m_reviewsState->setText(tr("还没有本地地图库，暂时没有评论可显示。"));
+        m_reviewsState->setText(tr("还没有大厅数据，暂时没有评论可显示。"));
         return;
     }
 

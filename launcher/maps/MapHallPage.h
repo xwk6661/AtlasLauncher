@@ -24,6 +24,7 @@
 #include <QWidget>
 
 #include "HallTypes.h"
+#include "MapLibrary.h"
 #include "ui/pages/BasePage.h"
 
 class NewInstanceDialog;
@@ -60,7 +61,7 @@ class MapHallPage : public QWidget, public BasePage {
     explicit MapHallPage(NewInstanceDialog* dialog, QWidget* parent = nullptr);
 
     QString id() const override { return QStringLiteral("ctmmaps"); }
-    QString displayName() const override { return tr("CTM 地图"); }
+    QString displayName() const override { return tr("CTMMaps"); }
     QIcon icon() const override;
     QString helpPage() const override { return {}; }
     void openedImpl() override;
@@ -90,6 +91,16 @@ class MapHallPage : public QWidget, public BasePage {
     void syncLibrary();
     void updateLibraryHint();
     void pickLocalArchive();
+    /// 重扫本地地图库，建立 slug → 库内条目 的映射（"这张图我手上有没有"）
+    void reloadLocalLibrary();
+    /// 这张大厅条目在本库里有哪些包（语言 / 版本不同会有多条）
+    QList<LibraryItem> localItemsFor(const QString& slug) const;
+    /// 按当前选中行刷新「从本地库导入」按钮与提示（不触发任何请求）
+    void updateLocalAction();
+    /// 「从本地库导入」：库里已有就直接走导入对话框，不用再选文件
+    void onImportLocalClicked();
+    /// 扫描一个包 → 导入对话框 → 交给新建实例对话框（选文件与从库导入共用）
+    void importFromPath(const QString& path);
     /// 空态面板：照 AIO 的 renderHallFail（标题 / 说明 / 三条建议 / 四个动作 / 技术细节）
     void showFailure(HallError kind, const QString& reason, const QString& detail);
     void runProbe();
@@ -130,6 +141,8 @@ class MapHallPage : public QWidget, public BasePage {
     /// 右栏详情：失败时整块收起，不留两张空卡片
     QWidget* m_detailPanel = nullptr;
     QPushButton* m_loadMore = nullptr;
+    /// 详情页「从本地库导入」：库里没有这张图时灰掉
+    QPushButton* m_localImport = nullptr;
     /// 「更新数据」/「下载地图库」
     QPushButton* m_syncButton = nullptr;
     QLabel* m_status = nullptr;
@@ -171,6 +184,12 @@ class MapHallPage : public QWidget, public BasePage {
     QSet<QString> m_coverPending;
     /// 已经确认取不到的封面 URL：别再反复请求（每次都要等超时）
     QSet<QString> m_coverFailed;
+    /// 本地地图库（只读用途）：按 slug 反查"这张图我手上有哪个包"
+    MapLibrary m_localLibrary;
+    /// 本库里已关联的 slug 集合（列表行画「已入库」用，避免每行扫一遍库）
+    QSet<QString> m_localSlugs;
+    /// 自动关联每次运行只做一遍
+    bool m_localAutoLinked = false;
     bool m_loadingMore = false;
     /// 第一次被选中才发请求（没人点这个页签就不占带宽）
     bool m_started = false;

@@ -19,9 +19,12 @@
 
 #include <QApplication>
 #include <QComboBox>
+#include <QCursor>
 #include <QDesktopServices>
 #include <QDialog>
+#include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFont>
 #include <QGridLayout>
 #include <QFrame>
@@ -58,6 +61,7 @@
 #include "MapHallLink.h"
 #include "MapImportTask.h"
 #include "MapMeta.h"
+#include "MapPageIcons.h"
 #include "MapNotes.h"
 #include "minecraft/MinecraftInstance.h"
 #include "MapTheme.h"
@@ -146,7 +150,7 @@ int lengthRank(const QString& value)
 /// 列表里的行：照 AIO `.hall-row` 的四栏（封面 / 标题+chip+一句话 / 数据 / 动作）
 class HallRow : public QWidget {
    public:
-    explicit HallRow(const HallItem& item, QWidget* parent = nullptr) : QWidget(parent)
+    explicit HallRow(const HallItem& item, bool inLibrary, QWidget* parent = nullptr) : QWidget(parent)
     {
         auto* layout = new QHBoxLayout(this);
         layout->setContentsMargins(12, 10, 12, 10);
@@ -171,6 +175,8 @@ class HallRow : public QWidget {
 
         // chip 行：系列 / 版本 / 难度 / 时长（AIO 的 .hall-chip：细边框、不填充）
         QStringList chips;
+        if (inLibrary)
+            chips.append(QStringLiteral("已入库"));
         if (!item.series.isEmpty())
             chips.append(item.series);
         if (!item.version.isEmpty())
@@ -186,7 +192,9 @@ class HallRow : public QWidget {
             chipRow->setSpacing(4);
             for (const auto& chipText : chips) {
                 auto* chip = new QLabel(chipText, this);
-                chip->setStyleSheet(ui::chipStyle(ui::bodyTextColor()));
+                // 「已入库」是唯一带颜色的 chip：它回答"我有没有"，别的只是描述
+                const bool highlight = chipText == QStringLiteral("已入库");
+                chip->setStyleSheet(ui::chipStyle(highlight ? ui::accentColor() : ui::bodyTextColor()));
                 chipRow->addWidget(chip);
             }
             chipRow->addStretch(1);
@@ -304,8 +312,8 @@ MapHallPage::MapHallPage(NewInstanceDialog* dialog, QWidget* parent) : QWidget(p
 
 QIcon MapHallPage::icon() const
 {
-    // 图标主题里地图类资源叫 worlds（见 resources/*/scalable/worlds.svg）
-    return QIcon::fromTheme(QStringLiteral("worlds"));
+    // 与「本地库」区分开：站点/在线地图用地球 + 定位点（见 MapPageIcons）
+    return pageIcons::ctmmaps();
 }
 
 void MapHallPage::openedImpl()
@@ -320,6 +328,8 @@ void MapHallPage::openedImpl()
      */
     m_api->reloadLibrary();
     updateLibraryHint();
+    // 本地地图库（压缩包那一侧）：每张图"我有没有"由它回答
+    reloadLocalLibrary();
 
     // 「地图设置 → 大厅通道」改过之后，封面也跟着换通道（否则要重启才生效）
     MapCoverLoader::instance()->setTransportMode(APPLICATION->settings()->get("MapHallTransport").toString());
@@ -330,19 +340,19 @@ void MapHallPage::openedImpl()
      * 检测在 HallCache::detailsCoverList —— 有缓存但覆盖不全 → 直接重新同步。
      */
     if (m_api->hasLibrary() && m_api->libraryIncomplete()) {
-        m_status->setText(tr("本地库缺了部分地图详情（旧版同步留下的），正在自动补全…"));
+        m_status->setText(tr("大厅数据缺了部分地图详情（旧版同步留下的），正在自动补全…"));
         syncLibrary();
     } else if (m_api->hasLibrary()) {
         startSearch();
         m_api->facets();
         const QDateTime at = m_api->libraryFetchedAt().toLocalTime();
-        m_status->setText(tr("本地库：%1 张地图 · 更新于 %2")
+        m_status->setText(tr("大厅数据：%1 张地图 · 更新于 %2")
                               .arg(m_api->libraryItemCount())
                               .arg(at.isValid() ? at.toString(QStringLiteral("MM-dd HH:mm")) : tr("未知")));
     } else {
         if (m_leftStack != nullptr)
             setFailMode(false);
-        m_status->setText(tr("还没有本地地图库。点「下载地图库」拉一次（约 20–40 秒），之后打开即用。"));
+        m_status->setText(tr("还没有大厅数据。点「下载地图库」拉一次（约 20–40 秒），之后打开即用。"));
     }
     m_started = true;
 
@@ -702,8 +712,13 @@ void MapHallPage::buildUi()
     detailLayout->addWidget(m_tabs, 1);
 
     auto* actions = new QHBoxLayout();
+    // 「从本地库导入」排第一：库里已经有这张图时，它才是玩家真正想点的那个
+    m_localImport = new QPushButton(tr("从本地库导入"), detail);
+    m_localImport->setEnabled(false);
+    m_localImport->setToolTip(tr("这张图已经在本地库里，直接走导入，不用再选文件"));
     auto* openButton = new QPushButton(tr("打开下载页"), detail);
     auto* pickButton = new QPushButton(tr("选择已下载的文件…"), detail);
+    actions->addWidget(m_localImport);
     actions->addWidget(openButton);
     actions->addWidget(pickButton);
     actions->addStretch(1);
@@ -764,6 +779,7 @@ void MapHallPage::buildUi()
         QDesktopServices::openUrl(QUrl(url));
     });
     connect(pickButton, &QPushButton::clicked, this, &MapHallPage::pickLocalArchive);
+    connect(m_localImport, &QPushButton::clicked, this, &MapHallPage::onImportLocalClicked);
 
     m_status->setText(tr("列表来自 CTMMaps 的公开数据；下载交给浏览器，不会在启动器里偷偷拉。"));
 }
@@ -804,7 +820,7 @@ void MapHallPage::updateLibraryHint()
     if (m_api->hasLibrary()) {
         const QDateTime at = m_api->libraryFetchedAt().toLocalTime();
         m_syncButton->setText(tr("更新数据"));
-        m_syncButton->setToolTip(tr("本地库：%1 张地图 · 更新于 %2 · 缓存 %3 MB\n"
+        m_syncButton->setToolTip(tr("大厅数据：%1 张地图 · 更新于 %2 · 缓存 %3 MB\n"
                                     "搜索、详情、评论都在本地算；有新图时点一次即可。")
                                      .arg(m_api->libraryItemCount())
                                      .arg(at.isValid() ? at.toString(QStringLiteral("MM-dd HH:mm")) : tr("未知"))
@@ -822,7 +838,7 @@ void MapHallPage::startSearch()
     m_loadingMore = false;
     m_loadMore->setVisible(false);
     // 浏览器通道一条请求要几秒：先说明白，别让人以为卡住了
-    m_status->setText(m_api->hasLibrary() ? tr("正在搜索（本地库）…")
+    m_status->setText(m_api->hasLibrary() ? tr("正在搜索（本地数据）…")
                                           : tr("正在查询…（走浏览器通道时需要几秒）"));
     m_api->search(query);
 }
@@ -861,7 +877,7 @@ void MapHallPage::onSearchDone(const QList<HallItem>& items)
 
         auto* row = new QListWidgetItem(m_list);
         row->setSizeHint(QSize(0, ROW_COVER_H + 20));
-        auto* widget = new HallRow(item, m_list);
+        auto* widget = new HallRow(item, m_localSlugs.contains(item.slug), m_list);
         m_list->setItemWidget(row, widget);
         if (m_covers.contains(item.coverUrl))
             widget->setCover(m_covers.value(item.coverUrl));
@@ -880,7 +896,7 @@ void MapHallPage::onSearchDone(const QList<HallItem>& items)
         setFailMode(false);
 
     // 本地命中时写「本地库」，别再拿"浏览器通道/直连"误导人（那次搜索根本没出网）
-    const QString via = m_api->hasLibrary() ? tr("本地库") : m_api->transportNote();
+    const QString via = m_api->hasLibrary() ? tr("本地数据") : m_api->transportNote();
     m_status->setText((m_items.isEmpty() ? tr("没有匹配的地图。换个关键词，或清空搜索看最新发布。")
                                          : tr("已显示 %1 张。点一行看详情。").arg(m_items.size()))
                       + QStringLiteral("  ·  ") + via);
@@ -914,6 +930,9 @@ void MapHallPage::showRow(int index)
                            ? cropTo(m_covers.value(item.coverUrl), DETAIL_COVER_W, DETAIL_COVER_H)
                            : makePlaceholderCover(item.title, DETAIL_COVER_W, DETAIL_COVER_H));
     requestCover(item.coverUrl);
+
+    // 「从本地库导入」跟着选行走：库里没有这张图时按钮灰掉，并说清下一步该干什么
+    updateLocalAction();
 
     m_api->detail(item.slug);
 }
@@ -1041,6 +1060,26 @@ void MapHallPage::onFailed(HallError kind, const QString& humanReason, const QSt
     }
 
     /**
+     * 评论 / 用户名这类**附加信息**失败，只影响那一个页签，不能把整页顶掉。
+     *
+     * 离线时这是最常见的一条：列表与详情都在本地缓存里，只有评论要去问一次；
+     * 以前任何失败都走失败页，于是"看图看到一半突然整页变成连接被掐断"（2026-11-22 反馈）。
+     */
+    if (m_api->lastRequestIsAuxiliary()) {
+        clearReviews();
+        if (m_reviewLayout != nullptr && m_reviewBox != nullptr) {
+            auto* note = new QLabel(tr("这张图的评论没取到：%1\n本地缓存里没有它的评论；联网后重新打开这一页可以再试。")
+                                        .arg(humanReason),
+                                    m_reviewBox);
+            note->setWordWrap(true);
+            note->setEnabled(false);
+            m_reviewLayout->insertWidget(0, note);
+        }
+        m_status->setText(tr("评论没取到（%1）；列表与简介不受影响。").arg(humanReason));
+        return;
+    }
+
+    /**
      * **「更新数据」失败不能把已有的大厅弄没**（2026-11-02 用户反馈）。
      *
      * 本地库是全量快照：搜索、详情、评论、封面都从磁盘读，一个请求都不发。
@@ -1056,7 +1095,7 @@ void MapHallPage::onFailed(HallError kind, const QString& humanReason, const QSt
 
         const QDateTime at = m_api->libraryFetchedAt().toLocalTime();
         // 列表还在、功能都可用：一句话说清"没更新成功，但不影响用"
-        m_status->setText(tr("更新没成功：%1 · 仍在用 %2 的本地库（%3 张），功能照常")
+        m_status->setText(tr("更新没成功：%1 · 仍在用 %2 的大厅数据（%3 张），功能照常")
                               .arg(humanReason,
                                    at.isValid() ? at.toString(QStringLiteral("MM-dd HH:mm")) : tr("上次同步"),
                                    QString::number(m_api->libraryItemCount())));
@@ -1559,13 +1598,108 @@ void MapHallPage::onUserNames(const QHash<QString, QString>& names)
     }
 }
 
-void MapHallPage::pickLocalArchive()
+void MapHallPage::reloadLocalLibrary()
 {
-    const QString downloads = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
-    const QString path = QFileDialog::getOpenFileName(this, tr("选择已下载的地图压缩包"), downloads,
-                                                      tr("Minecraft 地图 (*.zip *.rar *.7z *.mcworld);;所有文件 (*)"));
-    if (path.isEmpty())
+    m_localLibrary.reload();
+
+    // 第一次打开顺手补一轮自动关联（只写 verified:false）：否则"已入库"标记要等
+    // 玩家先去「本地库」页点一次才出现。判据与那边共用同一个函数。
+    if (!m_localAutoLinked) {
+        m_localAutoLinked = true;
+        if (m_localLibrary.autoLinkUnassigned() > 0)
+            m_localLibrary.reload();
+    }
+
+    m_localSlugs.clear();
+    for (const auto& item : m_localLibrary.items()) {
+        if (!item.hallSlug.isEmpty())
+            m_localSlugs.insert(item.hallSlug);
+    }
+
+    // 当前选中行也跟着变（库可能在别的页面里刚改过）
+    updateLocalAction();
+}
+
+void MapHallPage::updateLocalAction()
+{
+    if (m_localImport == nullptr || m_list == nullptr)
         return;
+    const int row = m_list->currentRow();
+    if (row < 0 || row >= m_items.size()) {
+        m_localImport->setEnabled(false);
+        return;
+    }
+
+    const auto local = localItemsFor(m_items.at(row).slug);
+    m_localImport->setEnabled(!local.isEmpty());
+    if (local.isEmpty()) {
+        m_localImport->setToolTip(tr("这张图还不在本地库里；先用「打开下载页」下载，再回来「选择已下载的文件…」"));
+        return;
+    }
+
+    QStringList names;
+    for (const auto& one : local)
+        names << (one.variantSummary().isEmpty() ? one.file : one.variantSummary());
+    const QString joined = names.join(QStringLiteral("、"));
+    m_localImport->setToolTip(tr("本地已有：%1").arg(joined));
+    m_hint->setText(tr("本地库已有这张图（%1），可以直接导入。").arg(joined));
+}
+
+QList<LibraryItem> MapHallPage::localItemsFor(const QString& slug) const
+{
+    QList<LibraryItem> result;
+    if (slug.isEmpty())
+        return result;
+    for (const auto& item : m_localLibrary.items()) {
+        if (item.hallSlug == slug)
+            result << item;
+    }
+    std::sort(result.begin(), result.end(), [](const LibraryItem& a, const LibraryItem& b) {
+        return a.displayName().localeAwareCompare(b.displayName()) < 0;
+    });
+    return result;
+}
+
+void MapHallPage::onImportLocalClicked()
+{
+    const int row = m_list->currentRow();
+    if (row < 0 || row >= m_items.size())
+        return;
+
+    const auto local = localItemsFor(m_items.at(row).slug);
+    if (local.isEmpty())
+        return;
+
+    const auto pathOf = [](const LibraryItem& item) {
+        return QFileInfo(QDir(MapLibrary::libraryDir()), item.file).absoluteFilePath();
+    };
+
+    // 只有一个版本就直接走导入；有多个才让玩家挑（原版 / 简中 / 不同地图版本）
+    if (local.size() == 1) {
+        importFromPath(pathOf(local.first()));
+        return;
+    }
+
+    QMenu menu(this);
+    QAction* header = menu.addAction(tr("本地库里有 %1 个版本").arg(local.size()));
+    header->setEnabled(false);
+    menu.addSeparator();
+    for (const auto& item : local) {
+        QAction* action = menu.addAction(item.variantSummary().isEmpty()
+                                             ? item.file
+                                             : QStringLiteral("%1 · %2").arg(item.variantSummary(), item.file));
+        connect(action, &QAction::triggered, this,
+                [this, path = pathOf(item)] { importFromPath(path); });
+    }
+    menu.exec(QCursor::pos());
+}
+
+void MapHallPage::importFromPath(const QString& path)
+{
+    if (path.isEmpty() || !QFileInfo::exists(path)) {
+        m_status->setText(tr("这个包不在本地库目录里了，可能被移动或删除。刷新本地库后再试。"));
+        return;
+    }
 
     QApplication::setOverrideCursor(Qt::WaitCursor);
     const auto scanned = MapArchiveScanner::scan(path);
@@ -1589,6 +1723,17 @@ void MapHallPage::pickLocalArchive()
     m_dialog->setSuggestedPack(options->displayName, new MapImportTask(scanned->archivePath, *scanned, *options));
     m_hint->setText(tr("已准备好「%1」。点「确定」就会创建实例并解压存档。").arg(options->displayName));
     m_status->setText(tr("确认后开始导入；导入过程中会先把世界解到临时目录再改名，失败不会留半个存档。"));
+}
+
+void MapHallPage::pickLocalArchive()
+{
+    const QString downloads = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
+    const QString path = QFileDialog::getOpenFileName(this, tr("选择已下载的地图压缩包"), downloads,
+                                                      tr("Minecraft 地图 (*.zip *.rar *.7z *.mcworld);;所有文件 (*)"));
+    if (path.isEmpty())
+        return;
+
+    importFromPath(path);
 }
 
 }  // namespace maps

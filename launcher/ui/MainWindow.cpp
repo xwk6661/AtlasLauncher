@@ -443,7 +443,7 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         addInstanceMenu->addAction(tr("CurseForge…"), this, [this] { addInstanceViaPage(QStringLiteral("flame")); });
         addInstanceMenu->addAction(tr("本地导入…"), this, [this] { addInstanceViaPage(QStringLiteral("import")); });
         addInstanceMenu->addSeparator();
-        addInstanceMenu->addAction(tr("CTM 地图…"), this, [this] { addInstanceViaPage(QStringLiteral("ctmmaps")); });
+        addInstanceMenu->addAction(tr("CTMMaps…"), this, [this] { addInstanceViaPage(QStringLiteral("ctmmaps")); });
         ui->actionAddInstance->setMenu(addInstanceMenu);
     }
 
