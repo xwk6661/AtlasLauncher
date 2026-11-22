@@ -118,7 +118,16 @@ auto DownloadPanel::refresh() -> bool
 
     // 汇总行：速度已经挪到窗口右上角了，这里改说"几路并行 + 已收多少"，
     // 正好补上"并行是看得见的"这一点，又不和别处重复。
-    m_summary->setText(tr("下载中 · %1 个文件并行 · 已收 %2").arg(snapshot.running).arg(bytesText(snapshot.bytesDone)));
+    QString summary = tr("下载中 · %1 个文件并行 · 已收 %2").arg(snapshot.running).arg(bytesText(snapshot.bytesDone));
+    // 有文件在等重试时明说一句：这时总速度会是 0，不说就成了"卡死"（06 §103）
+    int retrying = 0;
+    for (const auto& item : snapshot.items) {
+        if (item.waitingRetry)
+            ++retrying;
+    }
+    if (retrying > 0)
+        summary += tr(" · %1 个在重试").arg(retrying);
+    m_summary->setText(summary);
 
     const int shown = qMin(snapshot.items.size(), m_rows.size());
     for (int i = 0; i < m_rows.size(); ++i) {
@@ -143,6 +152,12 @@ auto DownloadPanel::refresh() -> bool
 
         QString info = item.total > 0 ? QStringLiteral("%1/%2").arg(bytesText(item.done), bytesText(item.total))
                                       : bytesText(item.done);
+        // 停滞 / 重试要说出来：界面上 0.00 KiB + 0 B/s 与"卡死"无法区分，
+        // 而这其实是"对端一个字节都不给，正在换连接重试"（06 §103）。
+        if (item.waitingRetry && item.retryBudget > 0)
+            info += tr(" · 重试 %1/%2").arg(item.retries).arg(item.retryBudget);
+        else if (item.stalled && item.speed < 1)
+            info += tr(" · 无响应");
         // 速度还是 0 的时候干脆不写：写成 "· - ·" 会变成一串没意义的点
         if (item.speed >= 1)
             info += QStringLiteral(" · ") + speedText(item.speed);

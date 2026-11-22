@@ -35,11 +35,13 @@
 #include "InstanceDirUpdate.h"
 
 #include <QCheckBox>
+#include <QThread>
 
 #include "Application.h"
 #include "FileSystem.h"
 
 #include "InstanceList.h"
+#include "minecraft/MinecraftInstance.h"
 #include "ui/dialogs/CustomMessageBox.h"
 
 QString askToUpdateInstanceDirName(BaseInstance* instance, const QString& oldName, const QString& newName, QWidget* parent)
@@ -100,12 +102,41 @@ QString askToUpdateInstanceDirName(BaseInstance* instance, const QString& oldNam
         return QString();
 
     // Now we can confirm that a renaming is happening
-    if (!instance->syncInstanceDirName(newRoot)) {
+    //
+    // 在动目录之前先把实例自己的目录监视器停掉：Windows 上目录里只要还有任何一个打开的句柄，
+    // 对父目录的改名就是 ERROR_ACCESS_DENIED —— 连 FILE_SHARE_DELETE 也救不了（2026-11-21 用
+    // .NET FileSystemWatcher 复现）。启动器恰好给每个实例的 minecraft/{mods,resourcepacks,…}
+    // 和 saves 都挂着 QFileSystemWatcher，所以不松手时"只重命名了元数据"是必然结果。
+    auto* mcInstance = qobject_cast<MinecraftInstance*>(instance);
+    if (mcInstance != nullptr) {
+        mcInstance->suspendDirWatching();
+    }
+
+    // 杀毒 / 搜索索引器也会短暂占用目录：给它 8 次机会（合计约 1 秒）再认输
+    bool renamed = false;
+    for (int attempt = 0; attempt < 8 && !renamed; ++attempt) {
+        renamed = instance->syncInstanceDirName(newRoot);
+        if (!renamed && attempt < 7)
+            QThread::msleep(120);
+    }
+
+    if (!renamed) {
+        // 名字没改成：把监视器挂回去，界面别从此不刷新
+        if (mcInstance != nullptr) {
+            mcInstance->resumeDirWatching();
+        }
+        qWarning() << "Instance dir rename failed:" << oldRoot << "->" << newRoot
+                   << "- something still holds a handle inside the old directory (or the target exists)";
+        // 走到这里说明目录里还有外部句柄（游戏/资源管理器/杀毒扫描打开着这个目录里的文件），
+        // 启动器自己的监视器已经先松开了。
         QMessageBox::warning(parent, QObject::tr("Cannot rename instance"),
                              QObject::tr("An error occurred when performing the following renaming operation: <br/>"
                                          " - Old instance root: %1<br/>"
                                          " - New instance root: %2<br/>"
-                                         "Only the metadata is renamed.")
+                                         "Only the metadata is renamed.<br/><br/>"
+                                         "Something outside the launcher is still using a file in this folder "
+                                         "(the game, a file manager, or an antivirus scan). "
+                                         "Close it and rename again.")
                                  .arg(oldRoot, newRoot));
         return QString();
     }

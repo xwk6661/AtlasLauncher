@@ -367,6 +367,10 @@ void Request::armIdleTimer()
     int timeout = idleTimeoutMs();
     if (m_transferTimeoutMs > 0)
         timeout = qMin(timeout, m_transferTimeoutMs);
+    // 这份文件已经被掐过一次（停滞 / 龟速 / 上一轮重试）：这条线路 0 字节是常态，
+    // 再干等 20 秒只会让界面看起来"卡住"。窗口压到 10 秒，靠断点续传补回来。
+    if (m_networkRetryCount > 0 || m_slowAborts > 0)
+        timeout = qMin(timeout, IDLE_TIMEOUT_AFTER_STALL_MS);
     m_idleTimeoutMs = timeout;
     m_idleTimer.setSingleShot(true);
     m_idleTimer.start(timeout);
@@ -653,6 +657,11 @@ auto Request::tryNetworkRetry(QNetworkReply::NetworkError error) -> bool
     if (!m_sink->supportsResume())
         m_sink->abort();
 
+    // 下面要清 m_stalled（新一轮要从干净状态开始），但那句"网络停滞，正在重试"和
+    // 下载面板都还要用它 —— 先存一份，否则状态文案永远落到最后一个 else（06 §103）。
+    const bool wasStalled = m_stalled;
+    m_lastStall = wasStalled;
+
     m_state = State::Running;
     m_url = m_retryBaseUrl;
     m_redirectCount = 0;
@@ -671,7 +680,7 @@ auto Request::tryNetworkRetry(QNetworkReply::NetworkError error) -> bool
         setStatus(tr("下载源不可用，已改用官方源重试"));
     else if (m_fellBackToMirror)
         setStatus(tr("官方源长时间无响应，已改用镜像重试"));
-    else if (m_stalled)
+    else if (wasStalled)
         setStatus(tr("网络停滞，正在重试（%1/%2）").arg(m_networkRetryCount).arg(MAX_NETWORK_RETRIES));
     else
         setStatus(tr("连接中断，正在重试（%1/%2）").arg(m_networkRetryCount).arg(MAX_NETWORK_RETRIES));
@@ -702,6 +711,18 @@ auto Request::splitChunks(qint64 total, int count) -> QList<QPair<qint64, qint64
         start = end + 1;
     }
     return out;
+}
+
+auto Request::chunkCountFor(qint64 total, int wanted) -> int
+{
+    if (total < PARALLEL_MIN_SIZE || wanted < 2)
+        return 0;
+    // 段数跟着体积走：设置里的 16 段是给大文件的，2.56 MiB 的模组拆 16 段每段才 160 KB，
+    // 握手比传数据还贵。按 PARALLEL_MIN_CHUNK 封顶，既拿到"多连接绕开单连接限速"的好处，
+    // 又不会把连接数打爆（当年 60 个小库 × 8 段 = 190+ 条连接）。
+    const auto bySize = static_cast<int>((total + PARALLEL_MIN_CHUNK - 1) / PARALLEL_MIN_CHUNK);
+    const int chunks = qMin(wanted, bySize);
+    return chunks >= 2 ? chunks : 0;
 }
 
 auto Request::parallelChunks() -> int
@@ -747,8 +768,8 @@ void Request::tryStartParallel()
     if (getState() != State::Running)
         return;
 
-    const int chunks = m_chunkCountOverride > 0 ? m_chunkCountOverride : parallelChunks();
-    if (chunks < 2)
+    const int wanted = m_chunkCountOverride > 0 ? m_chunkCountOverride : parallelChunks();
+    if (wanted < 2)
         return;
     // 只有干净的 200 才拆：206/304 是别人已经处理过的场景
     if (replyStatusCode() != 200)
@@ -756,7 +777,13 @@ void Request::tryStartParallel()
 
     bool ok = false;
     const qint64 total = m_reply->header(QNetworkRequest::ContentLengthHeader).toLongLong(&ok);
-    if (!ok || total < PARALLEL_MIN_SIZE)
+    if (!ok)
+        return;
+
+    // 体积决定段数：≥8 MiB 用满设置里的段数，1–8 MiB 按 512 KiB 一段拆（2.56 MiB → 6 段），
+    // 1 MiB 以下不拆。见 Request.h 里 PARALLEL_MIN_SIZE 的注释。
+    const int chunks = chunkCountFor(total, wanted);
+    if (chunks < 2)
         return;
 
     m_parallelTried = true;
@@ -1073,8 +1100,11 @@ void Request::failParallelAndFallBack()
     // 并不代表不支持 Range；直接退回单连接等于把 12 倍带宽丢成 1 倍（06 §43）。
     if (m_parallelRetries < MAX_PARALLEL_RETRIES) {
         m_parallelRetries++;
-        const int base = m_chunkCountOverride > 0 ? m_chunkCountOverride : parallelChunks();
-        m_chunkCountOverride = qMax(4, base / 2);
+        // 按"上一次真的用了几段"减半，而不是按设置值减半：小文件本来就只拆了 5 段，
+        // 拿 16/2=8 去重试等于**更多**连接，正好和"减负"相反。
+        const int used = m_chunks.isEmpty() ? (m_chunkCountOverride > 0 ? m_chunkCountOverride : parallelChunks())
+                                           : m_chunks.size();
+        m_chunkCountOverride = qMax(2, used / 2);
         qCWarning(m_logCat) << getUid().toString() << "Parallel download failed, retrying with" << m_chunkCountOverride
                             << "ranges:" << m_url.toString();
         m_state = State::Running;

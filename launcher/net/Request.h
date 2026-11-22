@@ -129,11 +129,25 @@ class Request : public Task {
      */
     static constexpr int IDLE_TIMEOUT_MS = 20000;
 
-    /// 小于这个大小的文件不值得拆段（拆段的收益来自"每条连接被限速"，小文件本来就快）
-    /// 超过这个大小才值得拆段。1 MB 的库拆成 8 条连接纯粹是浪费：
-    /// 每条都要 TLS 握手，还把一个本来 1 秒的文件摊成 8 个请求（实测 60 个小库
-    /// 就是这样把连接数打到 190+ 的）。4 MB 以上（client jar、fastutil 这类）才拆。
-    static constexpr qint64 PARALLEL_MIN_SIZE = 4 << 20;
+    /**
+     * 已经因为"停滞/龟速"放弃过一次连接之后，空闲窗口缩到这个值（10 秒）。
+     *
+     * 20 秒是给"第一次、还不知道对面好不好"留的余量；而同一份文件已经被掐过一次，
+     * 说明这条线路上 0 字节是常态 —— 再等 20 秒纯属干等（2026-11-21：`fsb-interop`
+     * 这类小 jar 在 Modrinth CDN 上反复 0 字节，界面上就是"卡住"）。
+     */
+    static constexpr int IDLE_TIMEOUT_AFTER_STALL_MS = 10000;
+
+    /// 小于这个大小的文件不值得拆段（拆段的收益来自"每条连接被限速"，小文件本来就快）。
+    ///
+    /// 2026-11-21 由 4 MiB 降到 1 MiB：Modrinth CDN 对**每条连接**限速得厉害，
+    /// 2.56 MiB 的 `fancymenu` 单向只有 29 KB/s（要 90 秒），拆 6 段 15 秒就能下完。
+    /// 当年"1 MB 的库拆 8 段把连接数打到 190+"的问题，改由下面的 PARALLEL_MIN_CHUNK
+    /// 解决：段数按体积算，1 MiB 只会拆 2 段，不是 8 段。
+    static constexpr qint64 PARALLEL_MIN_SIZE = 1 << 20;
+    /// 每段至少这么多字节：段数 = min(设置里的 DownloadChunks, 体积 / 这个值)。
+    /// 这样 1 MiB 拆 2 段、2.56 MiB 拆 5 段、23 MB 才用满 8–16 段。
+    static constexpr qint64 PARALLEL_MIN_CHUNK = 512 << 10;
 
     /**
      * 单个文件拆成几个并发 Range 请求。
@@ -147,6 +161,14 @@ class Request : public Task {
 
     /// 把 total 字节切成 count 段，返回 [start, end]（含端点）。纯函数，单测直接钉住。
     static auto splitChunks(qint64 total, int count) -> QList<QPair<qint64, qint64>>;
+
+    /**
+     * 这个体积的文件该拆几段？`wanted` 是设置里的 `DownloadChunks`（或降级后剩下的段数）。
+     *
+     * 返回 0 表示"不拆"：太小（< PARALLEL_MIN_SIZE）、或者只够 1 段。
+     * 纯函数，单测钉住"2.56 MiB 的模组也要拆"和"1 MiB 的库只拆 2 段"这两条。
+     */
+    static auto chunkCountFor(qint64 total, int wanted) -> int;
 
     /**
      * 这个网络错误值得再试一次吗？
@@ -207,6 +229,16 @@ class Request : public Task {
     auto isParallel() const -> bool { return m_parallel; }
     /// 分了几段（非分段时为 0）
     auto chunkCount() const -> int { return m_chunks.size(); }
+
+    // ---- 给下载面板看的"为什么不动" ----
+    /// 是否正在等下一次重试（两次尝试之间的 400ms–1.2s 空窗）
+    auto isWaitingRetry() const -> bool { return m_networkRetryTimer.isActive(); }
+    /// 这份文件已经因为网络原因重试了几次（0 表示没重试过）
+    auto networkRetryCount() const -> int { return m_networkRetryCount; }
+    /// 重试预算上限（面板显示 "2/3" 用）
+    static constexpr int maxNetworkRetries() { return MAX_NETWORK_RETRIES; }
+    /// 上一次失败是"完全没数据"（而不是连接被重置/4xx）
+    auto lastFailureWasStall() const -> bool { return m_lastStall; }
 
    private:
     auto handleRedirect() -> bool;
@@ -324,6 +356,9 @@ class Request : public Task {
     /// 本轮是不是被 Qt 的传输超时掐掉的（`RequestTimeout` 到期 → OperationCanceledError）。
     /// 这不是用户取消，必须和"用户点了中止"区分开，否则慢盘上的大文件永远装不完。
     bool m_stalled = false;
+    /// 上一轮重试的原因是不是"停滞"：m_stalled 在重试前会被清掉，
+    /// 但状态文案和下载面板都要知道"这次是没数据"，所以单独记一份。
+    bool m_lastStall = false;
 
     /// 这一轮从第几个字节开始写（断点续传时的前缀长度，用来把进度补回去）
     qint64 m_resumeOffset = 0;

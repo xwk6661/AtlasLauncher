@@ -118,6 +118,12 @@ class MinecraftInstance : public BaseInstance {
     QList<ResourceFolderModel*> resourceLists();
     WorldList* worldList();
 
+    // 改实例目录名之前停掉所有目录监视器（否则 Windows 判"访问被拒绝"）。
+    // 只碰已经建出来的模型 —— resourceLists() 会顺手创建它们，等于凭空多开监视器。
+    // 写成普通成员而不是 BaseInstance 的虚函数：那张表是全工程 ABI，不值得为一次改名去动它。
+    void suspendDirWatching();
+    void resumeDirWatching();
+
     //////  Launch stuff //////
     QList<Task::Ptr> createUpdateTask() override;
     LaunchTask* createLaunchTask(AuthSessionPtr account, MinecraftTarget::Ptr targetToJoin) override;

@@ -37,6 +37,12 @@ struct DownloadItem {
     bool parallel = false;
     int chunks = 0;
     double speed = 0;  // B/s，按 500ms 采样算出来的（单文件）
+    /// 重试状态：面板据此把"0.00 KiB"写成"重试 2/3"，
+    /// 否则停滞的文件在界面上和"卡死"没有区别（06 §103）
+    int retries = 0;
+    int retryBudget = 0;
+    bool waitingRetry = false;
+    bool stalled = false;
 };
 
 struct DownloadSnapshot {

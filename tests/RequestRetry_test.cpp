@@ -233,6 +233,44 @@ class RequestRetryTest : public QObject {
         QVERIFY(!Request::isRetryableNetworkError(QNetworkReply::ProtocolFailure, -1));
     }
 
+    /// 段数按体积定，而不是见到 4 MB 才拆：
+    /// 2.56 MiB 的模组在"每条连接限速 30 KB/s"的 CDN 上要 90 秒，拆开就只要十几秒（06 §103）
+    void chunkCountFollowsFileSize()
+    {
+        using Net::Request;
+        constexpr qint64 MiB = 1024 * 1024;
+
+        // 太小不拆：拆段的收益来自"单连接被限速"，而不是凭空多几条连接
+        QCOMPARE(Request::chunkCountFor(512 * 1024, 16), 0);
+        QCOMPARE(Request::chunkCountFor(MiB - 1, 16), 0);
+
+        // 1 MiB 只拆 2 段（当年"1 MB 拆 8 段把连接数打到 190+"的教训）
+        QCOMPARE(Request::chunkCountFor(MiB, 16), 2);
+        // 截图里那个 2.56 MiB 的 fancymenu：6 段（每段 512 KiB）
+        QCOMPARE(Request::chunkCountFor(2684354, 16), 6);
+        // 8 MiB 用满 16 段；再大也不超过设置
+        QCOMPARE(Request::chunkCountFor(8 * MiB, 16), 16);
+        QCOMPARE(Request::chunkCountFor(64 * MiB, 16), 16);
+        // 用户把 DownloadChunks 设成 0/1 就是关掉分段
+        QCOMPARE(Request::chunkCountFor(64 * MiB, 1), 0);
+        QCOMPARE(Request::chunkCountFor(64 * MiB, 0), 0);
+        // 降级重试时的段数（比如减半到 3）不能被体积算法放大
+        QCOMPARE(Request::chunkCountFor(64 * MiB, 3), 3);
+    }
+
+    /// 切出来的段必须首尾相接、正好覆盖整个文件（不然 finalize 的校验一定不过）
+    void splitChunksCoversWholeFile()
+    {
+        using Net::Request;
+        constexpr qint64 total = 2684354;  // 2.56 MiB：不能被段数整除的那种
+        const auto ranges = Request::splitChunks(total, Request::chunkCountFor(total, 16));
+        QCOMPARE(ranges.size(), 6);
+        QCOMPARE(ranges.first().first, qint64(0));
+        QCOMPARE(ranges.last().second, total - 1);
+        for (int i = 1; i < ranges.size(); ++i)
+            QCOMPARE(ranges.at(i).first, ranges.at(i - 1).second + 1);
+    }
+
     /// 重入 init() 是"从零写"，不是 append —— 这是重试能不能上线的前提
     /// 重试必须**续传**，不是重来：CDN 会在传到一半时关连接，从头下永远下不完（06 §36）
     void fileSinkResumesFromPartialFile()

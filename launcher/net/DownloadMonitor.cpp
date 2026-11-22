@@ -69,7 +69,8 @@ auto DownloadMonitor::snapshot() -> DownloadSnapshot
             out.bytesDone += item.done;
             if (item.total > 0)
                 out.bytesTotal += item.total;
-            out.items.append({ item.key, item.name, item.done, item.total, item.parallel, item.chunks, 0.0 });
+            out.items.append({ item.key, item.name, item.done, item.total, item.parallel, item.chunks, 0.0,
+                               item.retries, item.retryBudget, item.waitingRetry, item.stalled });
         }
     }
     out.running = out.items.size();

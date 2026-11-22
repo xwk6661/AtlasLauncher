@@ -64,6 +64,12 @@ class NetJob : public ConcurrentTask {
         qint64 total = -1;  ///< 还没拿到 Content-Length 时是 -1
         bool parallel = false;
         int chunks = 0;
+        /// 已经重试了几次 / 一共允许几次：面板要能说"重试 2/3"，
+        /// 否则一个 0.00 KiB 的文件看起来就是"卡死"（06 §103）
+        int retries = 0;
+        int retryBudget = 0;
+        bool waitingRetry = false;
+        bool stalled = false;  ///< 上一次失败是"完全没数据"
     };
 
     explicit NetJob(const QString& jobName, QNetworkAccessManager* network, int maxConcurrent = -1);

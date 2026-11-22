@@ -122,6 +122,10 @@ auto NetJob::activeDownloads() const -> QList<ActiveDownload>
         item.total = request->getTotalProgress();
         item.parallel = request->isParallel();
         item.chunks = request->chunkCount();
+        item.retries = request->networkRetryCount();
+        item.retryBudget = Net::Request::maxNetworkRetries();
+        item.waitingRetry = request->isWaitingRetry();
+        item.stalled = request->lastFailureWasStall();
         out.append(item);
     }
     return out;

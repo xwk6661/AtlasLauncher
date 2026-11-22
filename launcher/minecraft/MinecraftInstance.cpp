@@ -1410,6 +1410,48 @@ QList<ResourceFolderModel*> MinecraftInstance::resourceLists()
     return { loaderModList(), coreModList(), nilModList(), resourcePackList(), texturePackList(), shaderPackList(), dataPackList() };
 }
 
+void MinecraftInstance::suspendDirWatching()
+{
+    // 只停"已经存在"的模型：worker 模型没建就没有监视器，构造出来反而多开一批句柄。
+    // 停不掉的（模型没在监视）什么都不做 —— stopWatching 自己是幂等的。
+    if (m_loader_mod_list)
+        m_loader_mod_list->stopWatching();
+    if (m_core_mod_list)
+        m_core_mod_list->stopWatching();
+    if (m_nil_mod_list)
+        m_nil_mod_list->stopWatching();
+    if (m_resource_pack_list)
+        m_resource_pack_list->stopWatching();
+    if (m_texture_pack_list)
+        m_texture_pack_list->stopWatching();
+    if (m_shader_pack_list)
+        m_shader_pack_list->stopWatching();
+    if (m_data_pack_list)
+        m_data_pack_list->stopWatching();
+    if (m_world_list)
+        m_world_list->stopWatching();
+}
+
+void MinecraftInstance::resumeDirWatching()
+{
+    if (m_loader_mod_list)
+        m_loader_mod_list->startWatching();
+    if (m_core_mod_list)
+        m_core_mod_list->startWatching();
+    if (m_nil_mod_list)
+        m_nil_mod_list->startWatching();
+    if (m_resource_pack_list)
+        m_resource_pack_list->startWatching();
+    if (m_texture_pack_list)
+        m_texture_pack_list->startWatching();
+    if (m_shader_pack_list)
+        m_shader_pack_list->startWatching();
+    if (m_data_pack_list)
+        m_data_pack_list->startWatching();
+    if (m_world_list)
+        m_world_list->startWatching();
+}
+
 WorldList* MinecraftInstance::worldList()
 {
     if (!m_world_list) {
