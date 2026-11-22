@@ -96,28 +96,10 @@ QString seriesDisplayName(const QString& series)
     return series + QStringLiteral(" Series");
 }
 
-/// 系列缩写 + 期号：`Mapwreck` + 7 → `MW7`；`Untold Stories` + 1 → `US1`（与实例名里的标签同源）
+/// 系列缩写 + 期号：`Mapwreck` + 7 → `MW7`；`Untold Stories` + 0 → `US1`（缺号记作 1）
 QString seriesAbbrev(const QString& series, int number)
 {
-    // 先查随包的系列代码表（`Ragecraft` → `RC`、`Mapwreck` → `MW`）：
-    // 这些短写是玩家认得的（实例名里就写着 `[RC3]`），比按首字母猜准
-    const QString known = maps::series::codeForName(series);
-    if (!known.isEmpty())
-        return number > 0 ? known + QString::number(number) : known;
-
-    static const QStringList stopWords = { QStringLiteral("the"), QStringLiteral("of"), QStringLiteral("and"),
-                                           QStringLiteral("a"), QStringLiteral("an") };
-    QString code;
-    const auto words = series.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
-    for (const auto& word : words) {
-        const QString cleaned = word.trimmed();
-        if (cleaned.isEmpty() || stopWords.contains(cleaned.toLower()))
-            continue;
-        code += cleaned.at(0).toUpper();
-    }
-    if (number > 0)
-        code += QString::number(number);
-    return code;
+    return maps::series::abbrevFor(series, number);
 }
 
 struct SeriesInfo {
@@ -177,7 +159,7 @@ QString seriesNameFor(const QList<LibraryItem>& list, const QHash<QString, Serie
     return {};
 }
 
-/// 这一组里有没有中文版本（汉化或官中）—— 语言列只写"中文 / 英文"，不列具体来源
+/// 这一组里有没有中文版本（汉化或官中）—— 语言列只回答"中文还是英文"，不列具体来源
 bool groupHasChinese(const QList<LibraryItem>& list)
 {
     for (const auto& item : list) {
@@ -188,22 +170,36 @@ bool groupHasChinese(const QList<LibraryItem>& list)
     return false;
 }
 
-constexpr int kMarkerSize = 12;
+/**
+ * 行首图标位：**宽 12、高 = 行高**。
+ *
+ * 宽决定文字起点（系列行箭头、地图行折号、普通行占位都是这个宽度）；
+ * 高必须等于行高，组内相邻两行的竖线才接得上 —— 12×12 的小图标会在行间留 9px 空隙，
+ * 一组图看起来仍是几个断开的叶子。
+ */
+constexpr int kMarkerWidth = 12;
+constexpr int kMarkerHeight = 30;
 /// 组内版本行的高度：**约半行**。子行只写"哪个语言版本"，不需要正常行的高度
 constexpr int kChildRowHeight = 16;
-constexpr int kDefaultRowHeight = 30;
+constexpr int kDefaultRowHeight = kMarkerHeight;
 /// 左侧分类栏宽度：等宽字体下「MiniGame (  2)」正好放得下，再宽就白占表格的位置
 constexpr int kCategoryBarWidth = 92;
 
+/// 竖线在图标里的横坐标；折点取图标（= 行）的垂直中线，与文字基线对齐
+constexpr qreal kMarkerStemX = 5.0;
+constexpr qreal kMarkerArmEndX = 10.0;
+constexpr qreal kMarkerMidY = kMarkerHeight / 2.0;
+
 /**
- * 「└」折号：地图行最前面的图标位。
+ * 「└」折号：一组里的**最后一张**图。
  *
- * 与折叠箭头同一个 12px 尺寸、同一条竖线位置 —— 系列行的箭头、地图行的折号落在同一列，
+ * 竖线从本行顶边画到折点，表示"这一支到此为止"；不画到行底，下面的行不会连上来。
+ * 与折叠箭头同一个宽度、同一条竖线位置 —— 系列行的箭头、地图行的折号落在同一列，
  * 文字起点才会逐像素对齐；不用「└ 」字符是因为宽度随字体变，对齐会歪。
  */
 QPixmap elbowPixmap(const QColor& color)
 {
-    QPixmap pixmap(kMarkerSize, kMarkerSize);
+    QPixmap pixmap(kMarkerWidth, kMarkerHeight);
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing);
@@ -211,8 +207,8 @@ QPixmap elbowPixmap(const QColor& color)
     pen.setCapStyle(Qt::RoundCap);
     pen.setJoinStyle(Qt::RoundJoin);
     painter.setPen(pen);
-    painter.drawLine(QPointF(5.0, 0.5), QPointF(5.0, 8.0));
-    painter.drawLine(QPointF(5.0, 8.0), QPointF(10.0, 8.0));
+    painter.drawLine(QPointF(kMarkerStemX, 0.5), QPointF(kMarkerStemX, kMarkerMidY));
+    painter.drawLine(QPointF(kMarkerStemX, kMarkerMidY), QPointF(kMarkerArmEndX, kMarkerMidY));
     return pixmap;
 }
 
@@ -222,25 +218,48 @@ QIcon elbowIcon(const QColor& color)
 }
 
 /**
+ * 「├」折号：同一个系列里**不是最后一张**的图。
+ *
+ * 与 `elbowPixmap` 只差竖线：这里一直画到本行底边，下一行的竖线接上来，一组图才连成
+ * 一棵树；最后一张仍用「└」，表示这一支到此为止。
+ */
+QPixmap teePixmap(const QColor& color)
+{
+    QPixmap pixmap(kMarkerWidth, kMarkerHeight);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    QPen pen(color, 1.2);
+    pen.setCapStyle(Qt::RoundCap);
+    pen.setJoinStyle(Qt::RoundJoin);
+    painter.setPen(pen);
+    painter.drawLine(QPointF(kMarkerStemX, 0.0), QPointF(kMarkerStemX, kMarkerHeight));
+    painter.drawLine(QPointF(kMarkerStemX, kMarkerMidY), QPointF(kMarkerArmEndX, kMarkerMidY));
+    return pixmap;
+}
+
+/**
  * 折叠箭头。
  *
  * 自己画而不是用 `▾` / `▸` 字符：字符宽度随字体变，一旦标题用箭头、普通行用空格补齐，
  * 两种行的文字起点就差一两个像素；用固定 12px 的图标给**每一行**留出同一个位置才不会歪。
+ * 画布与折号同高，三角形垂直居中 —— 三种图标必须同尺寸，否则 Qt 会缩放其中一种。
  */
 QPixmap arrowPixmap(bool expanded, const QColor& color)
 {
-    QPixmap pixmap(kMarkerSize, kMarkerSize);
+    QPixmap pixmap(kMarkerWidth, kMarkerHeight);
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
     painter.setRenderHint(QPainter::Antialiasing);
     painter.setPen(Qt::NoPen);
     painter.setBrush(color);
 
+    const qreal top = kMarkerMidY - 5.0;  // 12px 高的三角形在行内居中
     QPolygonF triangle;
     if (expanded) {
-        triangle << QPointF(2.5, 4.0) << QPointF(9.5, 4.0) << QPointF(6.0, 9.0);
+        triangle << QPointF(2.5, top + 2.0) << QPointF(9.5, top + 2.0) << QPointF(6.0, top + 7.0);
     } else {
-        triangle << QPointF(4.0, 2.5) << QPointF(9.0, 6.0) << QPointF(4.0, 9.5);
+        triangle << QPointF(4.0, top + 1.0) << QPointF(9.0, top + 4.5) << QPointF(4.0, top + 8.0);
     }
     painter.drawPolygon(triangle);
     return pixmap;
@@ -255,7 +274,7 @@ QIcon arrowIcon(bool expanded, const QColor& color)
 QPixmap blankPixmap()
 {
     static const QPixmap pixmap = [] {
-        QPixmap backing(kMarkerSize, kMarkerSize);
+        QPixmap backing(kMarkerWidth, kMarkerHeight);
         backing.fill(Qt::transparent);
         return backing;
     }();
@@ -561,7 +580,8 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     m_table->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     m_table->setToolTip(tr("拖动行到左侧分类即可归类；双击直接导入；点组标题展开/收起同图的不同语言版本；"
                            "右键组标题可整组操作，右键语言版本只能改它自己"));
-    m_table->setIconSize(QSize(kMarkerSize, kMarkerSize));
+    // 图标位与行同高：折号的竖线要跨行接上（见 kMarkerHeight）
+    m_table->setIconSize(QSize(kMarkerWidth, kMarkerHeight));
     ui::tuneTable(m_table, kDefaultRowHeight);
     // 子行要压到 16px：垂直表头的最小高度默认按字体算（约 20），不放开就会被静默钳回 20
     m_table->verticalHeader()->setMinimumSectionSize(kChildRowHeight - 2);
@@ -899,7 +919,7 @@ void MapLibraryPanel::rebuildTable()
      * 不再铺开「原版 / 简中 / 繁中 / v1.0 / v1.2」这些版本行：那是**导入时**该做的选择
      * （`MapImportDialog` 本来就会问世界、关联与语言），摆在库里只会把一张图撑成四行，
      * 真正要找"我有哪几张图"时反而看不清。所以每张图一行，版本列只写 MC 版本，
-     * 语言列只写"中文 / 英文"。
+     * 语言列只写"中文"或"英文"（二选一：图里只要有一版是中文就写中文，来源进 tooltip）。
      */
     const auto& seriesIndex = hallSeriesIndex();
 
@@ -948,7 +968,8 @@ void MapLibraryPanel::rebuildTable()
     int row = 0;
 
     /// 一张图一行。`UserRole` 记主条目的文件名（兼容"选中行恢复"），`kGroupKeyRole` 记分组键
-    const auto addMapRow = [&](int row, const QString& groupKey, const QList<LibraryItem>& rawList, const QString& series) {
+    const auto addMapRow = [&](int row, const QString& groupKey, const QList<LibraryItem>& rawList, const QString& series,
+                               bool lastInSeries) {
         auto list = rawList;
         std::sort(list.begin(), list.end(), [](const LibraryItem& left, const LibraryItem& right) {
             if (left.variant.isDefault != right.variant.isDefault)
@@ -979,9 +1000,12 @@ void MapLibraryPanel::rebuildTable()
         const int installed = groupInstalled(list);
 
         auto* name = new QTableWidgetItem(title);
-        // 与系列行同一个图标位：「└」把地图挂到系列下面；没有系列的图用空白图标占位，
-        // 保证三列的"地图名"起点始终对齐
-        name->setData(Qt::DecorationRole, series.isEmpty() ? blankPixmap() : elbowPixmap(ui::mutedTextColor()));
+        // 与系列行同一个图标位：同组中间几张画「├」，最后一张画「└」，一组图在视觉上
+        // 连成一棵树；没有系列的图用空白图标占位，保证各行的"地图名"起点始终对齐
+        QPixmap marker = blankPixmap();
+        if (!series.isEmpty())
+            marker = lastInSeries ? elbowPixmap(ui::mutedTextColor()) : teePixmap(ui::mutedTextColor());
+        name->setData(Qt::DecorationRole, marker);
         name->setFont(ui::cardTitleFont(name->font()));
         name->setData(kGroupKeyRole, groupKey);
         name->setData(Qt::UserRole, head.file);
@@ -1060,8 +1084,10 @@ void MapLibraryPanel::rebuildTable()
         m_table->setRowHeight(row, kDefaultRowHeight);
 
         /**
-         * 系列行也把四列填满：只写"1 张"会让整张表看起来缺了半行，
-         * 而"这个系列是什么版本、中文还是英文"恰恰是收起时最想先知道的。
+         * 系列行是**聚合行**，四列都要填满（只写"1 张"会让整张表看起来缺了半行），
+         * 但版本与语言不能写具体值：一个系列常横跨好几个 MC 版本、也常有中英两版，
+         * 写其中一两个会让人以为整个系列就是这个版本 / 只有这一种语言。
+         * 所以两列都只写「~」，具体值进 tooltip —— 想看单张图的版本，展开就是。
          */
         QStringList seriesVersions;
         QSet<QString> seriesCategories;
@@ -1084,12 +1110,8 @@ void MapLibraryPanel::rebuildTable()
         std::sort(seriesVersions.begin(), seriesVersions.end(), [](const QString& left, const QString& right) {
             return DataVersionTable::instance().dataVersionFor(left) < DataVersionTable::instance().dataVersionFor(right);
         });
-        QString seriesVersionText =
-            seriesVersions.isEmpty() ? QStringLiteral("—") : seriesVersions.mid(0, 2).join(QStringLiteral(" / "));
-        if (seriesVersions.size() > 2)
-            seriesVersionText += QStringLiteral(" …");
 
-        auto* seriesVersion = new QTableWidgetItem(seriesVersionText);
+        auto* seriesVersion = new QTableWidgetItem(seriesVersions.isEmpty() ? QStringLiteral("—") : QStringLiteral("~"));
         seriesVersion->setFlags(Qt::ItemIsEnabled);
         seriesVersion->setForeground(ui::mutedTextColor());
         seriesVersion->setToolTip(seriesVersions.isEmpty() ? tr("这个系列没有解析出 MC 版本")
@@ -1097,10 +1119,16 @@ void MapLibraryPanel::rebuildTable()
                                                                 .arg(seriesVersions.join(QStringLiteral("、"))));
         m_table->setItem(row, 1, seriesVersion);
 
-        const QString seriesLanguage = seriesHasZh && seriesHasEn ? tr("中文 / 英文") : (seriesHasZh ? tr("中文") : tr("英文"));
-        auto* seriesLangItem = new QTableWidgetItem(seriesLanguage);
+        auto* seriesLangItem = new QTableWidgetItem(seriesHasZh || seriesHasEn ? QStringLiteral("~") : QStringLiteral("—"));
         seriesLangItem->setFlags(Qt::ItemIsEnabled);
         seriesLangItem->setForeground(ui::mutedTextColor());
+        QStringList languageKinds;
+        if (seriesHasZh)
+            languageKinds << tr("中文版本");
+        if (seriesHasEn)
+            languageKinds << tr("英文版本");
+        seriesLangItem->setToolTip(languageKinds.isEmpty() ? tr("这个系列没有可判定的语言")
+                                                           : tr("系列内含：%1").arg(languageKinds.join(QStringLiteral("、"))));
         m_table->setItem(row, 2, seriesLangItem);
 
         auto* seriesCategory = new QTableWidgetItem(seriesCategories.size() == 1
@@ -1125,15 +1153,15 @@ void MapLibraryPanel::rebuildTable()
         if (!expanded)
             continue;
 
-        for (const auto& key : members) {
-            addMapRow(row, key, groups.value(key), series);
+        for (int index = 0; index < members.size(); ++index) {
+            addMapRow(row, members.at(index), groups.value(members.at(index)), series, index + 1 == members.size());
             ++row;
         }
     }
 
     // ── 不属于任何系列的图，照旧一行一张 ──
     for (const auto& key : plainGroups) {
-        addMapRow(row, key, groups.value(key), QString());
+        addMapRow(row, key, groups.value(key), QString(), true);
         ++row;
     }
 

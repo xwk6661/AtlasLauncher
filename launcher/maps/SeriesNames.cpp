@@ -22,6 +22,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
+#include <QStringList>
 
 namespace maps::series {
 
@@ -85,6 +86,40 @@ QString codeForName(const QString& name)
             return it.key();
     }
     return {};
+}
+
+QString abbrevFor(const QString& seriesName, int number)
+{
+    const QString wanted = seriesName.trimmed();
+    if (wanted.isEmpty())
+        return {};
+
+    // 期号缺省按 1：站上只在部分图上标了 series_num（`[US]` 与 `[US9]` 同属
+    // Untold Stories），缺号时不写数字会让同一系列出现两种写法。
+    const int issue = number > 0 ? number : 1;
+
+    const QString known = codeForName(wanted);
+    if (!known.isEmpty())
+        return known + QString::number(issue);
+
+    // 表里没有：取首字母。虚词（the / of / and …）跳过，否则 "City of Nations"
+    // 会变成 "CoN"；但如果跳完只剩一个词，就把开头的虚词也算上 ——
+    // "The Pantheon" 要的是 "TP"，不是 "P"。
+    static const QStringList stopWords = { QStringLiteral("the"), QStringLiteral("of"), QStringLiteral("and"),
+                                           QStringLiteral("a"), QStringLiteral("an") };
+    QStringList allInitials;
+    QStringList significantInitials;
+    const auto words = wanted.split(QRegularExpression(QStringLiteral("\\s+")), Qt::SkipEmptyParts);
+    for (const auto& word : words) {
+        const QString initial = QString(word.at(0)).toUpper();
+        allInitials << initial;
+        if (!stopWords.contains(word.toLower()))
+            significantInitials << initial;
+    }
+    const QStringList& chosen = significantInitials.size() >= 2 ? significantInitials : allInitials;
+    if (chosen.isEmpty())
+        return {};
+    return chosen.join(QString()) + QString::number(issue);
 }
 
 QString displayLabel(const QString& tag)

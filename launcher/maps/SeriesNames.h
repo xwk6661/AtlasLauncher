@@ -52,6 +52,18 @@ detail::Entry entryForCode(const QString& code);
  */
 QString codeForName(const QString& name);
 
+/**
+ * 系列名 + 期号 → 列表标题里的短码（`Mapwreck` + 7 → `MW7`、`Untold Stories` → `US1`）。
+ *
+ * 期号缺省（0 / 负数）按 **1** 处理：站上不少系列只在部分图上给了 `series_num`，
+ * 同一系列里 `[US]` 与 `[US9]` 并存时，缺号不补数字会让两张图看起来不是一套。
+ *
+ * 表里没有的系列取首字母（跳过 `the` / `of` / `and` / `a` / `an`）—— 与实例名里
+ * 玩家自己写的短码同构，但**不猜**系列名本身（那会把握把两张不同的图叫成同一系列）。
+ * 系列名为空返回空串。
+ */
+QString abbrevFor(const QString& seriesName, int number);
+
 /// `RC3` → `Ragecraft 3`。表里没有、或者标签里没有数字，就原样返回 `tag`
 QString displayLabel(const QString& tag);
 

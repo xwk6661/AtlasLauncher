@@ -45,6 +45,28 @@ class MapSeriesNamesTest : public QObject {
         QCOMPARE(maps::series::displayLabel(QStringLiteral("XYZ")), QStringLiteral("XYZ"));
         QCOMPARE(maps::series::displayLabel(QStringLiteral("")), QStringLiteral(""));
     }
+
+    void abbrevKeepsIssueNumber()
+    {
+        QCOMPARE(maps::series::abbrevFor(QStringLiteral("Ragecraft"), 3), QStringLiteral("RC3"));
+        QCOMPARE(maps::series::abbrevFor(QStringLiteral("Mapwreck"), 7), QStringLiteral("MW7"));
+        QCOMPARE(maps::series::abbrevFor(QStringLiteral("Simulation Protocol"), 3), QStringLiteral("SP3"));
+    }
+
+    void abbrevDefaultsToIssueOne()
+    {
+        // 站上只在部分图上给 series_num：`[US]` 与 `[US9]` 同属 Untold Stories，
+        // 缺号按 1 显示，同一系列里不会出现两种写法
+        QCOMPARE(maps::series::abbrevFor(QStringLiteral("Untold Stories"), 0), QStringLiteral("US1"));
+        QCOMPARE(maps::series::abbrevFor(QStringLiteral("Little Nightmares"), -1), QStringLiteral("LN1"));
+    }
+
+    void abbrevFallsBackToInitials()
+    {
+        // 表里没有的系列取首字母（虚词跳过），期号同样缺省为 1；系列名为空返回空
+        QCOMPARE(maps::series::abbrevFor(QStringLiteral("The Pantheon"), 0), QStringLiteral("TP1"));
+        QCOMPARE(maps::series::abbrevFor(QStringLiteral("  "), 0), QString());
+    }
 };
 
 QTEST_GUILESS_MAIN(MapSeriesNamesTest)
