@@ -26,6 +26,7 @@
 #include <QHash>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QSet>
 
@@ -34,6 +35,8 @@
 #include "Application.h"
 #include "BaseInstance.h"
 #include "FileSystem.h"
+#include "HallCache.h"
+#include "HallMatcher.h"
 #include "InstanceList.h"
 #include "MapMeta.h"
 #include "MapRepository.h"
@@ -848,6 +851,260 @@ void MapLibrary::rememberImported(const QString& archivePath, const QString& mcV
     root.insert("updatedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
     if (!writeIndexObject(indexPath(), root))
         qWarning() << "MapLibrary: 写索引失败" << indexPath();
+}
+
+bool MapLibrary::removeItems(const QStringList& files, QString* error)
+{
+    if (files.isEmpty())
+        return true;
+
+    const QSet<QString> targets(files.begin(), files.end());
+
+    // 先整批体检：只要有一个还挂着实例，就一条都不动（不做"删一半"）
+    for (const auto& item : m_items) {
+        if (!targets.contains(item.file) || !item.installed)
+            continue;
+        if (error != nullptr) {
+            *error = QCoreApplication::translate("MapLibrary", "「%1」还有 %2 个实例在用（%3），"
+                                                               "删掉库文件后这些实例将无法重装。\n"
+                                                               "请先删除实例，或只删别的版本。")
+                         .arg(item.displayName())
+                         .arg(item.installedInstances.size())
+                         .arg(item.installedInstances.join(QStringLiteral(", ")));
+        }
+        return false;
+    }
+
+    const QString dir = libraryDir();
+    QStringList removed;
+    for (const auto& item : m_items) {
+        if (!targets.contains(item.file))
+            continue;
+        const QString path = FS::PathCombine(dir, item.file);
+        if (QFile::exists(path) && !QFile::remove(path)) {
+            if (error != nullptr)
+                *error = QCoreApplication::translate("MapLibrary", "删不掉文件：%1").arg(QDir::toNativeSeparators(path));
+            return false;
+        }
+        removed << item.file;
+    }
+
+    if (removed.isEmpty()) {
+        if (error != nullptr)
+            *error = QCoreApplication::translate("MapLibrary", "这些条目已经不在库里了。");
+        return false;
+    }
+
+    const QSet<QString> drop(removed.begin(), removed.end());
+    for (int i = m_items.size() - 1; i >= 0; --i) {
+        if (drop.contains(m_items.at(i).file))
+            m_items.removeAt(i);
+    }
+
+    if (!saveIndex()) {
+        if (error != nullptr)
+            *error = QCoreApplication::translate("MapLibrary", "文件已删除，但索引写不进去：%1")
+                         .arg(QDir::toNativeSeparators(indexPath()));
+        return false;
+    }
+
+    emit changed();
+    return true;
+}
+
+int MapLibrary::autoLinkUnassigned()
+{
+    const auto snapshot = HallCache::load();
+    if (!snapshot.isValid())
+        return 0;
+
+    QHash<QString, QString> links;  // file -> slug
+    for (const auto& item : m_items) {
+        if (!item.hallSlug.isEmpty())
+            continue;
+        HallMatchQuery query;
+        query.englishName = item.englishName;
+        query.chineseName = item.chineseName;
+        query.fileName = item.file;
+        query.mcVersion = item.mcVersion;
+
+        const auto candidates = HallMatcher::rank(snapshot.listRows, query, 2);
+        if (candidates.isEmpty())
+            continue;
+        const double top = candidates.first().score;
+        const double second = candidates.size() > 1 ? candidates.at(1).score : 0.0;
+        if (top < 0.75)
+            continue;
+        if (candidates.size() > 1 && (top - second) < 0.15)
+            continue;
+        links.insert(item.file, candidates.first().slug);
+    }
+
+    if (links.isEmpty())
+        return 0;
+
+    for (auto& item : m_items) {
+        const auto it = links.constFind(item.file);
+        if (it == links.constEnd())
+            continue;
+        item.hallSlug = it.value();
+        item.hallVerified = false;
+    }
+
+    if (!saveIndex())
+        qWarning() << "MapLibrary: 自动关联后写索引失败" << indexPath();
+    emit changed();
+    return static_cast<int>(links.size());
+}
+
+namespace {
+
+/// Windows 文件名里不能出现的字符：换成空格，最后把连续空格与首尾空格压掉
+QString sanitizeFileBase(QString name)
+{
+    static const QString illegal = QStringLiteral("<>:\"/\\|?*");
+    for (const QChar ch : illegal) {
+        name.replace(ch, QLatin1Char(' '));
+    }
+    name.replace(QRegularExpression(QStringLiteral("[\\x00-\\x1f]")), QStringLiteral(" "));
+    name.replace(QRegularExpression(QStringLiteral("\\s+")), QStringLiteral(" "));
+    name = name.trimmed();
+    // Windows 不允许文件名以点或空格结尾
+    while (name.endsWith(QLatin1Char('.')) || name.endsWith(QLatin1Char(' ')))
+        name.chop(1);
+    if (name.size() > 120)
+        name = name.left(120).trimmed();
+    return name;
+}
+
+QString variantSuffix(const variant::Info& info)
+{
+    if (info.kind != variant::Kind::Localized)
+        return {};
+    if (!info.label.trimmed().isEmpty())
+        return QStringLiteral("（%1）").arg(info.label.trimmed());
+    switch (info.language) {
+        case variant::Language::SimplifiedChinese:
+            return QStringLiteral("（简中）");
+        case variant::Language::TraditionalChinese:
+            return QStringLiteral("（繁中）");
+        default:
+            return {};
+    }
+}
+
+}  // namespace
+
+int MapLibrary::normalizeFileNames(QString* error)
+{
+    const QString dir = libraryDir();
+
+    struct Plan {
+        int index = -1;
+        QString from;
+        QString to;
+    };
+    QList<Plan> plans;
+    QSet<QString> used;  // 已占用的目标名（小写比较，Windows 不区分大小写）
+
+    for (int i = 0; i < m_items.size(); ++i) {
+        const auto& item = m_items.at(i);
+        QString base = item.englishName.trimmed();
+        if (base.isEmpty())
+            base = item.chineseName.trimmed();
+        if (base.isEmpty())
+            base = QFileInfo(item.file).completeBaseName();
+
+        QString stem;
+        if (!item.mcVersion.trimmed().isEmpty())
+            stem += QStringLiteral("[%1]").arg(item.mcVersion.trimmed());
+        stem += sanitizeFileBase(base);
+        if (!item.mapVersion.trimmed().isEmpty())
+            stem += QStringLiteral(" ") + sanitizeFileBase(item.mapVersion);
+        stem += variantSuffix(item.variant);
+        if (stem.isEmpty())
+            continue;
+
+        const QString suffix = QFileInfo(item.file).suffix();
+        QString target = suffix.isEmpty() ? stem : stem + QLatin1Char('.') + suffix;
+
+        // 同名（含与别人撞名）就加序号，别覆盖
+        QString unique = target;
+        int n = 2;
+        while (used.contains(unique.toLower()) ||
+               (QFile::exists(FS::PathCombine(dir, unique)) && FS::PathCombine(dir, unique) != FS::PathCombine(dir, item.file))) {
+            const QString numbered = suffix.isEmpty()
+                                         ? QStringLiteral("%1 (%2)").arg(stem).arg(n)
+                                         : QStringLiteral("%1 (%2).%3").arg(stem).arg(n).arg(suffix);
+            unique = numbered;
+            ++n;
+        }
+        used.insert(unique.toLower());
+
+        if (unique != item.file)
+            plans.append({ i, item.file, unique });
+    }
+
+    if (plans.isEmpty())
+        return 0;
+
+    int renamed = 0;
+    for (const auto& plan : plans) {
+        const QString from = FS::PathCombine(dir, plan.from);
+        const QString to = FS::PathCombine(dir, plan.to);
+        if (!QFile::rename(from, to)) {
+            if (error != nullptr)
+                *error = QCoreApplication::translate("MapLibrary", "改名失败：%1 → %2")
+                             .arg(QDir::toNativeSeparators(from), QDir::toNativeSeparators(to));
+            break;
+        }
+
+        m_items[plan.index].file = plan.to;
+        m_items[plan.index].path = to;
+
+        // 实例侧：map.json 里存的绝对路径跟着改，否则重装会说"找不到来源压缩包"
+        if (APPLICATION != nullptr && APPLICATION->instances() != nullptr) {
+            auto* instances = APPLICATION->instances();
+            for (int i = 0; i < instances->count(); ++i) {
+                auto* instance = instances->at(i);
+                if (instance == nullptr)
+                    continue;
+                const QString root = instance->instanceRoot();
+                if (!QFile::exists(FS::PathCombine(root, MapMeta::fileName())))
+                    continue;
+                QString loadError;
+                auto meta = MapMeta::load(root, &loadError);
+                if (!loadError.isEmpty())
+                    continue;
+                bool touched = false;
+                if (!meta.archive.libraryCopy.isEmpty() && QFileInfo(meta.archive.libraryCopy) == QFileInfo(from)) {
+                    meta.archive.libraryCopy = to;
+                    touched = true;
+                }
+                if (!meta.archive.path.isEmpty() && QFileInfo(meta.archive.path) == QFileInfo(from)) {
+                    meta.archive.path = to;
+                    touched = true;
+                }
+                if (touched) {
+                    QString saveError;
+                    if (!meta.save(root, &saveError))
+                        qWarning() << "MapLibrary: 改名后写 map.json 失败" << root << saveError;
+                }
+            }
+        }
+
+        ++renamed;
+    }
+
+    if (renamed > 0) {
+        if (!saveIndex()) {
+            if (error != nullptr)
+                *error = QCoreApplication::translate("MapLibrary", "文件已改名，但索引写不进去：%1")
+                             .arg(QDir::toNativeSeparators(indexPath()));
+        }
+        emit changed();
+    }
+    return renamed;
 }
 
 }  // namespace maps

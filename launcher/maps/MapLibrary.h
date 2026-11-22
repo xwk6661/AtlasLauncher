@@ -171,6 +171,39 @@ class MapLibrary : public QObject {
     /// 取同一组的全部条目（含自己），给「这张图有哪几个语言版本」用
     QList<LibraryItem> groupItems(const QString& groupKey) const;
 
+    /**
+     * 从库里**删掉**这些包：先删磁盘文件，再从索引删条目。
+     *
+     * 为什么没有"只移除索引、保留文件"：`reload()` 会扫目录，把不在索引里的压缩包
+     * 当新文件补回来 —— 保留文件的"移除"下一次刷新就复活了，等于骗玩家。
+     *
+     * 有实例还指着某个包时**整批拒绝**（`error` 说明是哪张图、哪个实例）：
+     * 删掉库文件会让实例无法重装，这属于"不可逆操作先拦一道"。
+     */
+    bool removeItems(const QStringList& files, QString* error = nullptr);
+
+    /**
+     * 把还没关联的条目按名称自动挂到 CTM 条目上（只写 `verified:false`）。
+     *
+     * 判据刻意严：候选分 ≥ 0.75，且与第二名差 ≥ 0.15 才写。
+     * 关联错了比不关联更糟 —— 一组图会被并到别人名下，还会影响重装与"我的"页。
+     * 返回本次写入的条数。
+     */
+    int autoLinkUnassigned();
+
+    /**
+     * 把库内文件统一命名成 `[MC版本]英文原名 地图版本.ext`（汉化版补 `（简中）` 以免撞名）。
+     *
+     * 三件事一起做，缺一个就会断链：
+     *   1. 改磁盘文件名；
+     *   2. 改索引键（索引按文件名存）；
+     *   3. 把实例 `map.json` 里指向旧路径的 `archive.path` / `archive.libraryCopy` 改成新路径，
+     *      否则重装时会说"找不到来源压缩包"。
+     *
+     * 返回改了几个；`error` 说明停在哪一步（已改完的条目仍然有效）。
+     */
+    int normalizeFileNames(QString* error = nullptr);
+
     /// 导入成功后把识别到的元数据补进索引（不动分类，也不覆盖已有的中文名）。
     /// hallSlug / variant 是导入时玩家确认过的关联与语言，写了就覆盖（那是明确意图）。
     static void rememberImported(const QString& archivePath, const QString& mcVersion, const QString& englishName,

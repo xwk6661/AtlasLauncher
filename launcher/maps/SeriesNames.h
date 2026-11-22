@@ -43,6 +43,15 @@ struct Entry {
 /// 代码 → 表项。`RC` / `rc` 都认；没有返回空 name 的项
 detail::Entry entryForCode(const QString& code);
 
+/**
+ * 系列名 → 代码（`Mapwreck` → `MW`）。
+ *
+ * 用来给地图库的系列行拼 `[MW7] Subterranean` 这种标题：站上只给系列名，
+ * 代码是玩家认得的短写（`RC3`、`US1`、`SP03`）。表里没有就返回空，由调用方
+ * 退回"取首字母"，不在这里发明一个。
+ */
+QString codeForName(const QString& name);
+
 /// `RC3` → `Ragecraft 3`。表里没有、或者标签里没有数字，就原样返回 `tag`
 QString displayLabel(const QString& tag);
 

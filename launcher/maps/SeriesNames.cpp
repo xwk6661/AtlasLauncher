@@ -74,6 +74,19 @@ detail::Entry entryForCode(const QString& code)
     return codes().value(code.trimmed().toUpper());
 }
 
+QString codeForName(const QString& name)
+{
+    const QString wanted = name.trimmed();
+    if (wanted.isEmpty())
+        return {};
+
+    for (auto it = codes().constBegin(); it != codes().constEnd(); ++it) {
+        if (it.value().name.compare(wanted, Qt::CaseInsensitive) == 0)
+            return it.key();
+    }
+    return {};
+}
+
 QString displayLabel(const QString& tag)
 {
     static const QRegularExpression pattern(QStringLiteral("^([A-Za-z]+)(\\d+)$"));

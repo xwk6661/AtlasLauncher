@@ -50,6 +50,11 @@ class MapLibraryPanel : public QWidget {
     /// 重新读索引与目录（页面打开时调一次即可，代价只有一次目录遍历）
     void refresh();
 
+    /// 把没关联的条目自动挂到 CTM 条目上（只写 verified:false）；返回新增关联数
+    int autoLinkUnassigned();
+    /// 按 `[MC版本]英文原名 地图版本` 统一库内文件名；返回改了几个
+    int normalizeNames(QString* error = nullptr);
+
    signals:
     /// 想导入某张库里的图（绝对路径）
     void importRequested(const QString& archivePath);
@@ -65,8 +70,8 @@ class MapLibraryPanel : public QWidget {
    private:
     void rebuildCategories();
     void rebuildTable();
-    /// 折叠/展开某一组（组键同 `MapLibrary::groupKey()`）
-    void toggleGroup(const QString& key);
+    /// 折叠/展开一个系列行（**默认折叠**：先看到"库里有哪些系列"，点开再看具体地图）
+    void toggleSeries(const QString& series);
     void applyCategory(const QString& file, const QString& categoryId);
     /// 整组改分类（组标题右键）
     void applyCategoryToGroup(const QString& groupKey, const QString& categoryId);
@@ -95,6 +100,19 @@ class MapLibraryPanel : public QWidget {
     void showStandaloneMenu(const QString& file, const QPoint& globalPos);
     /// 从大厅缓存里挑一张图当"所属主"（files 可以是一组）
     void pickHallMap(const QStringList& files);
+    /// 系列行右键：展开/收起 + 打开目录（系列只是"站上的归类"，没有可改的字段）
+    void showSeriesContextMenu(const QString& series, const QPoint& globalPos);
+    /// 导入一张图：库里只有一个包就直接导入，有多个（原版/简中/不同地图版本）先让玩家挑
+    void importGroup(const QString& groupKey);
+    /// 在资源管理器里**选中**这个文件（不是只打开所在目录）
+    void revealInExplorer(const QString& path);
+
+    /**
+     * 删除库里的包（一个版本或一整组）：二次确认 → 删文件 → 删索引。
+     *
+     * 有实例还指着它时由 `MapLibrary::removeItems` 整批拒绝，这里只负责把原因显示出来。
+     */
+    void deleteMaps(const QStringList& files);
 
     /// 列宽持久化（设置项 `MapLibraryColumnState`）
     void restoreColumnState();
@@ -109,8 +127,8 @@ class MapLibraryPanel : public QWidget {
     QPushButton* m_delCategoryBtn = nullptr;
     bool m_showAll = true;
     QString m_filterCategoryId;
-    /// 展开的组键。**默认收起**：库里大半是同一个图的几个语言版本，全摊开时一屏看不到几张图
-    QSet<QString> m_expandedGroups;
+    /// 被玩家**展开**的系列。默认折叠，所以记"展开过哪些"，不记"收起过哪些"
+    QSet<QString> m_expandedSeries;
     /// 列宽变化后延迟落盘：拖动时 sectionResized 会连发几十次
     class QTimer* m_columnSaveTimer = nullptr;
 };
