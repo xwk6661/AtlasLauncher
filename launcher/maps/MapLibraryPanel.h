@@ -92,10 +92,8 @@ class MapLibraryPanel : public QWidget {
      * 否则"看到的名字"和"改的名字"会对不上。
      */
     QString groupTitleFor(const QList<LibraryItem>& list) const;
-    /// 组标题菜单：信息 + 展开/收起 + 导入特定版本 + 整组类别/关联
+    /// 组标题菜单：信息 + 导入 + 重命名 + 每个包的语言标签/地图版本 + 整组类别/关联/删除
     void showGroupContextMenu(const QString& groupKey, const QPoint& globalPos);
-    /// 组内版本菜单：**只能**导入和改它自己的字段，碰不到组标题
-    void showVersionContextMenu(const QString& file, const QPoint& globalPos);
     /// 独立成图（没有组）的菜单：它就是自己那一组，所以组级操作也归它
     void showStandaloneMenu(const QString& file, const QPoint& globalPos);
     /// 从大厅缓存里挑一张图当"所属主"（files 可以是一组）

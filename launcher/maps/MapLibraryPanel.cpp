@@ -83,8 +83,6 @@ constexpr const char* kMimeType = "application/x-atlas-map-library-item";
 
 /// 组标题行在 `Qt::UserRole + 1` 里存分组键（`Qt::UserRole` 留给真实条目的文件名）
 constexpr int kGroupKeyRole = Qt::UserRole + 1;
-/// 组内版本行（子行）标记：右键菜单据此走"只能改自己"的那一套（行已合并，保留常量给旧数据）
-constexpr int kChildRowRole = Qt::UserRole + 2;
 /// 系列行：`Qt::UserRole + 3` 存系列名
 constexpr int kSeriesRole = Qt::UserRole + 3;
 
@@ -1351,10 +1349,7 @@ void MapLibraryPanel::showItemContextMenu(const QPoint& pos)
     if (file.isEmpty())
         return;
 
-    if (first->data(kChildRowRole).toBool())
-        showVersionContextMenu(file, globalPos);
-    else
-        showStandaloneMenu(file, globalPos);
+    showStandaloneMenu(file, globalPos);
 }
 
 void MapLibraryPanel::showGroupContextMenu(const QString& groupKey, const QPoint& globalPos)
@@ -1391,9 +1386,32 @@ void MapLibraryPanel::showGroupContextMenu(const QString& groupKey, const QPoint
     info->setEnabled(false);
     menu.addSeparator();
 
+    QAction* importAction = menu.addAction(tr("导入"));
+    connect(importAction, &QAction::triggered, this, [this, groupKey] { importGroup(groupKey); });
+
     QAction* renameAction = menu.addAction(tr("重命名…"));
     connect(renameAction, &QAction::triggered, this,
             [this, groupKey, current = groupTitleFor(list)] { renameGroup(groupKey, current); });
+
+    /**
+     * 语言标签与地图版本是**每个包**的属性。一张图一行之后，组里的几个语言版本没有
+     * 自己的行了，"独立图"那套菜单能改、组里这两项却够不着（11-22 改版漏的，[06 §113]）。
+     * 组里只有一个包就直连（多数情况），两个以上列成子菜单，用 `versionLabel()` 区分。
+     */
+    const auto addPerFileEditor = [&](const QString& label, void (MapLibraryPanel::*editor)(const QString&)) {
+        if (list.size() == 1) {
+            QAction* action = menu.addAction(label);
+            connect(action, &QAction::triggered, this, [this, file = list.first().file, editor] { (this->*editor)(file); });
+            return;
+        }
+        QMenu* perFile = menu.addMenu(label);
+        for (const auto& item : list) {
+            QAction* action = perFile->addAction(versionLabel(item));
+            connect(action, &QAction::triggered, this, [this, file = item.file, editor] { (this->*editor)(file); });
+        }
+    };
+    addPerFileEditor(tr("语言标签…"), &MapLibraryPanel::editVariant);
+    addPerFileEditor(tr("地图版本…"), &MapLibraryPanel::editMapVersion);
 
     // 整组改分类：组标题上只有一份分类，子行改分类没有意义（会立刻变「混合」）
     QMenu* categoryMenu = menu.addMenu(tr("类别"));
@@ -1430,62 +1448,6 @@ void MapLibraryPanel::showGroupContextMenu(const QString& groupKey, const QPoint
     connect(deleteAction, &QAction::triggered, this, [this, files] { deleteMaps(files); });
 
     menu.exec(globalPos);
-}
-
-void MapLibraryPanel::showVersionContextMenu(const QString& file, const QPoint& globalPos)
-{
-    LibraryItem item;
-    bool found = false;
-    for (const auto& candidate : m_library.items()) {
-        if (candidate.file == file) {
-            item = candidate;
-            found = true;
-            break;
-        }
-    }
-    if (!found)
-        return;
-
-    const QString path = QFileInfo(QDir(MapLibrary::libraryDir()), file).absoluteFilePath();
-
-    QMenu menu(this);
-    // 组内版本行只能改"它自己是什么"，不能改"它属于哪张图、归哪一类"——
-    // 那两件事写在组标题上，子行改会让整组显示成「混合」
-    auto* info = menu.addAction(tr("%1 · MC %2").arg(versionLabel(item),
-                                                      item.mcVersion.isEmpty() ? QStringLiteral("—") : item.mcVersion));
-    info->setEnabled(false);
-    menu.addSeparator();
-
-    QAction* importAction = menu.addAction(tr("导入"));
-    QAction* variantAction = menu.addAction(tr("语言标签…"));
-    QAction* versionAction = menu.addAction(tr("地图版本…"));
-
-    QAction* attachAction = nullptr;
-    if (item.variant.delivery == variant::Delivery::ResourcePack) {
-        const auto probe = MapPackAttach::inspect(path);
-        menu.addSeparator();
-        attachAction = menu.addAction(tr("作为资源包挂到实例…"));
-        attachAction->setEnabled(probe.valid);
-        attachAction->setToolTip(probe.valid ? tr("放进实例的 resourcepacks/ 并启用；不建实例、不动存档") : probe.reason);
-    }
-
-    menu.addSeparator();
-    QAction* openAction = menu.addAction(tr("打开目录"));
-    QAction* deleteAction = menu.addAction(tr("删除…"));
-
-    QAction* chosen = menu.exec(globalPos);
-    if (chosen == importAction)
-        emit importRequested(path);
-    else if (chosen == openAction)
-        revealInExplorer(path);
-    else if (chosen == variantAction)
-        editVariant(file);
-    else if (chosen == versionAction)
-        editMapVersion(file);
-    else if (chosen == deleteAction)
-        deleteMaps({ file });
-    else if (attachAction != nullptr && chosen == attachAction)
-        attachResourcePack(file, path);
 }
 
 void MapLibraryPanel::editMapVersion(const QString& file)
