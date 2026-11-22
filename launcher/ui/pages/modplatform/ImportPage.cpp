@@ -55,7 +55,6 @@
 #include "maps/MapArchiveScanner.h"
 #include "maps/MapImportDialog.h"
 #include "maps/MapImportTask.h"
-#include "maps/MapLibraryPanel.h"
 #include "modplatform/flame/FlameAPI.h"
 #include "net/NetJob.h"
 #include "ui/dialogs/CustomMessageBox.h"
@@ -99,31 +98,13 @@ ImportPage::ImportPage(NewInstanceDialog* dialog, QWidget* parent)
     ui->mapCardFrame->setVisible(false);
 
     /**
-     * 地图页只有两样东西：**本地地图库**（占满）与右下角一个「从外部导入…」。
+     * 导入页只管"这个文件怎么进来"：选包 → 扫描 → 导入对话框。
      *
-     * 原来的"选择本地压缩包"输入框 + 「已就绪的地图信息」卡片都收起来了：
-     * 玩家在这里的动作只有"从库里挑一张"或"从外面挑一个文件"，选完就该看到
-     * 导入对话框（版本/加载器/关联/语言），而不是先看一段只读摘要再点第二次。
+     * 本地地图库已经搬到左侧「CTM 地图」下面的独立页（`maps/LocalLibraryPage`）：
+     * 库回答的是"我手上有哪些图"，与导入不是同一个问题；挤在一页时两边都施展不开。
      */
-    ui->mapLabel->setVisible(false);
-    ui->mapEdit->setVisible(false);
-    ui->mapBtn->setVisible(false);
-    ui->mapHintWidget->setVisible(false);
-    ui->mapCardFrame->setVisible(false);
-
-    m_libraryPanel = new maps::MapLibraryPanel(this);
-    connect(m_libraryPanel, &maps::MapLibraryPanel::importRequested, this, &ImportPage::importFromPath);
-
-    // 库在上、按钮行在下：库吃满剩余高度
-    ui->mapLayout->addWidget(m_libraryPanel, 1);
-    auto* bottomRow = new QHBoxLayout();
-    bottomRow->addStretch(1);
-    auto* importButton = new QPushButton(tr("从外部导入…"), this);
-    importButton->setToolTip(tr("选一个不在库里的压缩包（zip / rar / 7z / tar / gz / mcworld）直接导入"));
-    bottomRow->addWidget(importButton);
-    ui->mapLayout->addLayout(bottomRow);
-    connect(importButton, &QPushButton::clicked, this, &ImportPage::on_mapBtn_clicked);
 }
+
 
 ImportPage::~ImportPage()
 {
@@ -143,9 +124,6 @@ void ImportPage::retranslate()
 void ImportPage::openedImpl()
 {
     updateState();
-    // 每次打开页面重新扫一遍库目录：玩家可能刚往里面丢过压缩包
-    if (m_libraryPanel != nullptr)
-        m_libraryPanel->refresh();
 }
 
 void ImportPage::dragEnterEvent(QDragEnterEvent* event)

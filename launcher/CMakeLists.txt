@@ -815,6 +815,10 @@ set(MAPS_SOURCES
     maps/HallDialog.cpp
     maps/MapHallPage.h
     maps/MapHallPage.cpp
+    maps/LocalLibraryPage.h
+    maps/LocalLibraryPage.cpp
+    maps/MapPageIcons.h
+    maps/MapPageIcons.cpp
     maps/MapInstanceBar.h
     maps/MapInstanceBar.cpp
     maps/ModPresets.h

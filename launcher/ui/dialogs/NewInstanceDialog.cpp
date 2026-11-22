@@ -70,6 +70,7 @@
 #include "ui/pages/modplatform/modrinth/ModrinthPage.h"
 #include "ui/widgets/PageContainer.h"
 #include "maps/MapHallPage.h"
+#include "maps/LocalLibraryPage.h"
 
 NewInstanceDialog::NewInstanceDialog(const QString& initialGroup,
                                      const QString& url,
@@ -251,6 +252,8 @@ QList<BasePage*> NewInstanceDialog::getPages()
     // 它们对应的页面源码仍然留在工程里，只是不再实例化（上游同步时冲突面更小）。
     pages.append(new CustomPage(this));
     pages.append(m_importPage);
+    // 本地库紧跟「导入」：手上已有的包与"从外面导入"是同一件事的两面
+    pages.append(new maps::LocalLibraryPage(this, this));
     if (APPLICATION->capabilities() & Application::SupportsFlame) {
         pages.append(new FlamePage(this));
     }

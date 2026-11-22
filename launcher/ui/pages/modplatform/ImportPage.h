@@ -47,10 +47,6 @@ namespace Ui {
 class ImportPage;
 }
 
-namespace maps {
-class MapLibraryPanel;
-}
-
 class NewInstanceDialog;
 class QDragEnterEvent;
 class QDropEvent;
@@ -109,5 +105,4 @@ class ImportPage : public QWidget, public BasePage {
     std::optional<maps::MapScanResult> m_currentMapScan;
     maps::MapImportOptions m_currentMapOptions;
     bool m_hasCustomMapOptions = false;
-    maps::MapLibraryPanel* m_libraryPanel = nullptr;
 };
