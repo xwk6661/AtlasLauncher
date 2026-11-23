@@ -564,6 +564,17 @@ QString TranslationsModel::selectedLanguage() const
 
 void TranslationsModel::downloadIndex()
 {
+    /**
+     * Atlas: 翻译随安装包发布（`translations/`），不再向 i18n.prismlauncher.org 拉索引。
+     *
+     * 三个调用点（启动时、`reloadLocalFiles()` 找不到索引时、语言向导）都会走到这里，
+     * 所以在入口统一判断：没配置下载源就什么都不做。国内网络访问那台主机经常超时，
+     * 而我们本来就带了 `mmc_zh.qm` 与 `index_v2.json`。
+     */
+    if (BuildConfig.TRANSLATION_FILES_URL.isEmpty()) {
+        return;
+    }
+
     if (d->m_indexJob || d->m_downloadJob) {
         return;
     }

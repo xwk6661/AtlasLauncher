@@ -403,8 +403,9 @@ Section "@Launcher_DisplayName@"
   WriteRegStr HKCU Software\Classes\@Launcher_APP_BINARY_NAME@\shell\open\command "" '"$INSTDIR\@Launcher_APP_BINARY_NAME@.exe" "%1"'
 
   ; Write the URL Handler into registry for atlas import
-  WriteRegStr HKCU Software\Classes\prismlauncher "URL Protocol" ""
-  WriteRegStr HKCU Software\Classes\prismlauncher\shell\open\command "" '"$INSTDIR\@Launcher_APP_BINARY_NAME@.exe" "%1"'
+  ; 协议名用 atlas：prismlauncher:// 是上游的，装了两个启动器会互相抢注册
+  WriteRegStr HKCU Software\Classes\atlas "URL Protocol" ""
+  WriteRegStr HKCU Software\Classes\atlas\shell\open\command "" '"$INSTDIR\@Launcher_APP_BINARY_NAME@.exe" "%1"'
 
   ; Write the uninstall keys for Windows
   ; https://learn.microsoft.com/en-us/windows/win32/msi/uninstall-registry-key

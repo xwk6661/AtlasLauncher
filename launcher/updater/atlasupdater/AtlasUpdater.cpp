@@ -1028,13 +1028,13 @@ void AtlasUpdaterApp::backupAppDir()
     if (fileList.isEmpty()) {
         // best guess
         if (BuildConfig.BUILD_ARTIFACT.toLower().contains("linux")) {
-            fileList.append({ "PrismLauncher", "bin", "share", "lib" });
+            fileList.append({ "Atlas", "bin", "share", "lib" });
         } else {  // windows by process of elimination
             fileList.append({
                 "jars",
-                "prismlauncher.exe",
-                "prismlauncher_filelink.exe",
-                "prismlauncher_updater.exe",
+                "atlas.exe",
+                "atlas_filelink.exe",
+                "atlas_updater.exe",
                 "qtlogging.ini",
                 "imageformats",
                 "iconengines",

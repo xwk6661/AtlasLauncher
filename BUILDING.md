@@ -87,7 +87,10 @@ powershell -File tools\package-windows.ps1 -Config Release
    `C1083 Permission denied`。`$env:CMAKE_BUILD_PARALLEL_LEVEL = "2"` 基本不再撞。
 4. **`.ui` 头文件的 AUTOUIC 路径规则**：在别的目录 `include` 一个 `.ui` 生成的头会编译中止
    （见 `docs/atlas/03-决策与坑.md` §2.9）。
-5. **不要给 `BaseInstance` 加虚函数**：vtable 槽位会整体后移，增量构建里只要有一个
+5. **改了 `CACHE STRING` 的默认值不会生效**：`CMakeCache.txt` 里已经存了旧值，
+   要 `cmake --preset win-local -U<变量名>` 清一遍。改 `Launcher_*_URL` 这类变量时最容易踩
+   （表现为"代码改了，编出来的还是旧地址"）。
+6. **不要给 `BaseInstance` 加虚函数**：vtable 槽位会整体后移，增量构建里只要有一个
    TU 用旧头文件就会在无关处崩溃（`docs/atlas/03-决策与坑.md` §5.6）。
 
 ## 6. 改了 Java Agent 之后

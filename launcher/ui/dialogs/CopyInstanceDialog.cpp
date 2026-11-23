@@ -110,6 +110,8 @@ CopyInstanceDialog::CopyInstanceDialog(BaseInstance* original, QWidget* parent)
     auto HelpButton = ui->buttonBox->button(QDialogButtonBox::Help);
     connect(HelpButton, &QPushButton::clicked, this, &CopyInstanceDialog::help);
     HelpButton->setText(tr("Help"));
+    // 没有帮助站点时这个按钮点了只会打开一个空 URL
+    HelpButton->setVisible(!BuildConfig.HELP_URL.isEmpty());
     ui->buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("Cancel"));
     ui->buttonBox->button(QDialogButtonBox::Ok)->setText(tr("OK"));
 }
@@ -154,6 +156,8 @@ const InstanceCopyPrefs& CopyInstanceDialog::getChosenOptions() const
 
 void CopyInstanceDialog::help()
 {
+    if (BuildConfig.HELP_URL.isEmpty())
+        return;
     DesktopServices::openUrl(QUrl(BuildConfig.HELP_URL.arg("instance-copy")));
 }
 

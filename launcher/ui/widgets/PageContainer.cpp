@@ -244,6 +244,10 @@ void PageContainer::help()
         if (pageId.isEmpty()) {
             return;
         }
+        // 没有帮助站点（Atlas 默认留空）时不打开空 URL
+        if (BuildConfig.HELP_URL.isEmpty()) {
+            return;
+        }
         DesktopServices::openUrl(QUrl(BuildConfig.HELP_URL.arg(pageId)));
     }
 }

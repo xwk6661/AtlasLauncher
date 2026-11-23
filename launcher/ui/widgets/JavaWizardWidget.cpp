@@ -228,6 +228,10 @@ JavaWizardWidget::ValidationStatus JavaWizardWidget::validate()
             /* fallthrough */
         case JavaStatus::ReturnedInvalidData: {
             if (!(BuildConfig.JAVA_DOWNLOADER_ENABLED && m_autodownloadCheckBox->isChecked())) {  // the java will not be autodownloaded
+                // 没有帮助站点时不给「帮助」按钮（点了只会打开一个空 URL）
+                const QMessageBox::StandardButtons warningButtons =
+                    BuildConfig.HELP_URL.isEmpty() ? (QMessageBox::Yes | QMessageBox::No)
+                                                   : (QMessageBox::Yes | QMessageBox::No | QMessageBox::Help);
                 int button = QMessageBox::No;
                 if (m_result.mojangPlatform == "32" && maxHeapSize() > 2048) {
                     button = CustomMessageBox::selectable(
@@ -238,7 +242,7 @@ JavaWizardWidget::ValidationStatus JavaWizardWidget::validate()
                                     "\n\n"
                                     "You can change the Java version in the settings later.\n")
                                      .arg(BuildConfig.LAUNCHER_DISPLAYNAME),
-                                 QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No | QMessageBox::Help, QMessageBox::NoButton)
+                                 QMessageBox::Warning, warningButtons, QMessageBox::NoButton)
                                  ->exec();
 
                 } else {
@@ -249,7 +253,7 @@ JavaWizardWidget::ValidationStatus JavaWizardWidget::validate()
                                                              "\n\n"
                                                              "You can change the Java version in the settings later.\n")
                                                               .arg(BuildConfig.LAUNCHER_DISPLAYNAME),
-                                                          QMessageBox::Warning, QMessageBox::Yes | QMessageBox::No | QMessageBox::Help,
+                                                          QMessageBox::Warning, warningButtons,
                                                           QMessageBox::NoButton)
                                  ->exec();
                 }
@@ -257,7 +261,8 @@ JavaWizardWidget::ValidationStatus JavaWizardWidget::validate()
                     case QMessageBox::Yes:
                         return ValidationStatus::JavaBad;
                     case QMessageBox::Help:
-                        DesktopServices::openUrl(QUrl(BuildConfig.HELP_URL.arg("java-wizard")));
+                        if (!BuildConfig.HELP_URL.isEmpty())
+                            DesktopServices::openUrl(QUrl(BuildConfig.HELP_URL.arg("java-wizard")));
                         [[fallthrough]];
                     case QMessageBox::No:
                     /* fallthrough */

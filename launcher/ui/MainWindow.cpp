@@ -267,6 +267,8 @@ MainWindow::MainWindow(QWidget* parent) : QMainWindow(parent), ui(new Ui::MainWi
         ui->actionMATRIX->setVisible(!BuildConfig.MATRIX_URL.isEmpty());
         ui->actionDISCORD->setVisible(!BuildConfig.DISCORD_URL.isEmpty());
         ui->actionREDDIT->setVisible(!BuildConfig.SUBREDDIT_URL.isEmpty());
+        // 「帮助」整条指向上游 wiki；没有自己的文档站时留空，菜单项与工具栏入口一起藏起来
+        ui->actionOpenWiki->setVisible(!BuildConfig.WIKI_URL.isEmpty());
 
         ui->actionCheckUpdate->setVisible(APPLICATION->updaterEnabled());
 
@@ -1542,6 +1544,9 @@ void MainWindow::on_actionAddToPATH_triggered()
 
 void MainWindow::on_actionOpenWiki_triggered()
 {
+    // 没有文档站时不打开一个空 URL（菜单项已隐藏，这里防的是快捷键/代码调用）
+    if (BuildConfig.WIKI_URL.isEmpty())
+        return;
     DesktopServices::openUrl(QUrl(BuildConfig.WIKI_URL));
 }
 

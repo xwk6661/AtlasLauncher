@@ -63,9 +63,15 @@ QString LanguageSelectionWidget::getSelectedLanguageKey() const
 
 void LanguageSelectionWidget::retranslate()
 {
-    QString text = tr("Don't see your language or the quality is poor?<br/><a href=\"%1\">Help us with translations!</a>")
-                       .arg(BuildConfig.TRANSLATIONS_URL);
-    m_helpUsLabel->setText(text);
+    // 没有翻译平台（Atlas 默认留空）时不显示一行"帮我们翻译"，否则是一个 href 为空的死链
+    if (BuildConfig.TRANSLATIONS_URL.isEmpty()) {
+        m_helpUsLabel->clear();
+        m_helpUsLabel->setVisible(false);
+    } else {
+        QString text = tr("Don't see your language or the quality is poor?<br/><a href=\"%1\">Help us with translations!</a>")
+                           .arg(BuildConfig.TRANSLATIONS_URL);
+        m_helpUsLabel->setText(text);
+    }
     m_formatCheckbox->setText(tr("Use system regional standards"));
 }
 
