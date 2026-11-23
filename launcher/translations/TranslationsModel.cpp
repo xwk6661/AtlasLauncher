@@ -482,9 +482,27 @@ bool TranslationsModel::selectLanguage(QString key) const
 
     // otherwise install new translations
     bool successful = false;
-    // FIXME: this is likely never present. FIX IT.
+    /**
+     * Atlas: 便携包不带 Qt 安装目录，`QLibraryInfo::TranslationsPath` 指向的是**编译机**上的
+     * Qt（`E:/Program File/Qt/6.8.3/...`），用户机器上根本不存在 —— 于是「确定 / 取消」
+     * 这类 Qt 内置串永远是英文（上游那句 FIXME 说的就是这个）。
+     *
+     * 现在发布包会把 `qt_zh_CN.qm` 与它依赖的 `qtbase_zh_CN.qm` 一起放进应用自己的
+     * `translations/`，所以这里**先查应用目录**，找不到再退回 Qt 自带路径。
+     * 两处都找不到仍然只是"标准对话框没翻译"，不影响功能。
+     */
     d->m_qtTranslator = std::make_unique<QTranslator>();
-    if (d->m_qtTranslator->load("qt_" + langCode, QLibraryInfo::path(QLibraryInfo::TranslationsPath))) {
+    const QStringList qtTranslationDirs{ d->m_dir.path(), QLibraryInfo::path(QLibraryInfo::TranslationsPath) };
+    bool qtLoaded = false;
+    for (const auto& dir : qtTranslationDirs) {
+        if (dir.isEmpty())
+            continue;
+        if (d->m_qtTranslator->load("qt_" + langCode, dir)) {
+            qtLoaded = true;
+            break;
+        }
+    }
+    if (qtLoaded) {
         qDebug() << "Loading Qt Language File for" << langCode.toLocal8Bit().constData() << "...";
         if (!QCoreApplication::installTranslator(d->m_qtTranslator.get())) {
             qCritical() << "Loading Qt Language File failed.";
