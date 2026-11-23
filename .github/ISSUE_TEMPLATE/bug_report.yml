@@ -1,0 +1,102 @@
+name: 问题反馈 / Bug report
+description: 导入失败、进不去图、崩溃、界面异常
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        先看一眼这两处，很多问题在那里已经有答案：
+
+        - 包内 `README-Atlas.txt` 的「已知限制」与「出问题了怎么办」
+        - `docs/atlas/08-真机复看清单.md`（进不去图这类问题的排查顺序）
+
+        **用哪个包很重要**：只支持本仓库 Releases 里的 `Atlas-<版本>-win64-release.zip`，
+        第三方转载或自己编的 Debug 版不给结论。
+
+  - type: input
+    id: version
+    attributes:
+      label: Atlas 版本
+      description: 关于页 → 版本（形如 0.1.0），有 Commit 行的话一起贴上
+      placeholder: "0.1.0 / Commit 6649983"
+    validations:
+      required: true
+
+  - type: input
+    id: windows
+    attributes:
+      label: Windows 版本
+      placeholder: "Windows 11 23H2 / Windows 10 22H2"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: kind
+    attributes:
+      label: 问题类型
+      options:
+        - 导入失败（判定 / 解压 / 建实例）
+        - 进不去图（停在主菜单 / 黑屏 / 卡在加载）
+        - 游戏内崩溃或存档异常
+        - 退出后窗口不关 / 关错程序
+        - 界面与交互（地图库 / 大厅 / 设置）
+        - 下载问题（卡住 / 龟速 / 失败）
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: mcversion
+    attributes:
+      label: 这张图的 MC 版本与加载器
+      description: 实例「版本」页能看到；不知道就写"不确定"
+      placeholder: "1.16.5 / Forge 36.2.39"
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从打开启动器开始，按顺序写你点了什么
+      placeholder: |
+        1. 拖入 xxx.zip
+        2. 导入对话框里选了 xxx
+        3. 点卡片启动
+        4. 停在主菜单
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望与实际
+      placeholder: |
+        期望：直接落在出生点
+        实际：停在主菜单，日志里 track= 2
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志
+      description: |
+        两样都要（有多少贴多少，不要截图）：
+        1. `logs\Atlas-0.log` 的尾部 —— 至少覆盖出问题的那次启动；
+        2. 出问题的实例目录里的 `agent.log` 与 `map.json`（没有 agent.log 就只发 map.json）。
+        日志里可能有你的用户名与路径，介意的话自行打码，但**不要删掉 `Map launch plan:` 那一行**。
+      render: text
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 确认项
+      options:
+        - label: 我用的是 Releases 里的便携包（不是自己编的、不是第三方转载的）
+          required: true
+        - label: 如果装了 ToDesk / 向日葵等远程控制软件，我已经断开它（它的虚拟输入会让视角发疯）
+          required: false
+        - label: 我看过包内的「已知限制」，问题不在已说明的范围内（如 1.17/1.18 不能自动进图）
+          required: true
