@@ -1,2 +1,8 @@
 *.pem -crlf
 **/testdata/** -text -diff
+
+# 二进制资源：别让 autocrlf 改写（翻译 .qm、Agent jar、图标）
+*.qm binary
+*.jar binary
+*.ico binary
+*.icns binary

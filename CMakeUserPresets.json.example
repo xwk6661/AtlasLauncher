@@ -1,0 +1,35 @@
+{
+  "version": 8,
+  "configurePresets": [
+    {
+      "name": "win-local",
+      "displayName": "Windows local (VS2022 + Qt 6.8.x msvc2022_64 + vcpkg)",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build/win-local",
+      "environment": {
+        "VCPKG_ROOT": "C:/vcpkg"
+      },
+      "cacheVariables": {
+        "CMAKE_PREFIX_PATH": "C:/Qt/6.8.3/msvc2022_64",
+        "VCPKG_TARGET_TRIPLET": "x64-windows",
+        "Launcher_WARNING_AS_ERROR": "OFF",
+        "ENABLE_LTO": "ON",
+        "Java_JAVAC_EXECUTABLE": "C:/Program Files/Java/jdk8/bin/javac.exe",
+        "Java_JAR_EXECUTABLE": "C:/Program Files/Java/jdk8/bin/jar.exe",
+        "Java_JAVA_EXECUTABLE": "C:/Program Files/Java/jdk8/bin/java.exe"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "win-local",
+      "configurePreset": "win-local",
+      "configuration": "Debug"
+    },
+    {
+      "name": "win-local-release",
+      "configurePreset": "win-local",
+      "configuration": "Release"
+    }
+  ]
+}

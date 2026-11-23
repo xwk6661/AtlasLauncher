@@ -38,8 +38,9 @@
 
 ## 现状
 
-个人分支。Windows 上**以 Release 便携版为真实运行环境**（`tools/package-windows.ps1`，含 Qt 与 VC++ 运行库，
-18.7 MB；本机装在 `E:/Program File/AtlasLaucher`，实例 / 地图库 / 账号都在那里）；`build/win-local/Debug`
+个人分支，准备公开发布（版本线独立为 **0.1.0**，不再沿用上游的 12.0.0）。
+Windows 上**以 Release 便携版为真实运行环境**（`tools/package-windows.ps1`，含 Qt 与 VC++ 运行库，
+18.8 MB；本机装在 `E:/Program File/AtlasLaucher`，实例 / 地图库 / 账号都在那里）；`build/win-local/Debug`
 只做 UI 调试，靠 `--dir` 复用同一份数据。构建通过，**33 个套件 / 448 项测试全绿**。
 
 真机已验证：1.20+ 点卡片进图与退出即关、Agent 进图与安全退出（1.8.9 / 1.9.4 / 1.12 Forge / 1.16.5 / 1.19.3）、
@@ -58,30 +59,42 @@
 > 设计看 [01](docs/atlas/01-设计.md)，踩过的坑与已定决策看 [03](docs/atlas/03-决策与坑.md)。
 > 别处与本文件都不重复维护状态。
 
+## 下载
+
+公开发布后：**只从本仓库的 GitHub Releases 下载**（`Atlas-<版本>-win64-release.zip`），
+解压即用，不需要安装。第三方转载的包请勿使用。
+
+包内自带 `README-Atlas.txt`（首次使用、数据在哪、已知限制、出问题看哪个日志）、
+`LICENSE.txt`、`COPYING.md` 与 `THIRD-PARTY-NOTICES.md`。
+
 ## 构建
 
 ```powershell
-# 需要 VS2022 + Qt 6.8 + vcpkg；五个环境坑与沙箱配方见文档
-& .\build\run-configure.ps1 -Action configure
-& .\build\run-configure.ps1 -Action build-debug
+# 干净的开发机：三步（克隆 → 生成本机预设 → 配置/构建）
+#   详见 BUILDING.md
+git clone --recursive <repo>
+Copy-Item CMakeUserPresets.json.example CMakeUserPresets.json   # 然后改里面的 Qt / vcpkg / JDK 路径
+cmake --preset win-local
+cmake --build --preset win-local
 
-# Release + 便携包（配置一次就够，之后可直接 build-release）
-& .\build\run-configure.ps1 -Action build-release
-& .\tools\package-windows.ps1 -Config Release    # → dist\Atlas-12.0.0-win64-release.zip
+# 出便携包 → dist\Atlas-0.1.0-win64-release.zip
+cmake --build --preset win-local-release
+powershell -File tools\package-windows.ps1 -Config Release
 
-# 一条命令上机：构建 → 打包 → 覆盖便携根（/E 不删数据，装完比 exe 哈希；-DryRun 只体检）
-& .\tools\deploy-local.ps1
+# 本机（作者机器）那套已经调好的脚本仍在 build\（不进仓库）：
+#   build\run-configure.ps1 -Action configure / build-debug / build-release
+#   一条命令上机：tools\deploy-local.ps1（构建 → 打包 → 覆盖便携根，-DryRun 只体检）
 
 # 运行
 #   真机：E:/Program File/AtlasLaucher/atlas.exe（便携根 = 数据根）
 #   界面调试：build\run-atlas-debug.cmd（自动带 --dir 指向便携根，不复制数据）
-.\build\run-atlas-debug.cmd
 
-# 测试：单套件这样跑，全套用 ctest（见 02 §5）
+# 测试：全套 33 套件，或单套件（见 02 §5）
+ctest --test-dir build/win-local -C Debug
 cd build\win-local\Debug; .\LauncherTests.exe MapArchiveScan_test
 ```
 
-详细步骤：[`docs/atlas/02-构建与运行.md`](docs/atlas/02-构建与运行.md)。
+详细步骤：[`BUILDING.md`](BUILDING.md)（从零构建）、[`docs/atlas/02-构建与运行.md`](docs/atlas/02-构建与运行.md)（本机环境与五个坑）。
 
 ## 文档
 
@@ -92,6 +105,10 @@ cd build\win-local\Debug; .\LauncherTests.exe MapArchiveScan_test
 
 ## 许可与致谢
 
-GPL-3.0-only。代码来自 Prism Launcher、PolyMC 与 MultiMC，版权归各自贡献者所有；
-Atlas 的改动同样以 GPL-3.0 发布。本项目**未经** Prism Launcher / MultiMC 背书；
+GPL-3.0-only，全文见 [`LICENSE`](LICENSE)；第三方组件与数据来源见
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)；上游致谢见 [`COPYING.md`](COPYING.md)。
+
+代码来自 Prism Launcher、PolyMC 与 MultiMC，版权归各自贡献者所有。
+**Atlas 是非官方产品**：与 Mojang、Microsoft、Prism Launcher、PolyMC、MultiMC 及
+ATLauncher 均无关联，也未获其背书；不包含任何 Minecraft 游戏文件。
 图标暂用上游素材，之后会替换为 Atlas 自己的。
