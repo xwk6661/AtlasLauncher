@@ -112,3 +112,10 @@ GPL-3.0-only，全文见 [`LICENSE`](LICENSE)；第三方组件与数据来源�
 **Atlas 是非官方产品**：与 Mojang、Microsoft、Prism Launcher、PolyMC、MultiMC 及
 ATLauncher 均无关联，也未获其背书；不包含任何 Minecraft 游戏文件。
 图标暂用上游素材，之后会替换为 Atlas 自己的。
+
+数据与服务来自这些地方，只按公开的只读接口访问，没有建立正式合作，版权归各站与各作者：
+[CTM Maps](https://ctmmaps.com/)（大厅的地图资料与评论）、
+[Modrinth](https://modrinth.com/) 与 [CurseForge](https://www.curseforge.com/)（模组预设）、
+[optifine.net](https://optifine.net/)（OptiFine）、
+[BMCLAPI](https://bmclapi2.bangbang93.com/)（可选下载镜像）、
+以及 Mojang 的版本清单与素材。逐项说明见 `THIRD-PARTY-NOTICES.md`。
