@@ -147,6 +147,43 @@ if (Test-Path $stray) {
     }
 }
 
+# ---------------------------------------------------------------------------------
+# Release paperwork. A GPL binary has to travel with its licence text, the upstream
+# credits and the third-party list; the portable zip is the only thing a user ever
+# downloads, so nothing can be left to the repository. Same reasoning for the user
+# readme (it is the only place that explains the data layout and known limits).
+# ---------------------------------------------------------------------------------
+$legal = @(
+    @{ From = 'LICENSE';               To = 'LICENSE.txt' },
+    @{ From = 'COPYING.md';            To = 'COPYING.md' },
+    @{ From = 'THIRD-PARTY-NOTICES.md'; To = 'THIRD-PARTY-NOTICES.md' }
+)
+foreach ($item in $legal) {
+    $src = Join-Path $repo $item.From
+    if (-not (Test-Path $src)) {
+        throw "$($item.From) is missing from the repository - refusing to package a binary without its licence."
+    }
+    Copy-Item $src (Join-Path $out $item.To) -Force
+}
+
+$readme = Join-Path $repo 'tools\release-assets\README-Atlas.txt'
+if (-not (Test-Path $readme)) {
+    throw 'tools\release-assets\README-Atlas.txt is missing - the package would ship with no instructions.'
+}
+Copy-Item $readme (Join-Path $out 'README-Atlas.txt') -Force
+
+# Chinese UI strings, shipped instead of downloaded: the launcher otherwise fetches
+# them from i18n.prismlauncher.org on first run, which leaves a fresh install in
+# English whenever that host is slow or unreachable (common on the networks this
+# launcher targets). TranslationsModel needs index_v2.json to know zh_cn exists.
+$qaTranslations = Join-Path $repo 'tools\release-assets\translations'
+$transOut = Join-Path $out 'translations'
+if (-not (Test-Path (Join-Path $qaTranslations 'mmc_zh.qm'))) {
+    throw 'tools\release-assets\translations\mmc_zh.qm is missing - first run would fall back to English.'
+}
+New-Item -ItemType Directory -Force -Path $transOut | Out-Null
+Copy-Item (Join-Path $qaTranslations '*') $transOut -Force
+
 # Debug binaries link the MSVC debug CRT, which is not redistributable: the folder
 # runs only on a machine with Visual Studio installed. Release is the shareable one.
 if ($Config -eq 'Debug') {
