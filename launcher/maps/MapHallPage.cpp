@@ -340,7 +340,7 @@ void MapHallPage::openedImpl()
      * 检测在 HallCache::detailsCoverList —— 有缓存但覆盖不全 → 直接重新同步。
      */
     if (m_api->hasLibrary() && m_api->libraryIncomplete()) {
-        m_status->setText(tr("大厅数据缺了部分地图详情（旧版同步留下的），正在自动补全…"));
+        m_status->setText(tr("正在补全缺失的地图详情…"));
         syncLibrary();
     } else if (m_api->hasLibrary()) {
         startSearch();
@@ -352,7 +352,7 @@ void MapHallPage::openedImpl()
     } else {
         if (m_leftStack != nullptr)
             setFailMode(false);
-        m_status->setText(tr("还没有大厅数据。点「下载地图库」拉一次（约 20–40 秒），之后打开即用。"));
+        m_status->setText(tr("还没有大厅数据，点「下载地图库」"));
     }
     m_started = true;
 
@@ -715,7 +715,7 @@ void MapHallPage::buildUi()
     // 「从本地库导入」排第一：库里已经有这张图时，它才是玩家真正想点的那个
     m_localImport = new QPushButton(tr("从本地库导入"), detail);
     m_localImport->setEnabled(false);
-    m_localImport->setToolTip(tr("这张图已经在本地库里，直接走导入，不用再选文件"));
+    m_localImport->setToolTip(tr("本地库已录入，直接导入"));
     auto* openButton = new QPushButton(tr("打开下载页"), detail);
     auto* pickButton = new QPushButton(tr("选择已下载的文件…"), detail);
     actions->addWidget(m_localImport);
@@ -771,17 +771,17 @@ void MapHallPage::buildUi()
         const QString url = currentDownloadUrl();
         if (url.isEmpty()) {
             // 没选行（或者大厅连不上）时，至少让人能去站上逛
-            m_status->setText(tr("已在浏览器打开 CTM 地图站；挑好后下载，再回来点「选择已下载的文件…」。"));
+            m_status->setText(tr("已打开下载页；下载完点「选择已下载的文件…」"));
             QDesktopServices::openUrl(QUrl(QStringLiteral("https://www.ctmmaps.com")));
             return;
         }
-        m_status->setText(tr("已在浏览器打开下载页；下载完回到这里点「选择已下载的文件…」。"));
+        m_status->setText(tr("已打开下载页；下载完点「选择已下载的文件…」"));
         QDesktopServices::openUrl(QUrl(url));
     });
     connect(pickButton, &QPushButton::clicked, this, &MapHallPage::pickLocalArchive);
     connect(m_localImport, &QPushButton::clicked, this, &MapHallPage::onImportLocalClicked);
 
-    m_status->setText(tr("列表来自 CTMMaps 的公开数据；下载交给浏览器，不会在启动器里偷偷拉。"));
+    m_status->setText(tr("数据来自 CTMMaps；下载交给浏览器"));
 }
 
 HallQuery MapHallPage::currentQuery() const
@@ -811,7 +811,7 @@ void MapHallPage::syncLibrary()
     // 同步时把失败面板收起来：那上面显示的是上一次的失败，会跟进度混在一起
     if (m_leftStack != nullptr)
         setFailMode(false);
-    m_status->setText(tr("正在下载地图库…（4 个请求，可能需要十几秒）"));
+    m_status->setText(tr("正在下载地图库…"));
     m_api->syncLibrary();
 }
 
@@ -828,7 +828,7 @@ void MapHallPage::updateLibraryHint()
         return;
     }
     m_syncButton->setText(tr("下载地图库"));
-    m_syncButton->setToolTip(tr("一次把整库拉到本地（几百张图 + 评论），之后搜索、详情、评论都在本地算。"));
+    m_syncButton->setToolTip(tr("把整库同步到本地，之后离线可搜"));
 }
 
 void MapHallPage::startSearch()
@@ -839,7 +839,7 @@ void MapHallPage::startSearch()
     m_loadMore->setVisible(false);
     // 浏览器通道一条请求要几秒：先说明白，别让人以为卡住了
     m_status->setText(m_api->hasLibrary() ? tr("正在搜索（本地数据）…")
-                                          : tr("正在查询…（走浏览器通道时需要几秒）"));
+                                          : tr("正在查询…"));
     m_api->search(query);
 }
 
@@ -897,7 +897,7 @@ void MapHallPage::onSearchDone(const QList<HallItem>& items)
 
     // 本地命中时写「本地库」，别再拿"浏览器通道/直连"误导人（那次搜索根本没出网）
     const QString via = m_api->hasLibrary() ? tr("本地数据") : m_api->transportNote();
-    m_status->setText((m_items.isEmpty() ? tr("没有匹配的地图。换个关键词，或清空搜索看最新发布。")
+    m_status->setText((m_items.isEmpty() ? tr("没有匹配的地图")
                                          : tr("已显示 %1 张。点一行看详情。").arg(m_items.size()))
                       + QStringLiteral("  ·  ") + via);
 
@@ -1006,6 +1006,26 @@ void MapHallPage::onDetail(const HallDetail& detail)
         description = description.left(1200) + QStringLiteral("…");
     m_description->setText(description.isEmpty() ? tr("（这张图没有简介）") : description);
 
+    /**
+     * 诊断（临时，2026-11-23）：用户报「基本信息 / 简介两张卡片之间约 100px 空白」。
+     * 布局里两张卡片是紧挨着 addWidget 的（源码看不到 spacer），所以先把**实际**的 item
+     * 顺序与几何打出来：出现 `w… spacer… w…` 就说明中间确实有一项在吃高度。
+     */
+    if (QWidget* descCard = m_description->parentWidget()) {
+        if (QWidget* body = descCard->parentWidget(); body != nullptr && body->layout() != nullptr) {
+            QStringList items;
+            for (int i = 0; i < body->layout()->count(); ++i) {
+                QLayoutItem* layoutItem = body->layout()->itemAt(i);
+                const QRect geo = layoutItem->geometry();
+                items << QStringLiteral("%1[%2,%3]")
+                             .arg(layoutItem->widget() != nullptr ? QStringLiteral("w") : QStringLiteral("spacer"))
+                             .arg(geo.y())
+                             .arg(geo.height());
+            }
+            qInfo() << "Map hall about:" << items.join(QLatin1Char(' ')) << "body" << body->size();
+        }
+    }
+
     // 简介拿到之后再取评论：HallAPI 同一时刻只允许一个在途请求
     if (m_tabs != nullptr)
         m_tabs->setCurrentIndex(0);
@@ -1068,14 +1088,14 @@ void MapHallPage::onFailed(HallError kind, const QString& humanReason, const QSt
     if (m_api->lastRequestIsAuxiliary()) {
         clearReviews();
         if (m_reviewLayout != nullptr && m_reviewBox != nullptr) {
-            auto* note = new QLabel(tr("这张图的评论没取到：%1\n本地缓存里没有它的评论；联网后重新打开这一页可以再试。")
+            auto* note = new QLabel(tr("评论没取到：%1")
                                         .arg(humanReason),
                                     m_reviewBox);
             note->setWordWrap(true);
             note->setEnabled(false);
             m_reviewLayout->insertWidget(0, note);
         }
-        m_status->setText(tr("评论没取到（%1）；列表与简介不受影响。").arg(humanReason));
+        m_status->setText(tr("评论没取到（%1）").arg(humanReason));
         return;
     }
 
@@ -1095,7 +1115,7 @@ void MapHallPage::onFailed(HallError kind, const QString& humanReason, const QSt
 
         const QDateTime at = m_api->libraryFetchedAt().toLocalTime();
         // 列表还在、功能都可用：一句话说清"没更新成功，但不影响用"
-        m_status->setText(tr("更新没成功：%1 · 仍在用 %2 的大厅数据（%3 张），功能照常")
+        m_status->setText(tr("更新失败：%1 · 仍用 %2 的数据（%3 张）")
                               .arg(humanReason,
                                    at.isValid() ? at.toString(QStringLiteral("MM-dd HH:mm")) : tr("上次同步"),
                                    QString::number(m_api->libraryItemCount())));
@@ -1111,7 +1131,7 @@ void MapHallPage::onFailed(HallError kind, const QString& humanReason, const QSt
      * 状态栏只说"失败 + 通道"这一句：原因、为什么、三条建议都在失败面板里，
      * 以前这里把同样的话又抄了一遍（还是带技术细节的长段落），一眼看上去全是字。
      */
-    m_status->setText(tr("失败：%1 · 当前通道：%2").arg(humanReason, m_api->transportNote()));
+    m_status->setText(tr("失败：%1 · 通道：%2").arg(humanReason, m_api->transportNote()));
     m_loadMore->setVisible(false);
     showFailure(kind, humanReason, techDetail);
 }
@@ -1633,7 +1653,7 @@ void MapHallPage::updateLocalAction()
     const auto local = localItemsFor(m_items.at(row).slug);
     m_localImport->setEnabled(!local.isEmpty());
     if (local.isEmpty()) {
-        m_localImport->setToolTip(tr("这张图还不在本地库里；先用「打开下载页」下载，再回来「选择已下载的文件…」"));
+        m_localImport->setToolTip(tr("本地库还没有这张图"));
         return;
     }
 
@@ -1642,7 +1662,7 @@ void MapHallPage::updateLocalAction()
         names << (one.variantSummary().isEmpty() ? one.file : one.variantSummary());
     const QString joined = names.join(QStringLiteral("、"));
     m_localImport->setToolTip(tr("本地已有：%1").arg(joined));
-    m_hint->setText(tr("本地库已有这张图（%1），可以直接导入。").arg(joined));
+    m_hint->setText(tr("本地库已录入"));
 }
 
 QList<LibraryItem> MapHallPage::localItemsFor(const QString& slug) const

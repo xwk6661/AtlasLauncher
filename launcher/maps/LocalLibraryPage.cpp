@@ -52,7 +52,7 @@ LocalLibraryPage::LocalLibraryPage(NewInstanceDialog* dialog, QWidget* parent) :
     bottomRow->addStretch(1);
 
     auto* importButton = new QPushButton(tr("从外部导入…"), this);
-    importButton->setToolTip(tr("选一个不在库里的压缩包（zip / rar / 7z / tar / gz / mcworld）直接导入；导入后会自动落进本库"));
+    importButton->setToolTip(tr("选一个压缩包导入，导入后自动收进本库"));
     bottomRow->addWidget(importButton);
     connect(importButton, &QPushButton::clicked, this, [this] {
         const QString filter = tr("Minecraft 地图 (*.zip *.rar *.7z *.tar *.gz *.mcworld);;所有文件 (*)");
@@ -84,7 +84,7 @@ LocalLibraryPage::LocalLibraryPage(NewInstanceDialog* dialog, QWidget* parent) :
         if (!error.isEmpty())
             QMessageBox::warning(this, tr("规范命名"), error);
         else if (changed == 0)
-            QMessageBox::information(this, tr("规范命名"), tr("库里的文件名已经符合规范，没有需要改的。"));
+            QMessageBox::information(this, tr("规范命名"), tr("文件名已符合规范"));
         else
             QMessageBox::information(this, tr("规范命名"), tr("已重命名 %1 个文件。").arg(changed));
     });

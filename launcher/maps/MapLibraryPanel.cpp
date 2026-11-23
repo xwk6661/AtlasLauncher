@@ -549,8 +549,7 @@ MapLibraryPanel::MapLibraryPanel(QWidget* parent) : QWidget(parent)
     m_table->setMinimumHeight(220);
     m_table->setMinimumWidth(0);
     m_table->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_table->setToolTip(tr("拖动行到左侧分类即可归类；双击直接导入；点组标题展开/收起同图的不同语言版本；"
-                           "右键组标题可整组操作，右键语言版本只能改它自己"));
+    m_table->setToolTip(tr("拖动行到左侧分类即可归类；双击导入；点系列行展开/收起；右键改这张图"));
     // 图标位与行同高：折号的竖线要跨行接上（见 kMarkerHeight）
     m_table->setIconSize(QSize(kMarkerWidth, kMarkerHeight));
     ui::tuneTable(m_table, kDefaultRowHeight);

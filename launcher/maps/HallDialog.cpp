@@ -182,7 +182,7 @@ HallDialog::HallDialog(QWidget* parent) : QDialog(parent)
 
         // 返回满一页就当作「可能还有下一页」（PostgREST 的总数只有列表接口才给）
         m_loadMore->setVisible(items.size() >= 40);
-        m_status->setText(tr("已显示 %1 张地图。点一行看详情；下载会交给系统浏览器。").arg(m_items.size()));
+        m_status->setText(tr("已显示 %1 张地图").arg(m_items.size()));
     });
 
     connect(m_api, &HallAPI::reviewsDone, this, &HallDialog::onReviews);
@@ -461,7 +461,7 @@ void HallDialog::onFailed(HallError kind, const QString& humanReason, const QStr
     m_status->setText(text);
     // 断网时明确告诉用户还能干什么，而不是只留一个空列表
     if (kind == HallError::Dns || kind == HallError::Tls || kind == HallError::Timeout) {
-        m_status->setText(text + tr("\n大厅只是「发现地图」的入口；本地导入不受影响。"));
+        m_status->setText(text + tr("\n仍可导入本地地图"));
     }
 }
 

@@ -372,7 +372,7 @@ void MapGalleryPage::refresh()
         m_title->setText(tr("还没有地图"));
         m_badge->clear();
         m_confidence->clear();
-        m_stats->setText(tr("把地图压缩包拖进来，或点下面的「导入地图…」。"));
+        m_stats->setText(tr("拖入压缩包，或点「导入地图…」"));
         m_evidence->clear();
         m_cover->clear();
         m_worldCombo->clear();

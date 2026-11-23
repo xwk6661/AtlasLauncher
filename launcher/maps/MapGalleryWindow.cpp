@@ -60,7 +60,7 @@ MapGalleryWindow::MapGalleryWindow(InstanceList* instances, QWidget* parent) : Q
             emit importRequested(path);
     });
 
-    statusBar()->showMessage(tr("双击卡片直接进图；导入时会先判定版本并要求确认。"));
+    statusBar()->showMessage(tr("双击卡片进图"));
 }
 
 void MapGalleryWindow::chooseArchive()
