@@ -77,7 +77,7 @@
 
 ## 代码地图
 
-新代码在 `launcher/maps/`（**47 个 .cpp + 52 个 .h，27,431 行**），另有 `launcher/ResourcePaths`
+新代码在 `launcher/maps/`（**47 个 .cpp + 52 个 .h，27,450 行**），另有 `launcher/ResourcePaths`
 与 `launcher/net/DownloadSource`；`net/{Request,FileSink}` 与 `Application` 为下载能力有较大改动。
 对既有源码其余部分只做加法。逐文件职责见 [01 §6](01-设计.md)，文件级清单与测试数见 [04 §5](04-进度与待办.md)。
 
