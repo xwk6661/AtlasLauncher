@@ -362,44 +362,6 @@ QFont categoryFont(const QFont& base)
     return font;
 }
 
-/// 语言短标签：组内行只写「EN / 简中 / 繁中 / 官中」，一个词就说清是哪个版本
-QString languageTag(const variant::Info& info)
-{
-    if (info.source == variant::Source::Author)
-        return QStringLiteral("官中");
-    switch (info.language) {
-        case variant::Language::SimplifiedChinese:
-            return QStringLiteral("简中");
-        case variant::Language::TraditionalChinese:
-            return QStringLiteral("繁中");
-        case variant::Language::English:
-            return QStringLiteral("EN");
-        case variant::Language::Other:
-            return QStringLiteral("其他");
-        case variant::Language::Unknown:
-            break;
-    }
-    // 没标语言的原版：写「原版」而不是猜 EN（盘灵古域这种中文原创图就是"没标、但是中文"）
-    return info.kind == variant::Kind::Localized ? QStringLiteral("汉化") : QStringLiteral("原版");
-}
-
-/// 组内行的名字：「v1.0 EN」「v1.0 简中」。没有地图版本号就按 1.0 显示（不写盘）
-QString versionLabel(const LibraryItem& item)
-{
-    QString version = item.mapVersion.trimmed();
-    if (version.isEmpty())
-        version = QStringLiteral("1.0");
-    if (!version.startsWith(QLatin1Char('v'), Qt::CaseInsensitive))
-        version.prepend(QLatin1Char('v'));
-
-    QString label = QStringLiteral("%1 %2").arg(version, languageTag(item.variant));
-    // 资源包不是一张图、只能挂到实例上，这个差别必须一眼可见
-    if (item.variant.delivery == variant::Delivery::ResourcePack)
-        label += QStringLiteral(" · 资源包");
-    return label;
-}
-
-
 /// 只读表格：拖出去时带的是**文件名**，不是显示文本
 class LibraryTable : public QTableWidget {
    public:
@@ -1407,7 +1369,9 @@ void MapLibraryPanel::showGroupContextMenu(const QString& groupKey, const QPoint
     /**
      * 语言标签与地图版本是**每个包**的属性。一张图一行之后，组里的几个语言版本没有
      * 自己的行了，"独立图"那套菜单能改、组里这两项却够不着（11-22 改版漏的，[06 §113]）。
-     * 组里只有一个包就直连（多数情况），两个以上列成子菜单，用 `versionLabel()` 区分。
+     * 组里只有一个包就直连（多数情况），两个以上先选**哪个包** —— 子菜单里写字**文件名**，
+     * 不写 `v1.0 简中`：那个标签是"版本 + 语言"，同组的两个汉化包会完全相同（用户看到
+     * 两个一模一样的条目，以为在选语言/版本，其实是在选包，[06 §115]）。
      */
     const auto addPerFileEditor = [&](const QString& label, void (MapLibraryPanel::*editor)(const QString&)) {
         if (list.size() == 1) {
@@ -1417,7 +1381,7 @@ void MapLibraryPanel::showGroupContextMenu(const QString& groupKey, const QPoint
         }
         QMenu* perFile = menu.addMenu(label);
         for (const auto& item : list) {
-            QAction* action = perFile->addAction(versionLabel(item));
+            QAction* action = perFile->addAction(item.file);
             connect(action, &QAction::triggered, this, [this, file = item.file, editor] { (this->*editor)(file); });
         }
     };
@@ -1734,20 +1698,23 @@ void MapLibraryPanel::revealInExplorer(const QString& path)
          * 装了 Directory Opus（Explorer Replacement）之后，`Folder\shell` 的默认动词是
          * `openindopus`，硬调资源管理器等于绕开用户的选择。
          *
-         * 三种情况（[06 §114]）：
-         *   · 默认动词是 DOpus → `dopusrt.exe /cmd Go "<文件>"`（DOpus 官方给的说法，
-         *     一条命令就到"所在目录 + 选中该文件"）；
+         * 三种情况（[06 §114](06-变更记录.md) / [§115](06-变更记录.md)）：
+         *   · 默认动词是 DOpus → `dopusrt.exe /cmd Go OPENCONTAINER PATH "<文件>"`；
          *   · 资源管理器 / 没有自定义动词 → `SHOpenFolderAndSelectItems`；
          *     旧的 `explorer.exe /select,<路径>` 在带空格的路径上会被 Qt 整体加引号，
          *     explorer 解析失败后退回「文档」—— 用户实际撞到的就是这一条；
          *   · 别的管理器（Total Commander 等）→ 交给外壳打开目录（不做选中，也不猜参数）。
+         *
+         * DOpus 这里**不能**写 `Go "<文件>"`：DOpus 把压缩包也当文件夹，直接 Go 一个 zip 会
+         * 进到包里面（2026-11-23 用户实际撞到）。`OPENCONTAINER` 是 DOpus 官方的
+         * "打开所在容器并选中该项"，文件 / 文件夹 / 压缩包一视同仁。
          */
         const QString verb = folderOpenVerb();
         const QString program = verb.isEmpty() ? QString() : executableFromCommand(commandForVerb(verb));
 
         if (program.endsWith(QLatin1String("dopusrt.exe"), Qt::CaseInsensitive)) {
-            const QStringList args = { QStringLiteral("/cmd"), QStringLiteral("Go"),
-                                       QDir::toNativeSeparators(info.absoluteFilePath()) };
+            const QStringList args = { QStringLiteral("/cmd"),   QStringLiteral("Go"), QStringLiteral("OPENCONTAINER"),
+                                       QStringLiteral("PATH"), QDir::toNativeSeparators(info.absoluteFilePath()) };
             if (QProcess::startDetached(program, args))
                 return;
         } else if (program.isEmpty() || program.endsWith(QLatin1String("explorer.exe"), Qt::CaseInsensitive)) {
