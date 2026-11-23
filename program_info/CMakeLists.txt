@@ -12,7 +12,29 @@ set(Launcher_CommonName "Atlas")
 set(Launcher_DisplayName "Atlas")
 set(Launcher_AppID "org.atlas.Atlas")
 set(Launcher_Domain "org.atlas")
-set(Launcher_Git "" CACHE STRING "Project URL shown in the About dialog (empty = hide the link)")
+set(Launcher_Git "" CACHE STRING "Project URL shown in the About dialog (empty = derive from the clone's origin remote)")
+
+# About 页的那个链接：不写死仓库地址（改名 / 换托管都会变成 404），没显式配置时
+# 直接读克隆的 origin。拿不到就留空，对话框会把这一行藏起来。
+if(Launcher_Git STREQUAL "")
+    execute_process(
+        COMMAND git config --get remote.origin.url
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.."
+        OUTPUT_VARIABLE _atlas_origin
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
+    )
+    if(_atlas_origin MATCHES "^git@([^:]+):(.+)\\.git$")
+        set(Launcher_Git "https://${CMAKE_MATCH_1}/${CMAKE_MATCH_2}")
+    elseif(_atlas_origin MATCHES "^https://(.+)\\.git$")
+        set(Launcher_Git "https://${CMAKE_MATCH_1}")
+    elseif(_atlas_origin MATCHES "^https://[^ ]+$")
+        set(Launcher_Git "${_atlas_origin}")
+    endif()
+    if(NOT Launcher_Git STREQUAL "")
+        message(STATUS "About dialog URL (from origin): ${Launcher_Git}")
+    endif()
+endif()
 
 set(Launcher_Name "${Launcher_CommonName}" PARENT_SCOPE)
 set(Launcher_DisplayName "${Launcher_DisplayName}" PARENT_SCOPE)

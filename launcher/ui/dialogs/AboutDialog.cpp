@@ -92,9 +92,22 @@ AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent), ui(new Ui::AboutDia
     ui->icon->setPixmap(APPLICATION->logo().pixmap(64));
     ui->title->setText(launcherName);
 
+    /**
+     * 上游那句"多实例启动器"的自述跟 Atlas 的定位无关（我们卖的是"点地图直接进图"），
+     * 而且这一页是玩家唯一会主动打开、也唯一会看到"这是谁做的"的地方，
+     * 所以在这里把**非官方**说清楚：与 Mojang / Microsoft / Prism / ATLauncher 都无关。
+     * 措辞只陈述事实，不写免责长文。
+     */
+    ui->aboutLabel->setText(
+        QStringLiteral("<html><head/><body><p>%1</p><p>%2</p></body></html>")
+            .arg(tr("以地图为中心的 Minecraft 启动器：导入一张地图，点卡片直接进图。"),
+                 tr("非官方产品：与 Mojang、Microsoft、Prism Launcher、PolyMC、MultiMC 及 ATLauncher "
+                    "均无关联，也未获其背书。不含任何 Minecraft 游戏文件。")));
+
     ui->versionLabel->setText(BuildConfig.printableVersionString());
 
-    if (!BuildConfig.BUILD_PLATFORM.isEmpty())
+    // "unknown" 是构建时没有传 platform 的占位值，摆出来只会让人以为出错了
+    if (!BuildConfig.BUILD_PLATFORM.isEmpty() && BuildConfig.BUILD_PLATFORM != QLatin1String("unknown"))
         ui->platformLabel->setText(tr("Platform") + ": " + BuildConfig.BUILD_PLATFORM);
     else
         ui->platformLabel->setVisible(false);
@@ -114,12 +127,16 @@ AboutDialog::AboutDialog(QWidget* parent) : QDialog(parent), ui(new Ui::AboutDia
     else
         ui->channelLabel->setVisible(false);
 
-    // 分支没有固定仓库地址时不要显示一个空链接
+    // 分支没有固定仓库地址时不要显示一个空链接。
+    // 地址来自 clone 的 origin（见 program_info/CMakeLists.txt），所以改名/换托管后
+    // 重新 configure 一次就会跟着变，不会留下一个 404。
     if (BuildConfig.LAUNCHER_GIT.isEmpty()) {
         ui->urlLabel->setVisible(false);
     } else {
-        QString urlText("<html><head/><body><p><a href=\"%1\">%1</a></p></body></html>");
-        ui->urlLabel->setText(urlText.arg(BuildConfig.LAUNCHER_GIT));
+        QString urlText("<html><head/><body><p><a href=\"%1\">%1</a></p>"
+                        "<p><a href=\"%2\">%3</a></p></body></html>");
+        ui->urlLabel->setText(urlText.arg(BuildConfig.LAUNCHER_GIT, BuildConfig.LAUNCHER_GIT + QStringLiteral("/issues"),
+                                          tr("问题反馈")));
     }
 
     ui->copyLabel->setText(BuildConfig.LAUNCHER_COPYRIGHT);
