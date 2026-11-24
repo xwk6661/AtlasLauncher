@@ -77,9 +77,18 @@ bool AtlasCatalogTranslator::loadForLanguage(const QString& langCode)
         return false;
 
     const QString language = code.section(QLatin1Char('_'), 0, 0).section(QLatin1Char('@'), 0, 0).section(QLatin1Char('-'), 0, 0);
-    // 中文界面不装：源串就是中文，硬套一份英文回译只会把术语改坏
-    if (language.compare(QLatin1String("zh"), Qt::CaseInsensitive) == 0)
-        return false;
+    /*
+     * 中文：源串本来就是中文，不需要 atlas_en；但上游 `mmc_zh.qm` 里缺几条
+     * **改过品牌名 / 新版本才加**的英文串（`Atlas (zip)`、Java 目录说明、重命名失败弹窗…），
+     * 它们在中文界面里会原样显示英文。这份词表只补这些洞，装在上游翻译之后，
+     * 上游有译文时仍然以上游为准（`mmc_zh` 后安装 → 先被查到）。
+     */
+    if (language.compare(QLatin1String("zh"), Qt::CaseInsensitive) == 0) {
+        if (!loadCatalog(QStringLiteral(":/i18n/atlas_zh.json")))
+            return false;
+        qDebug() << "Atlas translations: 已加载中文补充词表（" << m_entries.size() << "条）";
+        return true;
+    }
 
     const QStringList candidates{
         QStringLiteral(":/i18n/atlas_%1.json").arg(code),

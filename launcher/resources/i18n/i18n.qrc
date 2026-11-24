@@ -2,5 +2,6 @@
 <RCC version="1.0">
     <qresource prefix="/i18n">
         <file>atlas_en.json</file>
+        <file>atlas_zh.json</file>
     </qresource>
 </RCC>

@@ -740,7 +740,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
         m_settings->registerSetting("JsonEditor", QString());
 
         // Language
-        m_settings->registerSetting("Language", QString());
+        // 默认简体中文：Atlas 是中文优先的产品，首启不该停在英文源串上（见 TranslationsModel::applyConfiguredLanguage）
+        m_settings->registerSetting("Language", QStringLiteral("zh"));
         m_settings->registerSetting("UseSystemLocale", false);
 
         // Console
@@ -1127,6 +1128,8 @@ Application::Application(int& argc, char** argv) : QApplication(argc, argv)
     {
         m_translations.reset(new TranslationsModel("translations"));
         m_translations->downloadIndex();
+        // 索引下载在 Atlas 里是关掉的，上游「下载成功才装语言」那条路走不到，这里主动装一次
+        m_translations->applyConfiguredLanguage();
         qInfo() << "Your language is" << m_translations->selectedLanguage();
         qInfo() << "<> Translations loaded.";
     }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""提取 maps/ 里所有 tr() / translate() 的**运行期**源串。
+"""提取 launcher/ 里所有 tr() / translate() / uiText() 的**运行期**源串。
 
 为什么不用 lupdate：本机 Qt 6.8 的 lupdate.exe 缺 Qt6Qml.dll（exit 0xC0000135），
 而 lrelease 正常。界面文案的提取规则很简单，自己解析比装一个 QML 运行时省事。
@@ -9,6 +9,10 @@
   · C 转义要还原成真实字符（`\n` → 换行），词表按运行期源串查；
   · 只取 `tr(...)` 与 `QCoreApplication::translate("ctx", "...")` 的第一个参数；
   · 去掉纯 ASCII 串（不需要翻译），保留含中文的。
+
+用法：
+  python tools/i18n_extract.py            # 生成 .tmp-i18n/strings.json + strings.txt
+  python tools/i18n_extract.py --check    # 只校验词表覆盖，缺一条就 exit 1（改完文案在 CI/手动跑）
 """
 import json
 import re
@@ -16,7 +20,7 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]  # repo root
-MAPS = ROOT / "launcher" / "maps"
+LAUNCHER = ROOT / "launcher"
 
 ESCAPES = {
     "n": "\n",
@@ -124,7 +128,9 @@ def first_literal(arg: str):
 def main():
     strings = []
     seen = set()
-    files = sorted(MAPS.glob("*.cpp")) + sorted(MAPS.glob("*.h"))
+    # 全工程扫：`maps/` 是中文源串的主场，但 `Request` / `MainWindow` / 导入相关对话框
+    # 也有一批中文 `tr()`（Atlas 改上游文件时顺手写的），漏掉它们英文界面就会冒中文。
+    files = sorted(p for p in LAUNCHER.rglob("*") if p.suffix in (".cpp", ".h"))
     for path in files:
         text = path.read_text(encoding="utf-8")
         for m in re.finditer(r"\btr\s*\(", text):
@@ -165,6 +171,20 @@ def main():
         lines.append(f"{idx:04d}\t{one_line}")
     (out_dir / "strings.txt").write_text("\n".join(lines), encoding="utf-8")
     print(f"{len(strings)} unique strings -> .tmp-i18n/strings.json")
+
+    if "--check" in sys.argv[1:]:
+        catalog = json.loads((ROOT / "launcher" / "resources" / "i18n" / "atlas_en.json").read_text(encoding="utf-8"))
+        missing = [s for s in strings if s not in catalog]
+        extra = [s for s in catalog if s not in set(strings)]
+        if missing:
+            print(f"atlas_en.json 缺 {len(missing)} 条：")
+            for s in missing[:20]:
+                print("  -", s.replace("\n", "\\n")[:100])
+        if extra:
+            print(f"atlas_en.json 多 {len(extra)} 条（源串已改动或已删除，可清理）")
+        if missing:
+            return 1
+        print(f"atlas_en.json 覆盖完整（{len(catalog)} 条）")
 
 
 if __name__ == "__main__":

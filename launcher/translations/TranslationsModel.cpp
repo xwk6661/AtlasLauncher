@@ -583,6 +583,40 @@ QString TranslationsModel::selectedLanguage() const
     return d->m_selectedLanguage;
 }
 
+void TranslationsModel::applyConfiguredLanguage()
+{
+    auto settings = APPLICATION->settings();
+    QString key = settings->get("Language").toString();
+
+    /*
+     * 「跟随系统」只在系统语言**确实有译文**时生效：这台机器 `zh-CN` → 索引里的键是 `zh`，
+     * 先试完整代码再试语言前缀，两步都不中就走已保存的语言。上游同一段逻辑只写在
+     * `indexReceived()` 里，索引不下载就永远不执行。
+     */
+    if (settings->get("UseSystemLocale").toBool()) {
+        if (const QString systemLocale = getSystemLocaleName(); findLanguageAsOptional(systemLocale).has_value())
+            key = systemLocale;
+        else if (const QString systemLanguage = getSystemLanguage(); findLanguageAsOptional(systemLanguage).has_value())
+            key = systemLanguage;
+    }
+
+    /*
+     * Atlas 是中文优先的产品：没配过语言、或存了个已失效的语言代码时直接落到简体中文，
+     * 而不是让界面停在英文源串上。这样首启不需要语言向导，想换语言在设置里随时能改。
+     */
+    if (key.isEmpty() || !findLanguageAsOptional(key).has_value())
+        key = QStringLiteral("zh");
+    if (!findLanguageAsOptional(key).has_value())
+        key = g_defaultLangCode;
+
+    selectLanguage(key);
+    d->m_noLanguageSet = false;
+
+    // 把实际生效的语言写回去：下次启动不必再猜，设置页也能显示出当前值
+    if (settings->get("Language").toString() != selectedLanguage())
+        settings->set("Language", selectedLanguage());
+}
+
 void TranslationsModel::downloadIndex()
 {
     /**

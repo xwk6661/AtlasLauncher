@@ -1,0 +1,21 @@
+{
+ "- Atlas, Prism Launcher, PolyMC or MultiMC exported instances (ZIP)": "- Atlas、Prism Launcher、PolyMC 或 MultiMC 导出的实例 (ZIP)",
+ "Folder where Atlas stores automatically downloaded Java versions. Do NOT set this to your system Java installation.": "Atlas 自动下载的 Java 版本存放目录。不要把这里设成系统的 Java 安装目录。",
+ "Note: CurseForge allows creators to block access to third-party tools like Atlas. As such, you may need to manually download some mods to be able to install a modpack.": "注意：CurseForge 允许作者屏蔽 Atlas 这类第三方工具，所以有些模组需要你手动下载才能装完一个整合包。",
+ "Assets index is up to date.": "素材索引已是最新。",
+ "Refresh on launch": "启动时刷新",
+ "Failed to copy world.": "复制世界失败。",
+ "Failed to delete world.": "删除世界失败。",
+ "Failed to import world.": "导入世界失败。",
+ "No compatible Java version was found (the binary file does not exist or is incomplete). Using the default one.": "没有找到符合要求的 Java（可执行文件不存在或不完整），改用默认的。",
+ "Managed Java installation %1 is incomplete or corrupted, removing...": "托管的 Java 运行环境 %1 不完整或已损坏，正在移除…",
+ "%n mod(s) will be disabled": "将禁用 %n 个模组",
+ "%n mod(s) will be enabled": "将启用 %n 个模组",
+ "Rate Limited: Waiting %n second(s)": "请求过于频繁：等待 %n 秒",
+ "Request Rate Limited for %n second(s): Retry After %1": "请求过于频繁，需等待 %n 秒：%1 后重试",
+ " and its %n registered shortcut(s)": "及其 %n 个已注册的快捷方式",
+ "An error occurred when performing the following renaming operation: <br/> - Old instance root: %1<br/> - New instance root: %2<br/>Only the metadata is renamed.<br/><br/>Something outside the launcher is still using a file in this folder (the game, a file manager, or an antivirus scan). Close it and rename again.": "执行下面的重命名操作时出错：<br/> - 旧实例目录：%1<br/> - 新实例目录：%2<br/>目前只改了元数据。<br/><br/>启动器之外还有程序占着这个目录里的文件（游戏、文件管理器或杀毒扫描）。关掉它再重命名一次。",
+ " (%1 installed)": "（已安装 %1）",
+ " (%1 installed, %2 enabled)": "（已安装 %1，启用 %2）",
+ " (%1 installed, %2 enabled, %3 selected)": "（已安装 %1，启用 %2，选中 %3）"
+}

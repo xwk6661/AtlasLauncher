@@ -31,7 +31,7 @@
  * 这里退一步：不动任何源串，只给"源串是中文"的这批文案配一份可翻译的 JSON 词表，
  * 按**源串文本**查找（不看 context），中英两边各得其所：
  *
- *   · 中文界面：不装（源串本来就是中文）；
+ *   · 中文界面：装 `atlas_zh.json`，只补上游 `mmc_zh.qm` 缺的那几条（改过品牌名 / 新版才加的串）；
  *   · 英文 / 其他语言：装 `atlas_<lang>.json`，没有该语言时退回 `atlas_en.json`。
  *
  * 词表在 qrc 里（`:/i18n/`），随二进制走 —— 便携包少拷一个文件就少一片译文的坑，
@@ -48,9 +48,9 @@ class AtlasCatalogTranslator : public QTranslator {
     /**
      * 按语言代码装载词表（`en_US` / `zh_CN` / `ja`…）。
      *
-     * 中文直接返回 false（源串就是中文，装了反而会把简体转成别的写法）；
-     * 其它语言先找 `atlas_<完整代码>.json`，再找 `atlas_<语言>.json`，
-     * 最后退到 `atlas_en.json` —— 宁可英文，也不要让英文界面里冒出一段中文。
+     * 简体中文装 `atlas_zh.json`（上游缺译的英文串），其它语言先找 `atlas_<完整代码>.json`，
+     * 再找 `atlas_<语言>.json`，最后退到 `atlas_en.json` —— 宁可英文，也不要让英文界面里
+     * 冒出一段中文。繁体中文没有补充词表，直接不装（源串与上游译文都够用）。
      */
     bool loadForLanguage(const QString& langCode);
 

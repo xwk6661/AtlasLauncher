@@ -36,6 +36,15 @@ class TranslationsModel : public QAbstractListModel {
     QVariant headerData(int section, Qt::Orientation orientation, int role) const override;
     int rowCount(const QModelIndex& parent = QModelIndex()) const override;  // NOLINT(*-default-arguments)
     bool selectLanguage(QString key) const;
+    /**
+     * 启动时按设置装载界面语言。
+     *
+     * 上游只在「翻译索引下载成功」的回调里调 `selectLanguage()`；Atlas 11-23 把索引下载
+     * 关掉之后，这条路永远走不到 —— 表现是**每次启动都是英文**（`mmc_zh.qm` 明明在包里）。
+     * 所以启动时自己装一次：勾了「跟随系统」且系统语言有译文就用系统语言，否则用 `Language`，
+     * 两者都没有时落到简体中文（Atlas 是中文优先的产品，不弹语言向导）。
+     */
+    void applyConfiguredLanguage();
     void updateLanguage(const QString& key);
     QModelIndex selectedIndex() const;
     QString selectedLanguage() const;
