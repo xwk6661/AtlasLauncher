@@ -17,6 +17,7 @@
  */
 #include "HallMatcher.h"
 
+#include <QCoreApplication>
 #include <QJsonObject>
 #include <QRegularExpression>
 #include <QSet>
@@ -30,6 +31,15 @@
 namespace maps {
 
 namespace {
+
+/**
+ * 「为什么像」的理由会原样显示在关联对话框与批量确认页里，必须可翻译。
+ * 这里是静态函数、没有 QObject 实例，所以走 `QCoreApplication::translate`。
+ */
+QString uiText(const char* text)
+{
+    return QCoreApplication::translate("maps", text);
+}
 
 QStringList tokens(const QString& normalized)
 {
@@ -156,7 +166,7 @@ double nameSimilarity(const QString& left, const QString& right, QString* reason
     if (left.isEmpty() || right.isEmpty())
         return 0.0;
     if (left == right) {
-        *reason = QStringLiteral("名称一致");
+        *reason = uiText("名称一致");
         return 1.0;
     }
 
@@ -176,14 +186,14 @@ double nameSimilarity(const QString& left, const QString& right, QString* reason
     if (leftInRight || rightInLeft) {
         const int shorter = qMin(leftSet.size(), rightSet.size());
         const int longer = qMax(leftSet.size(), rightSet.size());
-        *reason = QStringLiteral("名称包含");
+        *reason = uiText("名称包含");
         return 0.75 + 0.2 * (static_cast<double>(shorter) / longer);
     }
 
     QSet<QString> unionSet = leftSet;
     unionSet.unite(rightSet);
     const double jaccard = static_cast<double>(intersection.size()) / unionSet.size();
-    *reason = jaccard >= 0.5 ? QStringLiteral("名称相近") : QStringLiteral("少量词重合");
+    *reason = jaccard >= 0.5 ? uiText("名称相近") : uiText("少量词重合");
     return jaccard;
 }
 
@@ -253,12 +263,12 @@ QList<HallMatchCandidate> HallMatcher::rank(const QJsonArray& rows, const HallMa
                 // 只对上系列名（站上没填编号）：算个中等证据，理由写清楚是"同系列"
                 if (best < 0.85) {
                     best = 0.85;
-                    bestReason = QStringLiteral("《%1》同系列").arg(series);
+                    bestReason = uiText("《%1》同系列").arg(series);
                 }
             } else if (seriesEvidence.numberSeen) {
                 if (best < 0.92) {
                     best = 0.92;
-                    bestReason = QStringLiteral("《%1》第 %2 作").arg(series).arg(seriesNumber);
+                    bestReason = uiText("《%1》第 %2 作").arg(series).arg(seriesNumber);
                 }
             } else if (hasAnyNumberToken(normalizedLocal)) {
                 // 系列对得上、本地写的是**另一个**编号 → 大概率是相邻的另一作。
@@ -273,13 +283,13 @@ QList<HallMatchCandidate> HallMatcher::rank(const QJsonArray& rows, const HallMa
         if (!localVersion.isEmpty() && !hallVersion.isEmpty()) {
             if (localVersion == hallVersion) {
                 best += 0.08;
-                versionNote = QStringLiteral("，MC %1 一致").arg(hallVersion);
+                versionNote = uiText("，MC %1 一致").arg(hallVersion);
             } else if (majorMinor(localVersion) == majorMinor(hallVersion)) {
                 best += 0.03;
-                versionNote = QStringLiteral("，MC 同属 %1").arg(majorMinor(hallVersion));
+                versionNote = uiText("，MC 同属 %1").arg(majorMinor(hallVersion));
             } else {
                 best -= 0.35;
-                versionNote = QStringLiteral("，但站上是 MC %1").arg(hallVersion);
+                versionNote = uiText("，但站上是 MC %1").arg(hallVersion);
             }
         }
 

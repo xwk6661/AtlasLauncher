@@ -17,6 +17,7 @@
  */
 #include "HallAPI.h"
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -523,9 +524,9 @@ void HallAPI::sendProbe(bool useProxy, qint64 startedAt)
             detail = reply->errorString() + (status > 0 ? QStringLiteral("（HTTP %1）").arg(status) : QString());
 
         const auto info = resolveHallProxy(QUrl(m_endpoint).host());
-        detail += QStringLiteral(" · 出口：%1").arg(info.url.isEmpty() ? QStringLiteral("直连") : info.url);
+        detail += QCoreApplication::translate("maps", " · 出口：%1").arg(info.url.isEmpty() ? QCoreApplication::translate("maps", "直连") : info.url);
         if (useProxy)
-            detail += QStringLiteral("（代理不通，换直连也不行）");
+            detail += QCoreApplication::translate("maps", "（代理不通，换直连也不行）");
 
         reply->deleteLater();
         emit probeDone(ok, elapsed, detail);
@@ -629,12 +630,12 @@ HallError HallAPI::classify(QNetworkReply* reply, QString* humanReason)
     switch (error) {
         case QNetworkReply::HostNotFoundError:
             if (humanReason != nullptr)
-                *humanReason = QStringLiteral("%1 解析不出来（DNS 失败），请检查网络、DNS 或代理设置。").arg(host);
+                *humanReason = QCoreApplication::translate("maps", "%1 解析不出来（DNS 失败），请检查网络、DNS 或代理设置。").arg(host);
             return HallError::Dns;
         case QNetworkReply::SslHandshakeFailedError:
         case QNetworkReply::ProtocolFailure:
             if (humanReason != nullptr)
-                *humanReason = QStringLiteral("和 %1 的 TLS 握手被重置（网络干扰），换个网络或代理再试。").arg(host);
+                *humanReason = QCoreApplication::translate("maps", "和 %1 的 TLS 握手被重置（网络干扰），换个网络或代理再试。").arg(host);
             return HallError::Tls;
         // RemoteHostClosedError：连上了（或假装连上了），对端一声不响把连接关掉。
         // 2026-11-01 实测：*.supabase.co 在本机就是这种——TCP 建连成功，随后被 RST，
@@ -642,12 +643,12 @@ HallError HallAPI::classify(QNetworkReply* reply, QString* humanReason)
         case QNetworkReply::RemoteHostClosedError:
         case QNetworkReply::ConnectionRefusedError:
             if (humanReason != nullptr)
-                *humanReason = QStringLiteral("%1 把连接断掉了（没有返回任何 HTTP 响应），通常是这条线路到该主机被阻断。").arg(host);
+                *humanReason = QCoreApplication::translate("maps", "%1 把连接断掉了（没有返回任何 HTTP 响应），通常是这条线路到该主机被阻断。").arg(host);
             return HallError::Blocked;
         case QNetworkReply::TimeoutError:
         case QNetworkReply::OperationCanceledError:
             if (humanReason != nullptr)
-                *humanReason = QStringLiteral("连接 %1 超时，稍后重试。").arg(host);
+                *humanReason = QCoreApplication::translate("maps", "连接 %1 超时，稍后重试。").arg(host);
             return HallError::Timeout;
         default:
             break;
@@ -655,14 +656,14 @@ HallError HallAPI::classify(QNetworkReply* reply, QString* humanReason)
 
     if (reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt() >= 400) {
         if (humanReason != nullptr)
-            *humanReason = QStringLiteral("%1 返回了错误（HTTP %2），可能是站点改了接口或 key 轮换了。")
+            *humanReason = QCoreApplication::translate("maps", "%1 返回了错误（HTTP %2），可能是站点改了接口或 key 轮换了。")
                                .arg(host)
                                .arg(reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt());
         return HallError::Http;
     }
 
     if (humanReason != nullptr)
-        *humanReason = QStringLiteral("访问 %1 失败：%2").arg(host, reply->errorString());
+        *humanReason = QCoreApplication::translate("maps", "访问 %1 失败：%2").arg(host, reply->errorString());
     return HallError::Http;
 }
 
@@ -717,7 +718,7 @@ void HallAPI::handlePayload(const QByteArray& payload, const QByteArray& content
     QJsonParseError parseError{};
     const auto document = QJsonDocument::fromJson(payload, &parseError);
     if (parseError.error != QJsonParseError::NoError) {
-        emit failed(HallError::Parse, QStringLiteral("地图站点返回的数据看不懂，可能是接口变了。"),
+        emit failed(HallError::Parse, QCoreApplication::translate("maps", "地图站点返回的数据看不懂，可能是接口变了。"),
                     parseError.errorString());
         return;
     }
@@ -806,7 +807,7 @@ void HallAPI::handlePayload(const QByteArray& payload, const QByteArray& content
 
         case Request::Search: {
             if (!document.isArray()) {
-                emit failed(HallError::Parse, QStringLiteral("搜索结果格式不对。"), document.toJson(QJsonDocument::Compact));
+                emit failed(HallError::Parse, QCoreApplication::translate("maps", "搜索结果格式不对。"), document.toJson(QJsonDocument::Compact));
                 return;
             }
             QList<HallItem> items;
@@ -815,7 +816,7 @@ void HallAPI::handlePayload(const QByteArray& payload, const QByteArray& content
                     items.append(itemFromJson(value.toObject()));
             }
             if (items.isEmpty())
-                emit failed(HallError::Empty, QStringLiteral("没有符合条件的地图，换个关键词或放宽筛选试试。"), {});
+                emit failed(HallError::Empty, QCoreApplication::translate("maps", "没有符合条件的地图，换个关键词或放宽筛选试试。"), {});
             else
                 emit searchDone(items);
             return;
@@ -824,7 +825,7 @@ void HallAPI::handlePayload(const QByteArray& payload, const QByteArray& content
         case Request::Detail: {
             const auto rows = document.array();
             if (rows.isEmpty()) {
-                emit failed(HallError::Empty, QStringLiteral("找不到这张地图的详情（可能已下架）。"), {});
+                emit failed(HallError::Empty, QCoreApplication::translate("maps", "找不到这张地图的详情（可能已下架）。"), {});
                 return;
             }
             const auto row = rows.first().toObject();
@@ -859,7 +860,7 @@ void HallAPI::handlePayload(const QByteArray& payload, const QByteArray& content
 
         case Request::Reviews: {
             if (!document.isArray()) {
-                emit failed(HallError::Parse, QStringLiteral("评论数据格式不对。"), {});
+                emit failed(HallError::Parse, QCoreApplication::translate("maps", "评论数据格式不对。"), {});
                 return;
             }
             QList<HallReview> rows;
@@ -1225,7 +1226,7 @@ HallItem HallAPI::itemFromJson(const QJsonObject& row)
     item.id = item.slug;
     item.title = textOr(row.value(QStringLiteral("name")));
     if (item.title.isEmpty())
-        item.title = QStringLiteral("(未命名)");
+        item.title = QCoreApplication::translate("maps", "(未命名)");
 
     item.creators = csv(row.value(QStringLiteral("creators_array")));
     if (item.creators.isEmpty()) {

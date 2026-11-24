@@ -48,6 +48,7 @@
 #include "net/NetJob.h"
 
 #include "POTranslator.h"
+#include "AtlasCatalogTranslator.h"
 
 #include "Application.h"
 #include "settings/SettingsObject.h"
@@ -166,6 +167,8 @@ struct TranslationsModel::Private {
     QString m_selectedLanguage = g_defaultLangCode;
     std::unique_ptr<QTranslator> m_qtTranslator;
     std::unique_ptr<QTranslator> m_appTranslator;
+    /// Atlas 的补充词表（源串是中文的那批界面文案），见 AtlasCatalogTranslator
+    std::unique_ptr<AtlasCatalogTranslator> m_atlasTranslator;
 
     Net::Request* m_indexTask = nullptr;
     QString m_downloadingTranslation;
@@ -465,6 +468,10 @@ bool TranslationsModel::selectLanguage(QString key) const
         QCoreApplication::removeTranslator(d->m_qtTranslator.get());
         d->m_qtTranslator.reset();
     }
+    if (d->m_atlasTranslator) {
+        QCoreApplication::removeTranslator(d->m_atlasTranslator.get());
+        d->m_atlasTranslator.reset();
+    }
 
     /*
      * FIXME: potential source of crashes:
@@ -473,6 +480,20 @@ bool TranslationsModel::selectLanguage(QString key) const
      */
     const bool useSystemLocale = APPLICATION->settings()->get("UseSystemLocale").toBool();
     QLocale::setDefault(useSystemLocale ? QLocale::system() : QLocale(langCode));
+
+    /**
+     * Atlas: 新增界面（`launcher/maps/`）按项目惯例把中文写在 `tr()` 源串里，
+     * 切到英文时 Qt 查不到译文，会中英混排。这里装一份**按源串查找**的补充词表
+     * （`AtlasCatalogTranslator`），中文界面不装。
+     *
+     * 必须放在下面 `langCode == g_defaultLangCode` 的提前返回**之前**：
+     * `en_US` 正是"什么 mmc_*.qm 都不装"的那一支，而英文界面恰恰最需要它。
+     */
+    d->m_atlasTranslator = std::make_unique<AtlasCatalogTranslator>();
+    if (!d->m_atlasTranslator->loadForLanguage(langCode) ||
+        !QCoreApplication::installTranslator(d->m_atlasTranslator.get())) {
+        d->m_atlasTranslator.reset();
+    }
 
     // if it's the default UI language, finish
     if (langCode == g_defaultLangCode) {

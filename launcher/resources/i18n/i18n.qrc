@@ -1,0 +1,6 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+    <qresource prefix="/i18n">
+        <file>atlas_en.json</file>
+    </qresource>
+</RCC>

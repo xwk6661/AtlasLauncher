@@ -443,6 +443,8 @@ set(TRANSLATIONS_SOURCES
     translations/TranslationsModel.cpp
     translations/POTranslator.h
     translations/POTranslator.cpp
+    translations/AtlasCatalogTranslator.h
+    translations/AtlasCatalogTranslator.cpp
 )
 
 set(TOOLS_SOURCES
@@ -1328,6 +1330,7 @@ qt_add_resources(LAUNCHER_RESOURCES
     resources/shaders/shaders.qrc
     resources/maps/maps.qrc
     resources/agents/agents.qrc
+    resources/i18n/i18n.qrc
     "${CMAKE_CURRENT_BINARY_DIR}/../${Launcher_Branding_LogoQRC}"
 )
 
