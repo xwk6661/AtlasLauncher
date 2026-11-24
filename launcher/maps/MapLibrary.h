@@ -146,6 +146,29 @@ class MapLibrary : public QObject {
     /// 关联/解除关联 CTM 地图（slug 为空 = 解除）。verified 由人工确认时置 true。
     /// 默认 **false**：自动化路径一律不替玩家宣布"已确认"，只有人在界面上点过才传 true。
     bool setHallLink(const QString& file, const QString& hallSlug, bool verified = false);
+
+    /**
+     * 批量确认/改归属：一个文件一条，**只写一次盘**。
+     *
+     * 为什么需要它：`verified:false` 的条目常常十几条，逐条调用 `setHallLink()`
+     * 会读改写索引十几次；中途被关掉就只落一半。批量接口拿一次快照、一次
+     * `QSaveFile`，要么全写进去、要么一条都不动。
+     *
+     * `hallSlug` 为空 = 解除关联（顺带清 `verified`，不留"已确认但没目标"的状态）。
+     * 返回实际改动的条数；`error` 说明写盘失败的原因。
+     *
+     * **分组语义**：只改 `verified` 时 `groupKey()` 不变（确认是安全的）；
+     * 改成另一个 slug 会把这张图并到另一组 / 从原来的组拆出来 —— 界面必须先说清楚。
+     */
+    struct HallLinkEdit {
+        QString file;
+        QString hallSlug;
+        bool verified = true;
+    };
+    int applyHallLinkEdits(const QList<HallLinkEdit>& edits, QString* error = nullptr);
+
+    /// 还挂着「未确认」关联的条目数（界面用它显示"待确认 N 条"）
+    int unverifiedHallLinkCount() const;
     /**
      * 把某条目的关联标成"人工确认"（实例页点过「关联到 CTM 地图」后调用）。
      *

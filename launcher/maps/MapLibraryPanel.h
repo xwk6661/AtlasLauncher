@@ -54,6 +54,10 @@ class MapLibraryPanel : public QWidget {
     int autoLinkUnassigned();
     /// 按 `[MC版本]英文原名 地图版本` 统一库内文件名；返回改了几个
     int normalizeNames(QString* error = nullptr);
+    /// 面板持有的库对象：批量确认页要在同一份索引内存态上改，改完由本面板 refresh()
+    MapLibrary* library() { return &m_library; }
+    /// 还挂着「未确认」关联的条目数（页面按钮显示待办量）
+    int unverifiedLinkCount() const { return m_library.unverifiedHallLinkCount(); }
 
    signals:
     /// 想导入某张库里的图（绝对路径）

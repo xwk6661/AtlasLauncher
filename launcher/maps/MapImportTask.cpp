@@ -49,19 +49,6 @@
 namespace maps {
 namespace {
 
-QString componentIdForLoader(const QString& loader)
-{
-    if (loader == QLatin1String("forge"))
-        return QStringLiteral("net.minecraftforge");
-    if (loader == QLatin1String("neoforge"))
-        return QStringLiteral("net.neoforged");
-    if (loader == QLatin1String("fabric"))
-        return QStringLiteral("net.fabricmc.fabric-loader");
-    if (loader == QLatin1String("quilt"))
-        return QStringLiteral("org.quiltmc.quilt-loader");
-    return {};
-}
-
 QString baseNameOf(const QString& path)
 {
     const int index = path.lastIndexOf(QLatin1Char('/'));
@@ -270,7 +257,7 @@ Result<> MapImportTask::createInstance()
     components->buildingFromScratch();
     components->setComponentVersion("net.minecraft", m_mcVersion, true);
 
-    const QString componentId = componentIdForLoader(m_loader);
+    const QString componentId = loaderComponentId(m_loader);
     if (!componentId.isEmpty() && !m_loaderVersion.isEmpty())
         components->setComponentVersion(componentId, m_loaderVersion);
 

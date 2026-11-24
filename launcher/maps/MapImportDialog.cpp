@@ -36,8 +36,10 @@
 #include <algorithm>
 
 #include "Application.h"
+#include "BaseVersionList.h"
 #include "DataVersionTable.h"
 #include "HallMatcher.h"
+#include "meta/Index.h"
 #include "MapTextUtils.h"
 #include "MapTheme.h"
 #include "MapStyle.h"
@@ -82,12 +84,25 @@ MapImportDialog::MapImportDialog(const MapScanResult& scan, QWidget* parent) : Q
     m_loaderCombo = new QComboBox(this);
     m_loaderCombo->addItems({ QStringLiteral("vanilla"), QStringLiteral("forge"), QStringLiteral("fabric"),
                               QStringLiteral("neoforge"), QStringLiteral("quilt") });
-    m_loaderVersionEdit = new QLineEdit(this);
-    m_loaderVersionEdit->setPlaceholderText(tr("可留空（先用原版启动，之后再补加载器）"));
+
+    /**
+     * 加载器版本：可编辑下拉。
+     *
+     * 以前是一个裸 QLineEdit，玩家得自己去记 Forge 的 `36.2.39`、Fabric 的
+     * `0.16.5`；记不得就只能留空，而留空会被导入任务退回原版（模组方块会被删）。
+     * 现在按「MC 版本 + 加载器」从本地 meta 拉列表、默认选推荐项；
+     * 没有清单（离线 / 老版本未同步）时仍可手填，行为与以前一致。
+     */
+    m_loaderVersionCombo = new QComboBox(this);
+    m_loaderVersionCombo->setEditable(true);
+    m_loaderVersionCombo->setInsertPolicy(QComboBox::NoInsert);
+    m_loaderVersionCombo->lineEdit()->setPlaceholderText(tr("可留空（先用原版启动，之后再补加载器）"));
+    m_loaderVersionCombo->setToolTip(tr("按当前 MC 版本与加载器列出本地清单里的版本；默认选推荐项。\n"
+                                        "清单里没有时可以直接输入版本号。"));
 
     form->addRow(tr("游戏版本"), m_versionCombo);
     form->addRow(tr("模组加载器"), m_loaderCombo);
-    form->addRow(tr("加载器版本"), m_loaderVersionEdit);
+    form->addRow(tr("加载器版本"), m_loaderVersionCombo);
 
     layout->addLayout(form);
 
@@ -227,9 +242,15 @@ MapImportDialog::MapImportDialog(const MapScanResult& scan, QWidget* parent) : Q
         m_versionTouched = true;
         refreshConfirmState();
         updateEvidence();
+        // 换了 MC 版本，加载器清单也要跟着换（Forge 的 36.x 只对应 1.16.5）
+        reloadLoaderVersions();
     });
+    connect(m_loaderCombo, &QComboBox::currentTextChanged, this, [this](const QString&) { reloadLoaderVersions(); });
     // 只有「用户真的在改名」才算改过；程序回填不算（否则切世界时名字就不会跟着变）
     connect(m_nameEdit, &QLineEdit::textEdited, this, [this](const QString&) { m_nameTouched = true; });
+
+    // 预填之后的第一次拉取：放在连接之后，异步结果回来才有地方填
+    reloadLoaderVersions();
 
     // 自动判定失败时，先在对话框里把「必须人工指定版本」说清楚
     if (!m_scan.worlds.isEmpty() && !m_scan.worlds.first().version.isKnown())
@@ -276,11 +297,133 @@ void MapImportDialog::worldChanged()
         const QSignalBlocker blocker(m_loaderCombo);
         m_loaderCombo->setCurrentText(world.version.recommendedLoader);
     }
+    // 加载器被程序换掉了，版本清单要跟着重新拉一次（setCurrentText 被 blocker 挡了信号）
+    reloadLoaderVersions();
     if (!m_nameTouched && !world.level.levelName.isEmpty())
         m_nameEdit->setText(text::stripFormattingCodes(world.level.levelName));
 
     updateEvidence();
     refreshConfirmState();
+}
+
+void MapImportDialog::reloadLoaderVersions()
+{
+    if (m_loaderVersionCombo == nullptr || m_loaderCombo == nullptr)
+        return;
+
+    const QString loader = m_loaderCombo->currentText();
+    const QString uid = loaderComponentId(loader);
+    const QString mcVersion = effectiveVersion().trimmed();
+
+    if (uid.isEmpty()) {
+        const QSignalBlocker blocker(m_loaderVersionCombo);
+        m_loaderVersionCombo->clear();
+        m_loaderVersionCombo->setEditText(QString());
+        m_loaderVersionCombo->setEnabled(false);
+        m_loaderVersionCombo->setToolTip(tr("原版不需要加载器版本。"));
+        m_loaderListKey.clear();
+        return;
+    }
+
+    m_loaderVersionCombo->setEnabled(true);
+    m_loaderVersionCombo->setToolTip(tr("按当前 MC 版本与加载器列出本地清单里的版本；默认选推荐项。\n"
+                                        "清单里没有时可以直接输入版本号。"));
+
+    const QString key = uid + QLatin1Char('/') + mcVersion;
+    if (key == m_loaderListKey && m_loaderVersionCombo->count() > 0)
+        return;
+
+    // 换了加载器或 MC 版本：旧的版本号一定不适用，别把 Forge 36.x 带到 1.12.2 上
+    if (key != m_loaderListKey) {
+        m_loaderListKey = key;
+        const QSignalBlocker blocker(m_loaderVersionCombo);
+        m_loaderVersionCombo->clear();
+        m_loaderVersionCombo->setEditText(QString());
+    }
+
+    const auto list = APPLICATION->metadataIndex()->get(uid);
+    if (list == nullptr) {
+        fillLoaderVersions();
+        return;
+    }
+    if (list->isLoaded()) {
+        fillLoaderVersions();
+        return;
+    }
+
+    m_loaderVersionCombo->lineEdit()->setPlaceholderText(tr("正在读取本地版本清单…"));
+    auto task = list->getLoadTask();
+    m_loaderTasks.append(task);
+    connect(task.get(), &Task::finished, this, [this, key] {
+        if (key == m_loaderListKey)
+            fillLoaderVersions();
+    });
+    if (!task->isRunning())
+        task->start();
+}
+
+void MapImportDialog::fillLoaderVersions()
+{
+    if (m_loaderVersionCombo == nullptr || m_loaderCombo == nullptr)
+        return;
+
+    const QString uid = loaderComponentId(m_loaderCombo->currentText());
+    if (uid.isEmpty())
+        return;
+
+    const QString mcVersion = effectiveVersion().trimmed();
+    const auto list = APPLICATION->metadataIndex()->get(uid);
+
+    QStringList versions;
+    int recommended = -1;
+    // MC 版本未知时不列「全部版本」：Forge 的清单有几千条，挑不出来也没意义
+    if (list != nullptr && list->isLoaded() && !mcVersion.isEmpty()) {
+        for (int i = 0; i < list->count() && versions.size() < 500; ++i) {
+            const QModelIndex index = list->index(i, 0);
+            const QString parent = list->data(index, BaseVersionList::ParentVersionRole).toString();
+            if (parent != mcVersion)
+                continue;
+            const QString id = list->data(index, BaseVersionList::VersionIdRole).toString();
+            if (id.isEmpty())
+                continue;
+            versions.append(id);
+            if (recommended < 0 && list->data(index, BaseVersionList::RecommendedRole).toBool())
+                recommended = static_cast<int>(versions.size()) - 1;
+        }
+    }
+
+    const QString current = m_loaderVersionCombo->currentText().trimmed();
+    const QSignalBlocker blocker(m_loaderVersionCombo);
+    m_loaderVersionCombo->clear();
+
+    if (versions.isEmpty()) {
+        // 玩家可能已经手填了版本号（清单没同步的环境很常见），别把它清掉
+        m_loaderVersionCombo->setEditText(current);
+        m_loaderVersionCombo->lineEdit()->setPlaceholderText(
+            mcVersion.isEmpty() ? tr("先选游戏版本") : tr("本地没有清单，可直接输入版本号（留空则按原版导入）"));
+        if (mcVersion.isEmpty()) {
+            m_loaderVersionCombo->setToolTip(tr("先选一个游戏版本，再挑加载器版本。"));
+        } else {
+            m_loaderVersionCombo->setToolTip(tr("本地 meta 里没有「%1」在 %2 上的版本清单。\n"
+                                                "可以先去实例「版本」页装一次加载器，或直接手填版本号。")
+                                                .arg(m_loaderCombo->currentText(), mcVersion));
+        }
+        return;
+    }
+
+    for (const auto& version : versions)
+        m_loaderVersionCombo->addItem(version);
+    m_loaderVersionCombo->lineEdit()->setPlaceholderText(tr("留空则按原版导入"));
+
+    const int existing = current.isEmpty() ? -1 : m_loaderVersionCombo->findText(current);
+    if (existing >= 0)
+        m_loaderVersionCombo->setCurrentIndex(existing);
+    else if (!current.isEmpty())
+        m_loaderVersionCombo->setEditText(current);  // 手填的版本不在清单里，保留
+    else if (recommended >= 0)
+        m_loaderVersionCombo->setCurrentIndex(recommended);
+    else
+        m_loaderVersionCombo->setCurrentIndex(0);
 }
 
 void MapImportDialog::updateEvidence()
@@ -533,7 +676,7 @@ MapImportOptions MapImportDialog::options() const
     options.displayName = m_nameEdit->text().trimmed();
     options.worldIndex = m_worldCombo->currentIndex();
     options.forcedLoader = m_loaderCombo->currentText();
-    options.loaderVersion = m_loaderVersionEdit->text().trimmed();
+    options.loaderVersion = m_loaderVersionCombo->currentText().trimmed();
     options.hallSlug = m_hallCombo->currentData().toString();
     options.variant = variantFromUi();
     options.gameOptions = gameOptionsFromUi();

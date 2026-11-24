@@ -678,6 +678,91 @@ bool MapLibrary::markHallVerified(const QString& file, const QString& hallSlug)
     return false;
 }
 
+int MapLibrary::applyHallLinkEdits(const QList<HallLinkEdit>& edits, QString* error)
+{
+    if (edits.isEmpty())
+        return 0;
+
+    QHash<QString, HallLinkEdit> byFile;
+    for (const auto& edit : edits) {
+        if (!edit.file.isEmpty())
+            byFile.insert(edit.file, edit);
+    }
+    if (byFile.isEmpty())
+        return 0;
+
+    // 一次读、一次写：十几条逐条 setHallLink() 会读改写索引十几遍，中途关掉只落一半
+    QJsonObject root = readIndexObject(indexPath());
+    if (!root.contains(QStringLiteral("entries")) && !m_items.isEmpty()) {
+        // 读不出来（被占用 / 损坏）时宁可不动：写回去会把 categories 与未知字段整段丢掉
+        if (error != nullptr)
+            *error = tr("索引读不出来，未写入任何改动：%1").arg(indexPath());
+        return 0;
+    }
+    auto entries = root.value("entries").toArray();
+
+    int touched = 0;
+    for (int i = 0; i < entries.size(); ++i) {
+        auto object = entries.at(i).toObject();
+        const QString file = object.value("file").toString();
+        const auto it = byFile.constFind(file);
+        if (it == byFile.constEnd())
+            continue;
+
+        const QString slug = it->hallSlug.trimmed();
+        // 解除关联时 verified 一并清掉，与 setHallLink() 保持同一语义
+        const bool verified = !slug.isEmpty() && it->verified;
+        const auto oldHall = object.value("hall").toObject();
+        if (oldHall.value("slug").toString() == slug && oldHall.value("verified").toBool() == verified)
+            continue;  // 值没变就不算改动，避免无谓写盘
+
+        if (slug.isEmpty()) {
+            object.remove("hall");
+        } else {
+            QJsonObject hall;
+            hall.insert("slug", slug);
+            hall.insert("verified", verified);
+            object.insert("hall", hall);
+        }
+        entries.replace(i, object);
+        ++touched;
+    }
+
+    if (touched == 0)
+        return 0;
+
+    root.insert("entries", entries);
+    root.insert("updatedAt", QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    if (!writeIndexObject(indexPath(), root)) {
+        if (error != nullptr)
+            *error = tr("索引写入失败：%1").arg(indexPath());
+        return 0;
+    }
+
+    // 内存态同步：调用方通常在返回后才 refresh()，这里先改掉，
+    // 免得"刚确认完、列表里还是未确认"这一瞬间被玩家看到
+    for (auto& item : m_items) {
+        const auto it = byFile.constFind(item.file);
+        if (it == byFile.constEnd())
+            continue;
+        const QString slug = it->hallSlug.trimmed();
+        item.hallSlug = slug;
+        item.hallVerified = !slug.isEmpty() && it->verified;
+    }
+    emit changed();
+    return touched;
+}
+
+int MapLibrary::unverifiedHallLinkCount() const
+{
+    int count = 0;
+    for (const auto& item : m_items) {
+        if (!item.hallSlug.isEmpty() && !item.hallVerified)
+            ++count;
+    }
+    return count;
+}
+
 bool MapLibrary::setVariant(const QString& file, const variant::Info& info)
 {
     for (auto& item : m_items) {

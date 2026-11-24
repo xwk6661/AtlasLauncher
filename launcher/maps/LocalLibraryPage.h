@@ -22,6 +22,7 @@
 #include "ui/pages/BasePage.h"
 
 class NewInstanceDialog;
+class QPushButton;
 
 namespace maps {
 
@@ -53,9 +54,12 @@ class LocalLibraryPage : public QWidget, public BasePage {
    private:
     /// 选一个不在库里的包 → 扫描 → 导入对话框 → 交给新建实例对话框
     void importFromPath(const QString& path);
+    /// 「待确认关联」按钮随未确认条数变化（0 条时置灰）
+    void updateReviewButton();
 
     NewInstanceDialog* m_dialog = nullptr;
     MapLibraryPanel* m_library = nullptr;
+    QPushButton* m_reviewButton = nullptr;
     /// 自动关联每次运行只做一遍（结果已落进索引，重复扫没有意义）
     bool m_autoLinkedOnce = false;
 };

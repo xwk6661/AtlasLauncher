@@ -805,6 +805,8 @@ set(MAPS_SOURCES
     maps/MapPackAttach.cpp
     maps/MapLibraryPanel.h
     maps/MapLibraryPanel.cpp
+    maps/HallLinkReviewDialog.h
+    maps/HallLinkReviewDialog.cpp
     maps/MapImportDialog.h
     maps/MapImportDialog.cpp
     maps/MapGalleryPage.h

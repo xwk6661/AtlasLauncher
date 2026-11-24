@@ -59,6 +59,16 @@ class MapImportDialog : public QDialog {
     void worldChanged();
     /// 语言一变，来源（作者/社区/自译）才可用；官中直接锁成"作者发布"
     void languageChanged();
+    /**
+     * 按「当前 MC 版本 + 加载器」重新拉加载器版本列表。
+     *
+     * 数据来自本地 meta 索引（`APPLICATION->metadataIndex()`）：已解析就直接填，
+     * 没解析就起一个 `getLoadTask()` 后台加载，完成后回 `fillLoaderVersions()`。
+     * 离线 / 没有清单时不清空手填能力 —— 老版本 Forge 常有人自己记着版本号。
+     */
+    void reloadLoaderVersions();
+    /// 把已加载的版本列表按 MC 版本过滤后填进下拉（保留"推荐"项的标记）
+    void fillLoaderVersions();
 
    private:
     void refreshConfirmState();
@@ -77,7 +87,12 @@ class MapImportDialog : public QDialog {
     QComboBox* m_worldCombo = nullptr;
     QComboBox* m_versionCombo = nullptr;
     QComboBox* m_loaderCombo = nullptr;
-    QLineEdit* m_loaderVersionEdit = nullptr;
+    /// 可编辑下拉：有本地清单时是选择器，没有时退化成手填（不再是裸 QLineEdit）
+    QComboBox* m_loaderVersionCombo = nullptr;
+    /// 「uid/mc版本」——同一个组合不重复拉列表
+    QString m_loaderListKey;
+    /// 拉列表的任务要留住：`getLoadTask()` 返回的 task 一旦被丢弃会被析构
+    QList<Task::Ptr> m_loaderTasks;
     /// 这张图在大厅里是哪一张（slug 作为 item data，空 = 不关联）
     QComboBox* m_hallCombo = nullptr;
     /// 语言：原版 / 简中汉化 / 繁中汉化 / 官中 / 其他语言

@@ -28,6 +28,7 @@
 #include <QtConcurrent>
 
 #include "MapArchiveScanner.h"
+#include "HallLinkReviewDialog.h"
 #include "MapImportDialog.h"
 #include "MapImportTask.h"
 #include "MapLibraryPanel.h"
@@ -59,6 +60,20 @@ LocalLibraryPage::LocalLibraryPage(NewInstanceDialog* dialog, QWidget* parent) :
         const QString file = QFileDialog::getOpenFileName(this, tr("选择地图压缩包"), QString(), filter);
         if (!file.isEmpty())
             importFromPath(file);
+    });
+
+    /**
+     * 「待确认关联」：自动匹配只写 `verified:false`，人工确认入口原来只有实例页
+     * 一条条点。现在把未确认的十几条一次列出来批量处理（[04 P1 #7]）。
+     */
+    m_reviewButton = new QPushButton(tr("待确认关联…"), this);
+    m_reviewButton->setToolTip(tr("把自动匹配、还没人工确认的关联一次列出来：\n"
+                                  "认可就批量确认；不认可就改归属或解除。"));
+    bottomRow->addWidget(m_reviewButton);
+    connect(m_reviewButton, &QPushButton::clicked, this, [this] {
+        HallLinkReviewDialog::review(m_library->library(), this);
+        m_library->refresh();
+        updateReviewButton();
     });
 
     auto* normalizeButton = new QPushButton(tr("规范命名…"), this);
@@ -118,6 +133,19 @@ void LocalLibraryPage::openedImpl()
         if (m_library->autoLinkUnassigned() > 0)
             m_library->refresh();
     }
+
+    updateReviewButton();
+}
+
+void LocalLibraryPage::updateReviewButton()
+{
+    if (m_reviewButton == nullptr || m_library == nullptr)
+        return;
+
+    const int pending = m_library->unverifiedLinkCount();
+    m_reviewButton->setText(pending > 0 ? tr("待确认关联 (%1)…").arg(pending) : tr("待确认关联…"));
+    // 0 条时置灰：点进去也只是一句「都确认过了」，不如直接不给点
+    m_reviewButton->setEnabled(pending > 0);
 }
 
 void LocalLibraryPage::importFromPath(const QString& path)

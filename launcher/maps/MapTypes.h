@@ -82,6 +82,26 @@ inline QString confidenceLabel(Confidence confidence)
 constexpr int ANVIL_VERSION = 19133;
 constexpr int MCREGION_VERSION = 19132;
 
+/**
+ * 加载器类型（`vanilla` / `forge` / `fabric` / `neoforge` / `quilt`）→ meta 组件 id。
+ *
+ * 只有一处：导入对话框要按它去 meta 索引里拉版本列表，导入任务要按它写 `mmc-pack.json`。
+ * 两边各写一份的话，界面上选得到、落盘时写错，就是"选了 Fabric 却装成原版"。
+ * 返回空串 = 原版（或认不出的写法，由调用方按原版处理，不猜）。
+ */
+inline QString loaderComponentId(const QString& loader)
+{
+    if (loader == QLatin1String("forge"))
+        return QStringLiteral("net.minecraftforge");
+    if (loader == QLatin1String("neoforge"))
+        return QStringLiteral("net.neoforged");
+    if (loader == QLatin1String("fabric"))
+        return QStringLiteral("net.fabricmc.fabric-loader");
+    if (loader == QLatin1String("quilt"))
+        return QStringLiteral("org.quiltmc.quilt-loader");
+    return {};
+}
+
 /// DataVersion 对照表里的一条记录
 struct DataVersionEntry {
     int dataVersion = -1;
