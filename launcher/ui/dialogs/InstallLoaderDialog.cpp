@@ -119,8 +119,22 @@ InstallLoaderDialog::InstallLoaderDialog(PackProfile* profile, const QString& ui
     setWindowModality(Qt::WindowModal);
     resize(520, 347);
 
+    /*
+     * 默认页按 MC 版本选：NeoForge 从 1.20.1 才开始有版本，1.19 及更老的实例停在 NeoForge 页
+     * 会是一片「No versions are currently available」，看起来就像"装不上加载器"（2026-11-24 用户
+     * 在 1.10.2 上撞到，实际 Forge 页是好的）。调用方显式指定 uid 时仍然以它为准。
+     */
+    QString defaultUid = uid;
+    if (defaultUid.isEmpty()) {
+        const QString mcVersion = profile->getComponentVersion(QStringLiteral("net.minecraft"));
+        if (!mcVersion.isEmpty()) {
+            defaultUid = Version(mcVersion) < Version(QStringLiteral("1.20.1")) ? QStringLiteral("net.minecraftforge")
+                                                                                : QStringLiteral("net.neoforged");
+        }
+    }
+
     for (BasePage* page : container->getPages()) {
-        if (page->id() == uid)
+        if (page->id() == defaultUid)
             container->selectPage(page->id());
 
         connect(pageCast(page), &VersionSelectWidget::selectedVersionChanged, this, [this, page] {

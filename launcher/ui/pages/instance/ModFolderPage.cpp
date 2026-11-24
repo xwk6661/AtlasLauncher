@@ -61,6 +61,7 @@
 #include "ui/dialogs/ResourceUpdateDialog.h"
 
 #include "maps/ModPresetDialog.h"
+#include "maps/OptiFineDialog.h"
 
 #include "minecraft/PackProfile.h"
 #include "minecraft/VersionFilterData.h"
@@ -87,6 +88,19 @@ ModFolderPage::ModFolderPage(MinecraftInstance* inst, ModFolderModel* model, QWi
     presetAction->setToolTip(tr("一次装好一组常用模组（按本实例的版本与加载器自动选文件）"));
     connect(presetAction, &QAction::triggered, this, [this] { maps::ModPresetDialog::run(m_instance, this); });
     m_ui->actionsToolbar->insertActionBefore(m_ui->actionAddItem, presetAction);
+
+    /*
+     * OptiFine 的 jar 是**当模组**放进 `mods/` 的，所以入口放在「模组」页最顺手。
+     * 原来只有「版本」页工具栏上那个 —— 那排是纯文字按钮，窗口一窄就滚进 » 溢出菜单，
+     * 玩家会以为功能没了（2026-11-24 反馈）。两处都留着：版本页讲"装版本"，模组页讲"装模组"。
+     */
+    auto* optifineAction = new QAction(tr("安装 OptiFine…"), this);
+    optifineAction->setToolTip(tr("把 OptiFine 作为模组下载到 mods/（Forge / NeoForge 直接可用；Fabric 需另装 OptiFabric）"));
+    connect(optifineAction, &QAction::triggered, this, [this] {
+        maps::OptiFineDialog dialog(m_instance, this);
+        dialog.exec();
+    });
+    m_ui->actionsToolbar->insertActionBefore(m_ui->actionAddItem, optifineAction);
 
     m_ui->actionUpdateItem->setToolTip(tr("Try to check or update all selected mods (all mods if none are selected)"));
     connect(m_ui->actionUpdateItem, &QAction::triggered, this, [this] { updateMods(); });

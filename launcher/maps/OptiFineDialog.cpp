@@ -88,7 +88,7 @@ OptiFineDialog::OptiFineDialog(MinecraftInstance* instance, QWidget* parent) : Q
     layout->addWidget(m_loaderHint);
 
     auto* row = new QHBoxLayout();
-    row->addWidget(new QLabel(tr("OptiFine 版本"), this));
+    row->addWidget(new QLabel(tr("版本"), this));
     m_buildCombo = new QComboBox(this);
     m_buildCombo->setMinimumWidth(240);
     row->addWidget(m_buildCombo, 1);
@@ -108,7 +108,7 @@ OptiFineDialog::OptiFineDialog(MinecraftInstance* instance, QWidget* parent) : Q
     layout->addWidget(m_progress);
 
     auto* buttons = new QDialogButtonBox(this);
-    m_installButton = buttons->addButton(tr("下载并安装到 mods/"), QDialogButtonBox::AcceptRole);
+    m_installButton = buttons->addButton(tr("安装"), QDialogButtonBox::AcceptRole);
     m_closeButton = buttons->addButton(tr("关闭"), QDialogButtonBox::RejectRole);
     layout->addWidget(buttons);
 
@@ -170,17 +170,12 @@ void OptiFineDialog::resolveInstance()
     }
 
     if (m_loaderName == QLatin1String("Forge") || m_loaderName == QLatin1String("NeoForge")) {
-        m_loaderHint->setText(tr("目标：Minecraft %1 · %2。OptiFine 会作为模组放进 mods/，"
-                                 "启动一次后游戏里就有 OptiFine 的选项了。")
-                                  .arg(m_mcVersion, m_loaderName));
+        m_loaderHint->setText(tr("Minecraft %1 · %2，装到 mods/。").arg(m_mcVersion, m_loaderName));
     } else if (m_loaderName == QLatin1String("Fabric") || m_loaderName == QLatin1String("Quilt")) {
-        m_loaderHint->setText(tr("目标：Minecraft %1 · %2。OptiFine 本身不是 Fabric 模组，"
-                                 "下完还要在「模组」页装 OptiFabric 才能被加载。")
-                                  .arg(m_mcVersion, m_loaderName));
+        m_loaderHint->setText(tr("Minecraft %1 · %2，装到 mods/；还要装 OptiFabric 才会被加载。").arg(m_mcVersion, m_loaderName));
     } else {
-        m_loaderHint->setText(tr("目标：Minecraft %1 · 原版。原版不认 mods/ 里的 OptiFine —— "
-                                 "先在「版本」页装 Forge（或 Fabric + OptiFabric），否则装了也不会生效。")
-                                  .arg(m_mcVersion));
+        m_loaderHint->setText(
+            tr("Minecraft %1 · 原版，装到 mods/ 不会生效 —— 先装 Forge，或 Fabric + OptiFabric。").arg(m_mcVersion));
     }
 }
 
@@ -256,13 +251,15 @@ void OptiFineDialog::onListReply(QNetworkReply* reply, int attempt)
     });
 
     m_buildCombo->clear();
-    for (const auto& build : m_builds)
-        m_buildCombo->addItem(QStringLiteral("%1  ·  %2_%3").arg(build.filename, build.type, build.patch));
+    for (const auto& build : m_builds) {
+        // 只写 `HD_U_I5`：窗口标题已经是「安装 OptiFine」，上面一行也写了 MC 版本与加载器，
+        // 再把完整文件名拼一遍就是重复；文件名放 tooltip，要发给别人时仍能复制。
+        m_buildCombo->addItem(QStringLiteral("%1_%2").arg(build.type, build.patch));
+        m_buildCombo->setItemData(m_buildCombo->count() - 1, build.filename, Qt::ToolTipRole);
+    }
 
     setBusy(false);
-    setStatus(tr("共 %1 个版本，默认选最新的 %2_%3。")
-                  .arg(m_builds.size())
-                  .arg(m_builds.first().type, m_builds.first().patch));
+    setStatus(tr("共 %1 个版本。").arg(m_builds.size()));
 }
 
 void OptiFineDialog::startInstall()
@@ -442,15 +439,15 @@ void OptiFineDialog::onDownloadReply(QNetworkReply* reply, int source, int attem
         return;
     }
 
-    finishOk(m_pending.filename, source == 0 ? QStringLiteral("BMCLAPI") : tr("官网"));
+    finishOk(QStringLiteral("%1_%2").arg(m_pending.type, m_pending.patch),
+             source == 0 ? QStringLiteral("BMCLAPI") : tr("官网"));
 }
 
 void OptiFineDialog::finishOk(const QString& file, const QString& via)
 {
     setBusy(false);
     m_progress->setValue(100);
-    setStatus(tr("✓ %1 已放进 mods/（来源：%2）。\n启动游戏后 OptiFine 的视频设置会出现在「选项 → 视频设置」里。")
-                  .arg(file, via));
+    setStatus(tr("✓ %1 已安装（%2）。").arg(file, via));
 }
 
 void OptiFineDialog::fail(const QString& message)

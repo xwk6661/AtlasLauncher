@@ -123,8 +123,15 @@ void ModPresetDialog::run(MinecraftInstance* instance, QWidget* parent)
 
         target = targetFor(instance);
         if (target.loader.isEmpty()) {
-            QMessageBox::warning(parent, QObject::tr("没有装上加载器"),
-                                 QObject::tr("加载器没有安装成功，先装好再回来用预设。"));
+            /*
+             * 走到这里说明对话框确实关掉了，但实例组件里仍然没有加载器 —— 最可能是
+             * 「没有选中任何版本就点了确定」，或者选中的版本没能写进去。别只说"没装上"，
+             * 直接告诉玩家下一步去哪点（2026-11-24 用户在这里卡住过）。
+             */
+            QMessageBox::warning(parent, QObject::tr("加载器没有装上"),
+                                 QObject::tr("对话框关掉了，但实例里仍然没有加载器。\n\n"
+                                             "请打开这个实例的「版本」页 → 点「安装加载器」→ 选一个与本实例\n"
+                                             "Minecraft 版本匹配的版本，装好后再回来用模组预设。"));
             return;
         }
     }
