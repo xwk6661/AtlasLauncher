@@ -75,3 +75,6 @@ __pycache__/
 *.pyc
 # tools/*-agent 的编译中间产物（jar 本身提交在 launcher/resources/agents/）
 tools/*/out/
+
+# tools/i18n_extract.py 的中间产物
+.tmp-i18n/
