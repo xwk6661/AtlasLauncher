@@ -25,7 +25,8 @@ Debug
 compile_commands.json
 
 # Build dirs
-build
+# 只忽略仓库根的 build/；tools/build/ 里放的是可提交的构建辅助脚本
+/build
 /build-*
 
 # Install dirs

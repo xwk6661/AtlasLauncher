@@ -6,6 +6,18 @@ Atlas 以 **GPL-3.0-only** 发布（全文见 `LICENSE`）。它派生自 Prism 
 
 > 下表按各项目**公开**的许可证整理，仅作告知。若与上游仓库的声明不一致，以上游为准。
 
+## 品牌与图标
+
+`program_info/` 下的 logo、应用图标与品牌素材**不在 GPL-3.0 的覆盖范围内**，按上游的做法以
+**CC BY-SA 4.0** 授权（全文见 `program_info/LICENSE`，随安装包发布时文件名为 `LICENSE-branding.txt`）。
+
+| 素材 | 来源 | 许可 |
+| --- | --- | --- |
+| `org.atlas.Atlas*.svg`、`atlas.ico`、`atlas.icns`、`instance_icons.svg` | Prism Launcher 的原始品牌素材（改名与尺寸调整） | CC BY-SA 4.0 · 署名 Prism Launcher Contributors |
+
+- 当前图标沿用上游素材，后续会替换为 Atlas 自己的设计；替换时同步更新本节与 `program_info/LICENSE`。
+- CC BY-SA 4.0 **不授予商标权**（§2(b)(2)），也不构成上游对本项目的认可或背书（§2(a)(6)）。
+
 ## 随二进制分发
 
 | 组件 | 版本 / 位置 | 许可证 | 在 Atlas 里的用途 |
