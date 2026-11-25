@@ -126,7 +126,8 @@ cmake --build --preset win-local
 > Prism Launcher, PolyMC, MultiMC, Mojang or Microsoft. Prism Launcher code is used under GPL-3.0;
 > the original authors are credited in [`COPYING.md`](COPYING.md) and the in-app credits.
 
-当前图标沿用上游素材（CC BY-SA 4.0，署名见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md#品牌与图标)），后续会替换为 Atlas 自己的设计。
+当前图标沿用上游素材（CC BY-SA 4.0，署名见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md#品牌与图标)）。
+**待办：替换为 Atlas 自己的设计** —— 这是首发前的三个阻断项之一（见 [发布清单](docs/atlas/07-发布清单.md) §2）。
 
 数据与服务只按公开的只读接口访问，未与任何站点建立正式合作，版权归各站与各作者：
 [CTM Maps](https://ctmmaps.com/)（大厅地图资料与评论）、[Modrinth](https://modrinth.com/) 与
