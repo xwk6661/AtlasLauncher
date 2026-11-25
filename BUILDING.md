@@ -1,10 +1,9 @@
 # 从源码构建 Atlas
 
-面向**第一次克隆这个仓库的人**。本机那套已经调好的脚本在 `build/`（不进仓库），
-这里写的是只依赖仓库内文件、能在一台干净开发机上复现的路径。
+面向**第一次克隆这个仓库的人**：只依赖仓库内的文件，在一台干净的 Windows 开发机上从零编出
+`atlas.exe` 与 `LauncherTests.exe`。
 
-> 本机（作者机器）的特殊环境、五个坑的细节与沙箱配方，见
-> [`docs/atlas/02-构建与运行.md`](docs/atlas/02-构建与运行.md)。本文只保证「别人能编出来」。
+> 仓库维护者本机那套脚本在 `build/`（不进版本库，含绝对路径）。本文不依赖它。
 
 ---
 
@@ -26,8 +25,8 @@ Qt 的 `bin` 目录必须能被 CMake 找到（`CMAKE_PREFIX_PATH`），否则 c
 ## 2. 三步构建
 
 ```powershell
-git clone --recursive https://github.com/<you>/<repo>.git
-cd <repo>
+git clone --recursive https://github.com/xwk6661/AtlasLauncher.git
+cd AtlasLauncher
 
 # 1) 生成本机预设：把示例复制成 CMakeUserPresets.json，改掉里面的四个路径
 Copy-Item CMakeUserPresets.json.example CMakeUserPresets.json

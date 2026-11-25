@@ -9,7 +9,7 @@ body:
         先看一眼这两处，很多问题在那里已经有答案：
 
         - 包内 `README-Atlas.txt` 的「已知限制」与「出问题了怎么办」
-        - `docs/atlas/08-真机复看清单.md`（进不去图这类问题的排查顺序）
+        - README 的 [已知限制](https://github.com/xwk6661/AtlasLauncher#已知限制)（1.17/1.18 不能自动进图等）
 
         **用哪个包很重要**：只支持本仓库 Releases 里的 `Atlas-<版本>-win64-release.zip`，
         第三方转载或自己编的 Debug 版不给结论。

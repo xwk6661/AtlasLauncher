@@ -1,272 +1,192 @@
-<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<svg
-   width="1024"
-   height="1024"
-   viewBox="0 0 1024 1024"
-   fill="none"
-   version="1.1"
-   id="svg76"
-   sodipodi:docname="org.prismlauncher.PrismLauncher.bigsur.svg"
-   inkscape:version="1.2.1 (9c6d41e410, 2022-07-14, custom)"
-   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
-   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
-   xmlns="http://www.w3.org/2000/svg"
-   xmlns:svg="http://www.w3.org/2000/svg">
-  <sodipodi:namedview
-     id="namedview78"
-     pagecolor="#ffffff"
-     bordercolor="#999999"
-     borderopacity="1"
-     inkscape:showpageshadow="0"
-     inkscape:pageopacity="0"
-     inkscape:pagecheckerboard="0"
-     inkscape:deskcolor="#d1d1d1"
-     showgrid="false"
-     inkscape:zoom="0.33974271"
-     inkscape:cx="1215.6258"
-     inkscape:cy="532.75609"
-     inkscape:window-width="1920"
-     inkscape:window-height="1026"
-     inkscape:window-x="0"
-     inkscape:window-y="0"
-     inkscape:window-maximized="1"
-     inkscape:current-layer="svg76" />
-  <g
-     filter="url(#filter0_d_102_69)"
-     id="g4">
-    <path
-       fill-rule="evenodd"
-       clip-rule="evenodd"
-       d="M924 354.627C924 344.845 924.004 335.062 923.944 325.279C923.895 317.038 923.8 308.799 923.576 300.562C923.092 282.609 922.033 264.502 918.84 246.749C915.602 228.741 910.314 211.98 901.981 195.617C893.789 179.534 883.088 164.817 870.32 152.058C857.555 139.299 842.834 128.605 826.746 120.418C810.366 112.083 793.587 106.797 775.558 103.56C757.803 100.372 739.691 99.315 721.738 98.83C713.495 98.607 705.253 98.513 697.008 98.462C687.22 98.402 677.432 98.407 667.644 98.407L553.997 98H468.997L357.361 98.407C347.554 98.407 337.747 98.402 327.94 98.462C319.678 98.513 311.42 98.607 303.161 98.83C285.167 99.315 267.014 100.373 249.217 103.565C231.164 106.801 214.36 112.085 197.958 120.414C181.835 128.602 167.083 139.297 154.291 152.058C141.501 164.816 130.78 179.53 122.573 195.61C114.217 211.981 108.919 228.752 105.673 246.77C102.477 264.516 101.418 282.617 100.931 300.562C100.709 308.8 100.613 317.039 100.563 325.279C100.503 335.063 100 347.216 100 356.999L100.003 467.089L100 552.998L100.508 665.427C100.508 675.223 100.504 685.019 100.563 694.815C100.613 703.067 100.709 711.317 100.932 719.566C101.418 737.542 102.479 755.675 105.678 773.452C108.923 791.484 114.22 808.269 122.569 824.653C130.777 840.759 141.5 855.495 154.291 868.272C167.082 881.049 181.83 891.757 197.95 899.956C214.362 908.302 231.174 913.595 249.238 916.836C267.027 920.029 285.174 921.088 303.161 921.573C311.42 921.796 319.679 921.891 327.941 921.941C337.748 922.001 347.554 921.997 357.361 921.997L470.006 922H555.217L667.644 921.996C677.432 921.996 687.22 922.001 697.008 921.941C705.253 921.891 713.495 921.796 721.738 921.573C739.698 921.087 757.816 920.027 775.579 916.832C793.597 913.591 810.368 908.3 826.739 899.959C842.831 891.761 857.554 881.051 870.32 868.272C883.086 855.497 893.786 840.763 901.978 824.66C910.316 808.268 915.604 791.475 918.844 773.431C922.034 755.661 923.092 737.535 923.577 719.566C923.8 711.316 923.895 703.066 923.944 694.815C924.005 685.019 924 675.223 924 665.427C924 665.427 923.994 554.983 923.994 552.998V466.999C923.994 465.533 924 354.627 924 354.627Z"
-       fill="url(#paint0_linear_102_69)"
-       id="path2" />
-  </g>
-  <mask
-     id="mask0_102_69"
-     style="mask-type: alpha"
-     maskUnits="userSpaceOnUse"
-     x="100"
-     y="98"
-     width="824"
-     height="824">
-    <path
-       fill-rule="evenodd"
-       clip-rule="evenodd"
-       d="M924 354.627C924 344.845 924.004 335.062 923.944 325.279C923.895 317.038 923.8 308.799 923.576 300.562C923.092 282.609 922.033 264.502 918.84 246.749C915.602 228.741 910.314 211.98 901.981 195.617C893.789 179.534 883.088 164.817 870.32 152.058C857.555 139.299 842.834 128.605 826.746 120.418C810.366 112.083 793.587 106.797 775.558 103.56C757.803 100.372 739.691 99.315 721.738 98.83C713.495 98.607 705.253 98.513 697.008 98.462C687.22 98.402 677.432 98.407 667.644 98.407L553.997 98H468.997L357.361 98.407C347.554 98.407 337.747 98.402 327.94 98.462C319.678 98.513 311.42 98.607 303.161 98.83C285.167 99.315 267.014 100.373 249.217 103.565C231.164 106.801 214.36 112.085 197.958 120.414C181.835 128.602 167.083 139.297 154.291 152.058C141.501 164.816 130.78 179.53 122.573 195.61C114.217 211.981 108.919 228.752 105.673 246.77C102.477 264.516 101.418 282.617 100.931 300.562C100.709 308.8 100.613 317.039 100.563 325.279C100.503 335.063 100 347.216 100 356.999L100.003 467.089L100 552.998L100.508 665.427C100.508 675.223 100.504 685.019 100.563 694.815C100.613 703.067 100.709 711.317 100.932 719.566C101.418 737.542 102.479 755.675 105.678 773.452C108.923 791.484 114.22 808.269 122.569 824.653C130.777 840.759 141.5 855.495 154.291 868.272C167.082 881.049 181.83 891.757 197.95 899.956C214.362 908.302 231.174 913.595 249.238 916.836C267.027 920.029 285.174 921.088 303.161 921.573C311.42 921.796 319.679 921.891 327.941 921.941C337.748 922.001 347.554 921.997 357.361 921.997L470.006 922H555.217L667.644 921.996C677.432 921.996 687.22 922.001 697.008 921.941C705.253 921.891 713.495 921.796 721.738 921.573C739.698 921.087 757.816 920.027 775.579 916.832C793.597 913.591 810.368 908.3 826.739 899.959C842.831 891.761 857.554 881.051 870.32 868.272C883.086 855.497 893.786 840.763 901.978 824.66C910.316 808.268 915.604 791.475 918.844 773.431C922.034 755.661 923.092 737.535 923.577 719.566C923.8 711.316 923.895 703.066 923.944 694.815C924.005 685.019 924 675.223 924 665.427C924 665.427 923.994 554.983 923.994 552.998V466.999C923.994 465.533 924 354.627 924 354.627Z"
-       fill="white"
-       id="path6" />
-  </mask>
-  <g
-     mask="url(#mask0_102_69)"
-     id="g15">
-    <rect
-       x="42"
-       y="36"
-       width="914"
-       height="914"
-       fill="url(#paint1_linear_102_69)"
-       id="rect9" />
-    <g
-       filter="url(#filter1_b_102_69)"
-       id="g13">
-      <rect
-         x="100"
-         y="98"
-         width="824"
-         height="824"
-         rx="126"
-         fill="black"
-         fill-opacity="0.01"
-         id="rect11" />
-    </g>
-  </g>
-  <defs
-     id="defs74">
-    <filter
-       id="filter0_d_102_69"
-       x="90"
-       y="98"
-       width="844"
-       height="844"
-       filterUnits="userSpaceOnUse"
-       color-interpolation-filters="sRGB">
-      <feFlood
-         flood-opacity="0"
-         result="BackgroundImageFix"
-         id="feFlood31" />
-      <feColorMatrix
-         in="SourceAlpha"
-         type="matrix"
-         values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0"
-         result="hardAlpha"
-         id="feColorMatrix33" />
-      <feOffset
-         dy="10"
-         id="feOffset35" />
-      <feGaussianBlur
-         stdDeviation="5"
-         id="feGaussianBlur37" />
-      <feColorMatrix
-         type="matrix"
-         values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.3 0"
-         id="feColorMatrix39" />
-      <feBlend
-         mode="normal"
-         in2="BackgroundImageFix"
-         result="effect1_dropShadow_102_69"
-         id="feBlend41" />
-      <feBlend
-         mode="normal"
-         in="SourceGraphic"
-         in2="effect1_dropShadow_102_69"
-         result="shape"
-         id="feBlend43" />
-    </filter>
-    <filter
-       id="filter1_b_102_69"
-       x="89.1269"
-       y="87.1269"
-       width="845.746"
-       height="845.746"
-       filterUnits="userSpaceOnUse"
-       color-interpolation-filters="sRGB">
-      <feFlood
-         flood-opacity="0"
-         result="BackgroundImageFix"
-         id="feFlood46" />
-      <feGaussianBlur
-         in="BackgroundImage"
-         stdDeviation="5.43656"
-         id="feGaussianBlur48" />
-      <feComposite
-         in2="SourceAlpha"
-         operator="in"
-         result="effect1_backgroundBlur_102_69"
-         id="feComposite50" />
-      <feBlend
-         mode="normal"
-         in="SourceGraphic"
-         in2="effect1_backgroundBlur_102_69"
-         result="shape"
-         id="feBlend52" />
-    </filter>
-    <linearGradient
-       id="paint0_linear_102_69"
-       x1="-181.14"
-       y1="98"
-       x2="-181.14"
-       y2="1484.28"
-       gradientUnits="userSpaceOnUse">
-      <stop
-         stop-color="white"
-         id="stop55" />
-      <stop
-         offset="0.489516"
-         stop-color="#EFEFEF"
-         id="stop57" />
-      <stop
-         offset="1"
-         stop-color="#C0C0C0"
-         id="stop59" />
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024" role="img" aria-label="Atlas">
+  <title>Atlas</title>
+  <defs>
+    <!-- Modern rounded-square app icon tile (completely distinct from Prism Launcher's hexagon) -->
+    <clipPath id="clip-app-tile">
+      <rect x="24" y="24" width="464" height="464" rx="108" ry="108"/>
+    </clipPath>
+    <clipPath id="clip-inner-cube">
+      <path d="M 266.45 120.03 L 368.52 178.97 Q 378.98 185.00 378.98 197.07 L 378.98 314.93 Q 378.98 327.00 368.52 333.04 L 266.45 391.96 Q 256.00 398.00 245.55 391.96 L 143.48 333.04 Q 133.02 327.00 133.02 314.93 L 133.02 197.07 Q 133.02 185.00 143.48 178.97 L 245.55 120.03 Q 256.00 114.00 266.45 120.03 Z"/>
+    </clipPath>
+
+    <!-- Deep Atlas Ocean & Cartographic Backdrop Gradients -->
+    <linearGradient id="grad-ocean-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#223A61"/>
+      <stop offset="55%" stop-color="#1C3154"/>
+      <stop offset="100%" stop-color="#14223D"/>
     </linearGradient>
-    <linearGradient
-       id="paint1_linear_102_69"
-       x1="928.377"
-       y1="992.826"
-       x2="928.377"
-       y2="134.072"
-       gradientUnits="userSpaceOnUse">
-      <stop
-         stop-color="#F6F3F3"
-         id="stop62" />
-      <stop
-         offset="1"
-         stop-color="white"
-         id="stop64" />
+
+    <!-- Stylized Minecraft Map Biome Terraces -->
+    <linearGradient id="grad-shallow-sea" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#45B7AA"/>
+      <stop offset="100%" stop-color="#2B7FA8"/>
     </linearGradient>
-    <linearGradient
-       id="paint2_linear_102_69"
-       x1="394.815"
-       y1="372.239"
-       x2="629.182"
-       y2="542.528"
-       gradientUnits="userSpaceOnUse">
-      <stop
-         stop-color="#88B858"
-         id="stop67" />
-      <stop
-         offset="0.5"
-         stop-color="#72B147"
-         id="stop69" />
-      <stop
-         offset="1"
-         stop-color="#5A9A30"
-         id="stop71" />
+    <linearGradient id="grad-land-sand" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E7C472"/>
+      <stop offset="100%" stop-color="#C89B4C"/>
+    </linearGradient>
+    <linearGradient id="grad-land-grass" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#84CE58"/>
+      <stop offset="100%" stop-color="#53A33F"/>
+    </linearGradient>
+    <linearGradient id="grad-land-forest" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#489344"/>
+      <stop offset="100%" stop-color="#2E6B38"/>
+    </linearGradient>
+    <linearGradient id="grad-terracotta" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D98B4E"/>
+      <stop offset="100%" stop-color="#A86032"/>
+    </linearGradient>
+
+    <!-- Brass border accent -->
+    <linearGradient id="grad-brass-frame" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F2D488" stop-opacity="0.72"/>
+      <stop offset="50%" stop-color="#C79E4C" stop-opacity="0.38"/>
+      <stop offset="100%" stop-color="#E6C26E" stop-opacity="0.65"/>
+    </linearGradient>
+
+    <!-- Inner parchment isometric cube faces -->
+    <linearGradient id="grad-cube-top" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F7F2E8"/>
+    </linearGradient>
+    <linearGradient id="grad-cube-left" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#E3DBCC"/>
+      <stop offset="100%" stop-color="#D3C8B5"/>
+    </linearGradient>
+    <linearGradient id="grad-cube-right" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#F2EBE0"/>
+      <stop offset="100%" stop-color="#E4DAC8"/>
+    </linearGradient>
+
+    <!-- Subtle top-to-bottom lighting glaze -->
+    <linearGradient id="grad-tile-sheen" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.12"/>
+      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.0"/>
+      <stop offset="100%" stop-color="#09101F" stop-opacity="0.18"/>
     </linearGradient>
   </defs>
-  <g
-     id="g1817"
-     transform="matrix(0.81938386,0,0,0.81938386,-746.9626,25.220302)">
-    <path
-       style="fill:#99cd61;fill-opacity:1;stroke-width:17.3878"
-       d="M 1536.4629,591.62417 Z"
-       id="path7899" />
-    <path
-       id="path3228"
-       style="fill:#df6277;fill-opacity:1;stroke-width:17.3878"
-       d="m 1536.4629,209.09169 -165.6591,286.89936 165.6591,95.63312 165.6262,-95.63312 7.2003,-203.69576 c -75.6493,-43.67547 -153.6998,-83.2036 -172.8265,-83.2036 z" />
-    <path
-       id="path2659"
-       style="fill:#fb9168;fill-opacity:1;stroke-width:17.3878"
-       d="m 1709.2894,292.29529 -172.8265,299.32888 165.6262,95.63312 165.6591,-286.89936 c -9.5633,-16.56418 -82.8113,-64.38717 -158.4588,-108.06264 z" />
-    <path
-       id="path2708"
-       style="fill:#f3db6c;fill-opacity:1;stroke-width:17.3878"
-       d="m 1867.7482,400.35793 -331.2853,191.26624 165.6262,95.63312 179.9919,-95.63312 c 0,-87.35094 -4.7677,-174.70206 -14.3328,-191.26624 z" />
-    <path
-       id="path1737"
-       style="fill:#7ab392;fill-opacity:1;stroke-width:17.3878"
-       d="m 1536.4629,591.62417 v 191.26624 h 331.2853 c 9.5633,-16.56418 14.3328,-103.9153 14.3328,-191.26624 z" />
-    <path
-       id="path2937"
-       style="fill:#4b7cbc;fill-opacity:1;stroke-width:17.3878"
-       d="m 1536.4629,591.62417 v 191.26624 l 172.8265,108.06281 c 75.6475,-43.67547 148.8955,-91.49863 158.4588,-108.06281 z" />
-    <path
-       id="path3117"
-       style="fill:#6f488c;fill-opacity:1;stroke-width:17.3878"
-       d="m 1536.4629,591.62417 -165.6591,95.63312 165.6591,286.89936 c 19.1267,0 97.1772,-39.52795 172.8265,-83.20343 z" />
-    <path
-       id="path2010"
-       style="fill:#4d3f33;fill-opacity:1;stroke-width:17.3878"
-       d="m 1370.8038,495.99105 -165.6262,286.89936 c 19.1267,33.12818 293.0321,191.26624 331.2853,191.26624 V 591.62417 Z" />
-    <path
-       id="path1744"
-       style="fill:#7a573b;fill-opacity:1;stroke-width:17.3878"
-       d="m 1205.1776,400.35793 c -19.1266,33.12818 -19.1266,349.4043 0,382.53248 L 1536.4629,591.62417 V 400.35793 Z" />
-    <path
-       id="path1739"
-       style="fill:#99cd61;fill-opacity:1;stroke-width:17.3878"
-       d="m 1536.4629,209.09169 c -38.2532,0 -312.1586,158.13806 -331.2853,191.26624 l 331.2853,191.26624 z" />
-    <g
-       id="g1657"
-       transform="matrix(57.831674,0,0,57.831674,402.40368,92.688452)">
-      <g
-         id="g7651"
-         transform="translate(13.259961,2.2775894)">
-        <path
-           id="path6659"
-           style="fill:#ffffff;stroke-width:0.264583"
-           d="m 6.3498163,2.9393223 c -0.3410461,0 -2.782726,1.4098777 -2.9532491,1.7052323 L 6.3498163,9.7602513 9.3035983,4.6445546 C 9.1330753,4.3492 6.6908624,2.9393223 6.3498163,2.9393223 Z"
-           transform="matrix(0.96974817,0,0,0.96974817,0.19209885,0.19209792)" />
-      </g>
-      <path
-         id="path461"
-         style="fill:#dfdfdf;fill-opacity:1;stroke-width:0.264583"
-         d="m 16.745875,6.9737355 2.863908,4.9609385 c 0.330729,0 2.69906,-1.367226 2.864424,-1.653646 0.165365,-0.2864204 0.165365,-3.0208729 0,-3.3072925 l -2.864424,1.6536459 z" />
+  <g transform="translate(102.40 102.40) scale(1.6000)">
+
+  <!-- 1. Rounded-Square Atlas Map Tile -->
+  <g clip-path="url(#clip-app-tile)">
+    <!-- Deep Atlas Ocean base -->
+    <rect x="24" y="24" width="464" height="464" fill="url(#grad-ocean-bg)"/>
+
+    <!-- Stylized Topographic Minecraft World Map Contours (clean blocky/chamfered map terraces) -->
+    <!-- Upper-Left Overworld Continent -->
+    <path d="M 24 24 L 318 24 L 274 96 L 236 116 L 194 176 L 138 206 L 104 274 L 24 316 Z" fill="url(#grad-shallow-sea)" fill-opacity="0.58"/>
+    <path d="M 24 24 L 278 24 L 240 82 L 200 100 L 166 152 L 116 180 L 82 238 L 24 268 Z" fill="url(#grad-land-sand)"/>
+    <path d="M 24 24 L 252 24 L 218 72 L 180 88 L 148 136 L 102 162 L 70 214 L 24 240 Z" fill="url(#grad-land-grass)"/>
+    <path d="M 24 24 L 184 24 L 154 64 L 112 86 L 86 132 L 24 166 Z" fill="url(#grad-land-forest)" fill-opacity="0.62"/>
+
+    <!-- Lower-Right Archipelago / Mesa Island -->
+    <path d="M 488 216 L 488 488 L 204 488 L 256 420 L 316 392 L 364 334 L 424 294 Z" fill="url(#grad-shallow-sea)" fill-opacity="0.52"/>
+    <path d="M 488 264 L 488 488 L 258 488 L 304 434 L 358 408 L 398 354 L 444 324 Z" fill="url(#grad-land-sand)" fill-opacity="0.95"/>
+    <path d="M 488 298 L 488 488 L 296 488 L 336 444 L 386 422 L 422 372 L 458 348 Z" fill="url(#grad-terracotta)"/>
+
+    <!-- Subtle Cartographic Grid (Latitude / Longitude) -->
+    <g stroke="#93C5FD" stroke-opacity="0.14" stroke-width="1.5">
+      <line x1="140" y1="24" x2="140" y2="488"/>
+      <line x1="256" y1="24" x2="256" y2="488"/>
+      <line x1="372" y1="24" x2="372" y2="488"/>
+      <line x1="24" y1="140" x2="488" y2="140"/>
+      <line x1="24" y1="256" x2="488" y2="256"/>
+      <line x1="24" y1="372" x2="488" y2="372"/>
     </g>
-    <path
-       id="path5065"
-       style="fill:#d6d2d2;fill-opacity:1;stroke-width:17.3878"
-       d="m 1370.8455,495.99122 c -9.5633,16.56436 -9.5651,174.70241 0,191.26624 9.5633,16.56366 146.4995,95.63382 165.6261,95.63312 V 591.62434 Z" />
+
+    <!-- Subtle Tri-Fold Map Crease Shading (gives tactile folded-atlas depth) -->
+    <rect x="24" y="24" width="154" height="464" fill="#FFFFFF" fill-opacity="0.035"/>
+    <rect x="178" y="24" width="156" height="464" fill="#0A1324" fill-opacity="0.055"/>
+    <rect x="334" y="24" width="154" height="464" fill="#FFFFFF" fill-opacity="0.025"/>
+
+    <!-- Cartographic Compass Degree Ring -->
+    <circle cx="256" cy="256" r="184" fill="none" stroke="#E8C674" stroke-width="2" stroke-opacity="0.45"/>
+    <line x1="440.00" y1="256.00" x2="454.00" y2="256.00" stroke="#E8C674" stroke-width="3.2" stroke-opacity="0.65" stroke-linecap="round"/>
+    <line x1="433.73" y1="303.62" x2="441.46" y2="305.69" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="415.35" y1="348.00" x2="422.28" y2="352.00" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="386.11" y1="386.11" x2="396.01" y2="396.01" stroke="#E8C674" stroke-width="3.2" stroke-opacity="0.65" stroke-linecap="round"/>
+    <line x1="348.00" y1="415.35" x2="352.00" y2="422.28" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="303.62" y1="433.73" x2="305.69" y2="441.46" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="256.00" y1="440.00" x2="256.00" y2="454.00" stroke="#E8C674" stroke-width="3.2" stroke-opacity="0.65" stroke-linecap="round"/>
+    <line x1="208.38" y1="433.73" x2="206.31" y2="441.46" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="164.00" y1="415.35" x2="160.00" y2="422.28" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="125.89" y1="386.11" x2="115.99" y2="396.01" stroke="#E8C674" stroke-width="3.2" stroke-opacity="0.65" stroke-linecap="round"/>
+    <line x1="96.65" y1="348.00" x2="89.72" y2="352.00" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="78.27" y1="303.62" x2="70.54" y2="305.69" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="72.00" y1="256.00" x2="58.00" y2="256.00" stroke="#E8C674" stroke-width="3.2" stroke-opacity="0.65" stroke-linecap="round"/>
+    <line x1="78.27" y1="208.38" x2="70.54" y2="206.31" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="96.65" y1="164.00" x2="89.72" y2="160.00" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="125.89" y1="125.89" x2="115.99" y2="115.99" stroke="#E8C674" stroke-width="3.2" stroke-opacity="0.65" stroke-linecap="round"/>
+    <line x1="164.00" y1="96.65" x2="160.00" y2="89.72" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="208.38" y1="78.27" x2="206.31" y2="70.54" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="256.00" y1="72.00" x2="256.00" y2="58.00" stroke="#E8C674" stroke-width="3.2" stroke-opacity="0.65" stroke-linecap="round"/>
+    <line x1="303.62" y1="78.27" x2="305.69" y2="70.54" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="348.00" y1="96.65" x2="352.00" y2="89.72" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="386.11" y1="125.89" x2="396.01" y2="115.99" stroke="#E8C674" stroke-width="3.2" stroke-opacity="0.65" stroke-linecap="round"/>
+    <line x1="415.35" y1="164.00" x2="422.28" y2="160.00" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+    <line x1="433.73" y1="208.38" x2="441.46" y2="206.31" stroke="#E8C674" stroke-width="1.8" stroke-opacity="0.35" stroke-linecap="round"/>
+
+    <!-- Subtle overall lighting glaze -->
+    <rect x="24" y="24" width="464" height="464" fill="url(#grad-tile-sheen)"/>
   </g>
+
+  <!-- Crisp Outer Tile Brass-Tinted Rim -->
+  <rect x="25.5" y="25.5" width="461" height="461" rx="106.5" ry="106.5" fill="none" stroke="url(#grad-brass-frame)" stroke-width="3"/>
+
+  <!-- 2. Pure-Vector Soft Shadow under Central Cube (QtSvg-compatible) -->
+  <path d="M 267.46 123.61 L 371.85 183.88 Q 383.31 190.50 383.31 203.73 L 383.31 324.27 Q 383.31 337.50 371.85 344.12 L 267.46 404.38 Q 256.00 411.00 244.54 404.38 L 140.15 344.12 Q 128.69 337.50 128.69 324.27 L 128.69 203.73 Q 128.69 190.50 140.15 183.88 L 244.54 123.61 Q 256.00 117.00 267.46 123.61 Z" fill="#0B1324" fill-opacity="0.22"/>
+  <path d="M 267.22 122.48 L 369.48 181.52 Q 380.71 188.00 380.71 200.96 L 380.71 319.04 Q 380.71 332.00 369.48 338.48 L 267.22 397.52 Q 256.00 404.00 244.78 397.52 L 142.52 338.48 Q 131.29 332.00 131.29 319.04 L 131.29 200.96 Q 131.29 188.00 142.52 181.52 L 244.78 122.48 Q 256.00 116.00 267.22 122.48 Z" fill="#0B1324" fill-opacity="0.20"/>
+
+  <!-- 3. Central Isometric Minecraft Cube (Warm Map Parchment Core) -->
+  <g clip-path="url(#clip-inner-cube)">
+    <path d="M 256.00 256.00 L 102.28 167.25 L 102.28 344.75 L 256.00 433.50 Z" fill="url(#grad-cube-left)"/>
+    <path d="M 256.00 256.00 L 409.72 167.25 L 409.72 344.75 L 256.00 433.50 Z" fill="url(#grad-cube-right)"/>
+    <path d="M 256.00 256.00 L 102.28 167.25 L 256.00 78.50 L 409.72 167.25 Z" fill="url(#grad-cube-top)"/>
+  </g>
+  <path d="M 266.45 120.03 L 368.52 178.97 Q 378.98 185.00 378.98 197.07 L 378.98 314.93 Q 378.98 327.00 368.52 333.04 L 266.45 391.96 Q 256.00 398.00 245.55 391.96 L 143.48 333.04 Q 133.02 327.00 133.02 314.93 L 133.02 197.07 Q 133.02 185.00 143.48 178.97 L 245.55 120.03 Q 256.00 114.00 266.45 120.03 Z" fill="none" stroke="#FFFFFF" stroke-opacity="0.7" stroke-width="2.2"/>
+
+  <!-- 4. Atlas Compass Rose Centerpiece -->
+  <g id="atlas-compass">
+    <!-- Inner brass astrolabe ring -->
+    <circle cx="256" cy="256" r="61" fill="none" stroke="#CCA454" stroke-width="4" stroke-opacity="0.72"/>
+
+    <!-- Pure-vector soft shadow under primary star -->
+    <path d="M 256.00 148.50 L 275.45 241.05 L 358.00 260.50 L 275.45 279.95 L 256.00 372.50 L 236.55 279.95 L 154.00 260.50 L 236.55 241.05 Z" fill="#162033" fill-opacity="0.16"/>
+
+    <!-- Secondary 4-point diagonal star (Brass Gold) -->
+    <g id="compass-diagonals">
+      <path d="M 256.00 256.00 L 306.91 205.09 L 256.00 239.00 Z" fill="#E8C26B"/>
+      <path d="M 256.00 256.00 L 306.91 205.09 L 273.00 256.00 Z" fill="#C2963F"/>
+      <path d="M 256.00 256.00 L 306.91 306.91 L 273.00 256.00 Z" fill="#E8C26B"/>
+      <path d="M 256.00 256.00 L 306.91 306.91 L 256.00 273.00 Z" fill="#C2963F"/>
+      <path d="M 256.00 256.00 L 205.09 306.91 L 256.00 273.00 Z" fill="#C2963F"/>
+      <path d="M 256.00 256.00 L 205.09 306.91 L 239.00 256.00 Z" fill="#E8C26B"/>
+      <path d="M 256.00 256.00 L 205.09 205.09 L 239.00 256.00 Z" fill="#C2963F"/>
+      <path d="M 256.00 256.00 L 205.09 205.09 L 256.00 239.00 Z" fill="#E8C26B"/>
+    </g>
+
+    <!-- Primary 4-point Compass Rose (North Crimson, E/S/W Deep Atlas Navy) -->
+    <g id="compass-primary">
+      <!-- West -->
+      <path d="M 256.00 256.00 L 154.00 256.00 L 236.55 236.55 Z" fill="#3E5A85"/>
+      <path d="M 256.00 256.00 L 154.00 256.00 L 236.55 275.45 Z" fill="#223452"/>
+      <!-- East -->
+      <path d="M 256.00 256.00 L 358.00 256.00 L 275.45 236.55 Z" fill="#3E5A85"/>
+      <path d="M 256.00 256.00 L 358.00 256.00 L 275.45 275.45 Z" fill="#223452"/>
+      <!-- South -->
+      <path d="M 256.00 256.00 L 256.00 368.00 L 236.55 275.45 Z" fill="#3E5A85"/>
+      <path d="M 256.00 256.00 L 256.00 368.00 L 275.45 275.45 Z" fill="#223452"/>
+      <!-- North (Hero Compass Needle) -->
+      <path d="M 256.00 256.00 L 256.00 144.00 L 236.55 236.55 Z" fill="#F05664"/>
+      <path d="M 256.00 256.00 L 256.00 144.00 L 275.45 236.55 Z" fill="#C43341"/>
+    </g>
+
+    <!-- Center Pivot Pin -->
+    <circle cx="256" cy="256" r="16" fill="#223452"/>
+    <circle cx="256" cy="256" r="11" fill="#ECC56E"/>
+    <circle cx="256" cy="256" r="5.5" fill="#FDFBF7"/>
+  </g>
+</g>
 </svg>

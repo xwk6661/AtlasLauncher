@@ -79,8 +79,11 @@ instances\<实例名>\map.json 与 agent.log。
 六、许可
 --------
 
-GPL-3.0-only。完整文本见 LICENSE；上游致谢见 COPYING.md；
-第三方组件与数据来源见 THIRD-PARTY-NOTICES.md。
+GPL-3.0-only。完整文本见 LICENSE.txt；上游致谢见 COPYING.md；
+第三方组件、数据来源与图标许可见 THIRD-PARTY-NOTICES.md。
+
+图标与品牌素材不在 GPL 范围内，按 CC BY-SA 4.0 授权，全文见 LICENSE-branding.txt。
 
 Atlas 不是 Mojang、Microsoft、Prism Launcher、PolyMC、MultiMC 或 ATLauncher
-的官方产品，也未经其背书。本程序不包含任何 Minecraft 游戏文件。
+的官方产品，也未经其背书。本程序不包含任何 Minecraft 游戏文件，
+使用前需要拥有正版 Minecraft: Java Edition 账号。

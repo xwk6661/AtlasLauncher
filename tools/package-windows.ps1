@@ -152,11 +152,15 @@ if (Test-Path $stray) {
 # credits and the third-party list; the portable zip is the only thing a user ever
 # downloads, so nothing can be left to the repository. Same reasoning for the user
 # readme (it is the only place that explains the data layout and known limits).
+#
+# The branding files (logo / icons) are NOT GPL: they are CC BY-SA 4.0, so their
+# licence text has to travel too, under its own name.
 # ---------------------------------------------------------------------------------
 $legal = @(
     @{ From = 'LICENSE';               To = 'LICENSE.txt' },
     @{ From = 'COPYING.md';            To = 'COPYING.md' },
-    @{ From = 'THIRD-PARTY-NOTICES.md'; To = 'THIRD-PARTY-NOTICES.md' }
+    @{ From = 'THIRD-PARTY-NOTICES.md'; To = 'THIRD-PARTY-NOTICES.md' },
+    @{ From = 'program_info/LICENSE';  To = 'LICENSE-branding.txt' }
 )
 foreach ($item in $legal) {
     $src = Join-Path $repo $item.From

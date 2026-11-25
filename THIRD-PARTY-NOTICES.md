@@ -6,6 +6,22 @@ Atlas 以 **GPL-3.0-only** 发布（全文见 `LICENSE`）。它派生自 Prism 
 
 > 下表按各项目**公开**的许可证整理，仅作告知。若与上游仓库的声明不一致，以上游为准。
 
+## 品牌与图标
+
+`program_info/` 下的 logo、应用图标与品牌素材**不在 GPL-3.0 的覆盖范围内**，按上游的做法以
+**CC BY-SA 4.0** 授权（全文见 `program_info/LICENSE`，随安装包发布时文件名为 `LICENSE-branding.txt`）。
+
+| 素材 | 来源 | 许可 |
+| --- | --- | --- |
+| `org.atlas.Atlas.svg`（及 `.Source` / `.bigsur` / `.logo*`）、`atlas.ico`、`atlas.icns`、`org.atlas.Atlas_256.png` | **Atlas 自绘**（2026-11-25 起；地图瓦片 + 等距立方体 + 罗盘，原稿即 `org.atlas.Atlas.svg`） | CC BY-SA 4.0 · © 2026 Atlas Contributors |
+| `instance_icons.svg`、`org.atlas.Atlas.Social.svg` | Prism Launcher 的原始品牌素材 | CC BY-SA 4.0 · 署名 Prism Launcher Contributors |
+
+- 应用图标自 2026-11-25 起**不再沿用上游素材**：二进制图标由 `program_info/genicons.py`
+  （或上游的 `genicons.sh`）从 `org.atlas.Atlas.svg` 生成，仓库里提交生成结果，构建不需要渲染工具。
+- CC BY-SA 4.0 **不授予商标权**（§2(b)(2)）；无论素材来源如何，都不构成上游或第三方向本项目的认可或背书（§2(a)(6)）。
+- 仍沿用上游的 `instance_icons.svg`（实例占位图）与 `Social.svg`（社交预览图）保留原署名；
+  后续替换时同步更新本节。
+
 ## 随二进制分发
 
 | 组件 | 版本 / 位置 | 许可证 | 在 Atlas 里的用途 |

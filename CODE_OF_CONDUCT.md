@@ -1,7 +1,8 @@
 # Contributor Covenant Code of Conduct
 
 This is a modified version of the Contributor Covenant.
-See commit history to see our changes.
+Atlas inherits it from Prism Launcher; the only change is that enforcement is
+handled by this repository's maintainer instead of an upstream mailing list.
 
 ## Our Pledge
 
@@ -62,9 +63,9 @@ representative at an online or offline event.
 ## Enforcement
 
 Instances of abusive, harassing, or otherwise unacceptable behavior may be
-reported to the community leaders responsible for enforcement via email at
-[coc@scrumplex.net](mailto:coc@scrumplex.net) (Email
-address subject to change).
+reported privately to the repository maintainer
+([@xwk6661](https://github.com/xwk6661)) through GitHub.
+Please do not open a public issue for a conduct report.
 All complaints will be reviewed and investigated promptly and fairly.
 
 All community leaders are obligated to respect the privacy and security of the
