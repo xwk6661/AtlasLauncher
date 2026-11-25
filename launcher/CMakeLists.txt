@@ -1337,6 +1337,11 @@ qt_add_resources(LAUNCHER_RESOURCES
 ######## Windows resource files ########
 if(WIN32)
     set(LAUNCHER_RCS ${CMAKE_CURRENT_BINARY_DIR}/../${Launcher_Branding_WindowsRC})
+    # `.rc` 的内容一直不变（只有 IDI_ICON1 那一行引用了 atlas.ico），所以换图标时
+    # CMake 认为没东西可编，`.res` 一直是旧的 —— 表现是「图标换了，exe 里还是旧图」。
+    # 显式把 .ico 的源文件与配置期副本都声明成依赖（2026-11-25 踩过）。
+    set_source_files_properties(${LAUNCHER_RCS} PROPERTIES OBJECT_DEPENDS
+        "${CMAKE_SOURCE_DIR}/${Launcher_Branding_ICO};${CMAKE_BINARY_DIR}/${Launcher_Branding_ICO}")
 endif()
 
 ######## Precompiled Headers ###########
