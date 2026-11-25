@@ -1,0 +1,5 @@
+# 把同一人的不同署名归并成一条，`git shortlog` / blame / 贡献者统计都会用它。
+#
+# 2026-11-25 的独立化清理由 AI 助手代为提交，用了临时署名；
+# 这些提交是仓库维护者授权的改动，归到维护者名下。
+xwk6661 <xwk6661@outlook.com> Atlas Cleanup <cleanup@local>
