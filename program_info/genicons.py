@@ -230,7 +230,6 @@ def main() -> None:
         shutil.copyfile(SVG, HERE / f"{APP_ID}.logo-darkmode.svg")
         shutil.copyfile(SVG, HERE / f"{APP_ID}.Source.svg")
         shutil.copyfile(SVG, HERE / f"{APP_ID}.logo.source.svg")
-        shutil.copyfile(SVG, HERE / "atlas-monochrome.Source.svg")
 
         theme_icon = HERE.parent / "launcher" / "resources" / "multimc" / "scalable" / "launcher.svg"
         if theme_icon.parent.exists():

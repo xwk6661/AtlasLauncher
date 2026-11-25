@@ -15,12 +15,14 @@ Atlas 以 **GPL-3.0-only** 发布（全文见 `LICENSE`）。它派生自 Prism 
 | --- | --- | --- |
 | `org.atlas.Atlas.svg`（及 `.Source` / `.bigsur` / `.logo*`）、`atlas.ico`、`atlas.icns`、`org.atlas.Atlas_256.png` | **Atlas 自绘**（2026-11-25 起；地图瓦片 + 等距立方体 + 罗盘，原稿即 `org.atlas.Atlas.svg`） | CC BY-SA 4.0 · © 2026 Atlas Contributors |
 | `instance_icons.svg`、`org.atlas.Atlas.Social.svg` | Prism Launcher 的原始品牌素材 | CC BY-SA 4.0 · 署名 Prism Launcher Contributors |
+| `Atlas.icon/`（macOS Icon Composer 包里的 `block.svg`、`rainbow.svg`）、`launcher/resources/{flat,flat_white,multimc}/` 下的主题图标（**除** `multimc/scalable/launcher.svg`，那份已换成 Atlas 图标） | Prism Launcher 的原始界面素材 | CC BY-SA 4.0 · 署名 Prism Launcher Contributors |
 
 - 应用图标自 2026-11-25 起**不再沿用上游素材**：二进制图标由 `program_info/genicons.py`
   （或上游的 `genicons.sh`）从 `org.atlas.Atlas.svg` 生成，仓库里提交生成结果，构建不需要渲染工具。
 - CC BY-SA 4.0 **不授予商标权**（§2(b)(2)）；无论素材来源如何，都不构成上游或第三方向本项目的认可或背书（§2(a)(6)）。
-- 仍沿用上游的 `instance_icons.svg`（实例占位图）与 `Social.svg`（社交预览图）保留原署名；
-  后续替换时同步更新本节。
+- 仍沿用上游的还有：`instance_icons.svg`（实例占位图）、`Social.svg`（社交预览图）、
+  `Atlas.icon/`（只在 macOS 包用，本项目不发布 macOS 版）与主题里的界面图标（含主窗口那只黑猫背景）。
+  这些保留原署名，替换时同步更新本节。
 
 ## 随二进制分发
 
