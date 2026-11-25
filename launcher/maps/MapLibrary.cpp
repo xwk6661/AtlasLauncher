@@ -1107,6 +1107,12 @@ int MapLibrary::normalizeFileNames(QString* error)
 
     for (int i = 0; i < m_items.size(); ++i) {
         const auto& item = m_items.at(i);
+        // 资源包不参与规范命名：实例的 `options.txt` 是按**文件名**（`file/<名字>`）引用它的，
+        // 而这里只回写 `map.json` 的路径，没有任何地方会去改 options.txt ——
+        // 改名等于把已经启用的汉化包静默关掉（游戏里只是"变回英文"）。
+        // 真要改名，得连每个实例的 options.txt 一起改，那是另一档改动。
+        if (item.variant.delivery == variant::Delivery::ResourcePack)
+            continue;
         QString base = item.englishName.trimmed();
         if (base.isEmpty())
             base = item.chineseName.trimmed();
