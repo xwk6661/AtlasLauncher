@@ -87,9 +87,12 @@ Config::Config()
     GIT_TAG = "@Launcher_GIT_TAG@";
     GIT_REFSPEC = "@Launcher_GIT_REFSPEC@";
 
-    // Assume that builds outside of Git repos are "stable"
-    if (GIT_REFSPEC == QStringLiteral("GITDIR-NOTFOUND") || GIT_TAG == QStringLiteral("GITDIR-NOTFOUND") ||
-        GIT_REFSPEC == QStringLiteral("") || GIT_TAG == QStringLiteral("GIT-NOTFOUND")) {
+    // 只有"根本不在 git 检出里"（源码包）才假设成 stable。
+    // 上游把 GIT_TAG 为空也并进这一条，结果是**没打 tag 的 git 构建**一律自称 stable：
+    // Atlas 清空了上游 tag 之后，feature 分支上的构建会显示成 `0.1.0`，与打了 tag 的发布版
+    // 完全一致，分不出来。改成：仓库在、tag 不在 → 通道取分支名，版本串仍带通道后缀。
+    if (GIT_REFSPEC == QStringLiteral("GITDIR-NOTFOUND") || GIT_REFSPEC == QStringLiteral("") ||
+        GIT_REFSPEC == QStringLiteral("GIT-NOTFOUND")) {
         GIT_REFSPEC = "refs/heads/stable";
         GIT_TAG = versionString();
         GIT_COMMIT = "";
@@ -136,8 +139,13 @@ QString Config::printableVersionString() const
 {
     QString vstr = versionString();
 
+    // 发布 tag 是 `v0.1.0`（见 docs/atlas/07 §5），而 versionString() 给的是 `0.1.0`：
+    // 只比裸版本号永远不相等，打了 tag 的发布版也会在标题栏挂上「-main」。
+    // 两种写法都认；上游的 tag 惯例就是裸版本号，所以原来那种比较对上游成立。
+    const bool releasedAtTag = GIT_TAG == vstr || GIT_TAG == "v" + vstr;
+
     // If the build is not a main release, append the channel
-    if (VERSION_CHANNEL != "stable" && GIT_TAG != vstr) {
+    if (VERSION_CHANNEL != "stable" && !releasedAtTag) {
         vstr += "-" + VERSION_CHANNEL;
     }
     return vstr;
