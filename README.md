@@ -1,9 +1,5 @@
 <p align="center">
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="program_info/org.atlas.Atlas.logo-darkmode.svg">
-  <source media="(prefers-color-scheme: light)" srcset="program_info/org.atlas.Atlas.logo.svg">
-  <img alt="Atlas" src="program_info/org.atlas.Atlas.svg" width="128" height="128">
-</picture>
+  <img alt="Atlas" src="program_info/org.atlas.Atlas_256.png" width="128" height="128">
 </p>
 
 <p align="center">
@@ -55,7 +51,8 @@ Atlas 的三条硬约束，决定了它的全部设计：
 
 版本 **0.1.0**，首发版本**尚未发布**。当前状态：
 
-- 构建通过，**33 个测试套件 / 448 项全绿**；
+- 构建通过，**33 个测试套件全部通过**（个别用例按本机符号链接权限跳过；基线与耗时只写在
+  [`04 §1`](docs/atlas/04-进度与待办.md)）；
 - 真机跑通过：1.21.1（Fabric）/ 1.21.9 走 quickPlay，1.8.9 / 1.9.4 / 1.12 Forge / 1.16.5 / 1.19.3 走 Agent；
 - 其他版本与部分界面细节仍在验证中。
 
@@ -99,11 +96,14 @@ cmake --build --preset win-local
 
 ## 文档
 
+**完整索引在 [`docs/atlas/README.md`](docs/atlas/README.md)**（含阅读路径与术语），这里只列入口：
+
 | 文档 | 内容 |
 | --- | --- |
-| [`BUILDING.md`](BUILDING.md) | 从零构建、跑测试、出便携包、这个仓库特有的坑 |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 怎么提 issue / PR、验证档位要求、代码风格 |
-| [`docs/atlas/`](docs/atlas/README.md) | 工程文档：设计（01）、构建细节（02）、决策与坑（03）、进度（04）、验证记录（05）、变更记录（06）、发布清单（07） |
+| [`BUILDING.md`](BUILDING.md) | 三步构建、跑测试、出便携包（细节全部指向 `docs/atlas/02`） |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | 怎么提 issue / PR、验证档位要求、代码与提交约定 |
+| [`docs/atlas/00-工程约定.md`](docs/atlas/00-工程约定.md) | 文档规则、数字口径、命令行与环境变量、路径事实 |
+| [`docs/atlas/`](docs/atlas/README.md) | 设计（01）、构建与运行（02）、决策与坑（03）、进度（04）、验证（05）、变更（06）、发布（07）、真机复看（08） |
 | [`CHANGELOG.md`](CHANGELOG.md) | 面向用户的版本变更摘要 |
 
 ## 参与
@@ -117,7 +117,9 @@ cmake --build --preset win-local
 **Atlas 以 [GPL-3.0-only](LICENSE) 发布。**
 
 代码来自 Prism Launcher、PolyMC 与 MultiMC，版权归各自贡献者所有，完整声明见 [`COPYING.md`](COPYING.md)。
-第三方组件、数据来源与素材许可见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)。
+第三方组件、数据来源与素材许可逐项列在 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)；
+**完整许可文本在 [`LICENSES/`](LICENSES/README.md)**（Qt 的 LGPL-3.0、图标主题的 Apache-2.0 / OFL-1.1、
+各依赖的 copyright 都在里面，随安装包一起分发）。
 
 > **Atlas 是非官方项目**，与 Mojang、Microsoft、Prism Launcher、PolyMC、MultiMC 及 ATLauncher
 > 均无隶属关系，也未获其背书。项目不包含任何 Minecraft 游戏文件。
@@ -126,9 +128,14 @@ cmake --build --preset win-local
 > Prism Launcher, PolyMC, MultiMC, Mojang or Microsoft. Prism Launcher code is used under GPL-3.0;
 > the original authors are credited in [`COPYING.md`](COPYING.md) and the in-app credits.
 
-图标是 Atlas 自己设计的（地图瓦片 + 等距立方体 + 罗盘），自 2026-11-25 起不再沿用上游素材；
-原稿 `program_info/org.atlas.Atlas.svg`，二进制由 `program_info/genicons.py` 生成，
-许可见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md#品牌与图标)。
+应用图标自 2026-11-25 起不再沿用上游素材；2026-11-26 换成新的一套（六边形地图瓦片 + 等距立方体 + 罗盘指针）。
+原稿是 `program_info/org.atlas.Atlas.png`（1024 RGBA），二进制由 `program_info/genicons.py` 生成；
+上一版矢量稿归档在 `program_info/archive/`。品牌素材按 **CC BY-SA 4.0** 授权。
+
+界面图标主题沿用 Prism 的四套，**许可各不相同**：Breeze（KDE，LGPL-3.0+）、
+Material（Google，Apache-2.0 / OFL-1.1）、Legacy（MultiMC，Apache-2.0）、Simple（pexner，随 Prism 以 GPL-3.0 分发）；
+逐项说明见 [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md#品牌与图标)，全文在
+[`LICENSES/packages/icon-themes.txt`](LICENSES/packages/icon-themes.txt)。
 
 数据与服务只按公开的只读接口访问，未与任何站点建立正式合作，版权归各站与各作者：
 [CTM Maps](https://ctmmaps.com/)（大厅地图资料与评论）、[Modrinth](https://modrinth.com/) 与
