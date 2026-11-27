@@ -1,0 +1,209 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <!-- ================= FILTERS ================= -->
+    <!-- Subtle grounded outer shadow -->
+    <filter id="hex-shadow" x="-15%" y="-12%" width="130%" height="134%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="11" result="b1"/>
+      <feOffset in="b1" dx="0" dy="9" result="o1"/>
+      <feFlood flood-color="#020B12" flood-opacity="0.42" result="c1"/>
+      <feComposite in="c1" in2="o1" operator="in" result="s1"/>
+      <feMerge>
+        <feMergeNode in="s1"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+
+    <!-- Soft grounded drop shadow beneath Letter A (matches original soft bottom shadow) -->
+    <filter id="a-shadow" x="-22%" y="-18%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="10" result="b1"/>
+      <feOffset in="b1" dx="0" dy="10" result="o1"/>
+      <feFlood flood-color="#041926" flood-opacity="0.46" result="c1"/>
+      <feComposite in="c1" in2="o1" operator="in" result="s1"/>
+
+      <feGaussianBlur in="SourceAlpha" stdDeviation="3.0" result="b2"/>
+      <feOffset in="b2" dx="0" dy="3.0" result="o2"/>
+      <feFlood flood-color="#02101A" flood-opacity="0.52" result="c2"/>
+      <feComposite in="c2" in2="o2" operator="in" result="s2"/>
+
+      <feMerge>
+        <feMergeNode in="s1"/>
+        <feMergeNode in="s2"/>
+      </feMerge>
+    </filter>
+
+    <!-- Delicate glass bevel softness (subtle, NOT cloudy!) -->
+    <filter id="rim-soft" x="-8%" y="-8%" width="116%" height="116%">
+      <feGaussianBlur stdDeviation="1.6"/>
+    </filter>
+
+    <!-- ================= HEXAGON GRADIENTS (SUBTLY LIGHTER THAN ORIGINAL, SAME SOPHISTICATED TONE) ================= -->
+    <!-- Outer glass bevel margin (slightly deeper around the very perimeter, like original) -->
+    <linearGradient id="hex-outer-grad" x1="12%" y1="10%" x2="88%" y2="90%">
+      <stop offset="0%" stop-color="#134C70"/>
+      <stop offset="48%" stop-color="#146478"/>
+      <stop offset="100%" stop-color="#148F84"/>
+    </linearGradient>
+
+    <!-- Main smooth inner face gradient (gently lifted ~14% from original #0D3E5D -> #0D8478) -->
+    <linearGradient id="hex-face-grad" x1="14%" y1="12%" x2="86%" y2="88%">
+      <stop offset="0%" stop-color="#175277"/>
+      <stop offset="38%" stop-color="#18667E"/>
+      <stop offset="72%" stop-color="#168485"/>
+      <stop offset="100%" stop-color="#199F91"/>
+    </linearGradient>
+
+    <!-- Soft seafoam-teal glow in lower-right quadrant -->
+    <radialGradient id="hex-teal-glow" cx="76%" cy="76%" r="54%">
+      <stop offset="0%" stop-color="#24B8A5" stop-opacity="0.28"/>
+      <stop offset="55%" stop-color="#19968B" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#147C7A" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Soft deep slate-blue depth in upper-left quadrant -->
+    <radialGradient id="hex-navy-depth" cx="22%" cy="28%" r="52%">
+      <stop offset="0%" stop-color="#0E3858" stop-opacity="0.30"/>
+      <stop offset="100%" stop-color="#0E3858" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Sleek, restrained top/upper-slope specular glass edge (matches original thin crisp sheen) -->
+    <linearGradient id="hex-glass-top" x1="20%" y1="0%" x2="80%" y2="95%">
+      <stop offset="0%" stop-color="#89C4DA" stop-opacity="0.58"/>
+      <stop offset="30%" stop-color="#6BB0C4" stop-opacity="0.34"/>
+      <stop offset="65%" stop-color="#5AC4B8" stop-opacity="0.26"/>
+      <stop offset="100%" stop-color="#228982" stop-opacity="0.12"/>
+    </linearGradient>
+
+    <!-- Subtle left & right vertical glass catchlights -->
+    <linearGradient id="hex-glass-sides" x1="0%" y1="50%" x2="100%" y2="50%">
+      <stop offset="0%" stop-color="#9BD4E8" stop-opacity="0.52"/>
+      <stop offset="10%" stop-color="#9BD4E8" stop-opacity="0"/>
+      <stop offset="90%" stop-color="#6DD9CC" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#6DD9CC" stop-opacity="0.46"/>
+    </linearGradient>
+
+    <!-- Outer edge subtle definition -->
+    <linearGradient id="hex-outer-stroke" x1="15%" y1="5%" x2="85%" y2="95%">
+      <stop offset="0%" stop-color="#2C6C8F" stop-opacity="0.65"/>
+      <stop offset="50%" stop-color="#1E7380" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#229B8E" stop-opacity="0.68"/>
+    </linearGradient>
+
+    <!-- ================= 3D LETTER "A" GRADIENTS (EXACT SAMPLED ORIGINAL PALETTE) ================= -->
+    <!-- 1. Left Main Outer Facet (#FBF8F4 -> #FCF7F0 -> #F6EEDF) -->
+    <linearGradient id="a-left-outer" x1="25%" y1="0%" x2="75%" y2="100%">
+      <stop offset="0%" stop-color="#FDFBF7"/>
+      <stop offset="45%" stop-color="#FBF7F0"/>
+      <stop offset="82%" stop-color="#F6EEDF"/>
+      <stop offset="100%" stop-color="#F1E6D2"/>
+    </linearGradient>
+
+    <!-- 2. Right Main Outer Facet (#EDE4D3 -> #EFE4D1 -> #EBDBC1) -->
+    <linearGradient id="a-right-outer" x1="20%" y1="0%" x2="80%" y2="100%">
+      <stop offset="0%" stop-color="#EFE6D6"/>
+      <stop offset="48%" stop-color="#EEE3D0"/>
+      <stop offset="85%" stop-color="#EBDCC3"/>
+      <stop offset="100%" stop-color="#E6D4B6"/>
+    </linearGradient>
+
+    <!-- 3. Left Upper Inner Wall (#C98528 -> #D08C27 -> #CB8625, deeper warm ochre near crease) -->
+    <linearGradient id="a-left-inner-up" x1="75%" y1="10%" x2="25%" y2="90%">
+      <stop offset="0%" stop-color="#BA741A"/>
+      <stop offset="40%" stop-color="#CE8A27"/>
+      <stop offset="100%" stop-color="#D7942B"/>
+    </linearGradient>
+
+    <!-- 4. Right Upper Inner Wall (#DFA136 -> #E8AB3A -> #EAAC3A, brighter honey-gold) -->
+    <linearGradient id="a-right-inner-up" x1="20%" y1="10%" x2="80%" y2="90%">
+      <stop offset="0%" stop-color="#D8982E"/>
+      <stop offset="45%" stop-color="#E8AB3A"/>
+      <stop offset="100%" stop-color="#F0B947"/>
+    </linearGradient>
+
+    <!-- 5. Crossbar Top Sloped Facet (EXACT left-to-right lighting: #E3D2B5 -> #F4EDDB -> #F7F2E6) -->
+    <linearGradient id="a-cb-top" x1="0%" y1="45%" x2="100%" y2="55%">
+      <stop offset="0%" stop-color="#E2D0B2"/>
+      <stop offset="45%" stop-color="#F3ECDA"/>
+      <stop offset="100%" stop-color="#F9F5EB"/>
+    </linearGradient>
+
+    <!-- 6. Crossbar Underside Facet (smooth burnished amber #C27D22 -> #BE7A22) -->
+    <linearGradient id="a-cb-bottom" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#B06C19"/>
+      <stop offset="35%" stop-color="#C27D22"/>
+      <stop offset="100%" stop-color="#C88426"/>
+    </linearGradient>
+
+    <!-- 7. Left Lower Inner Wall (warm amber #D28D29 -> #D69229) -->
+    <linearGradient id="a-left-inner-low" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#D18B27"/>
+      <stop offset="100%" stop-color="#DC992E"/>
+    </linearGradient>
+
+    <!-- 8. Right Lower Inner Wall (bright sunny gold #EBB94E -> #ECBC4F, signature original highlight!) -->
+    <linearGradient id="a-right-inner-low" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#EBB74B"/>
+      <stop offset="100%" stop-color="#F1C256"/>
+    </linearGradient>
+
+    <!-- 9. Left Bottom Foot Bevel (#BB7624 -> #BE7725) -->
+    <linearGradient id="a-foot-left" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#B97321"/>
+      <stop offset="100%" stop-color="#C47E28"/>
+    </linearGradient>
+
+    <!-- 10. Right Bottom Foot Bevel (#C37C25 -> #C37F27) -->
+    <linearGradient id="a-foot-right" x1="50%" y1="0%" x2="50%" y2="100%">
+      <stop offset="0%" stop-color="#C07922"/>
+      <stop offset="100%" stop-color="#CA842B"/>
+    </linearGradient>
+
+    <clipPath id="hex-clip">
+      <path d="M 234.50,52.41 Q 256.00,40.00 277.50,52.41 L 421.56,135.59 Q 443.06,148.00 443.06,172.83 L 443.06,339.17 Q 443.06,364.00 421.56,376.41 L 277.50,459.59 Q 256.00,472.00 234.50,459.59 L 90.44,376.41 Q 68.94,364.00 68.94,339.17 L 68.94,172.83 Q 68.94,148.00 90.44,135.59 Z"/>
+    </clipPath>
+  </defs>
+
+  <!-- ================= LAYER 1: SLEEK GLASS-BEVEL HEXAGON ================= -->
+  <g filter="url(#hex-shadow)">
+    <path d="M 234.50,52.41 Q 256.00,40.00 277.50,52.41 L 421.56,135.59 Q 443.06,148.00 443.06,172.83 L 443.06,339.17 Q 443.06,364.00 421.56,376.41 L 277.50,459.59 Q 256.00,472.00 234.50,459.59 L 90.44,376.41 Q 68.94,364.00 68.94,339.17 L 68.94,172.83 Q 68.94,148.00 90.44,135.59 Z" fill="url(#hex-outer-grad)"/>
+  </g>
+
+  <g clip-path="url(#hex-clip)">
+    <!-- Smooth inner recessed face -->
+    <path d="M 238.00,63.89 Q 256.00,53.50 274.00,63.89 L 413.37,144.36 Q 431.37,154.75 431.37,175.53 L 431.37,336.47 Q 431.37,357.25 413.37,367.64 L 274.00,448.11 Q 256.00,458.50 238.00,448.11 L 98.63,367.64 Q 80.63,357.25 80.63,336.47 L 80.63,175.53 Q 80.63,154.75 98.63,144.36 Z" fill="url(#hex-face-grad)"/>
+    <path d="M 234.50,52.41 Q 256.00,40.00 277.50,52.41 L 421.56,135.59 Q 443.06,148.00 443.06,172.83 L 443.06,339.17 Q 443.06,364.00 421.56,376.41 L 277.50,459.59 Q 256.00,472.00 234.50,459.59 L 90.44,376.41 Q 68.94,364.00 68.94,339.17 L 68.94,172.83 Q 68.94,148.00 90.44,135.59 Z" fill="url(#hex-navy-depth)"/>
+    <path d="M 234.50,52.41 Q 256.00,40.00 277.50,52.41 L 421.56,135.59 Q 443.06,148.00 443.06,172.83 L 443.06,339.17 Q 443.06,364.00 421.56,376.41 L 277.50,459.59 Q 256.00,472.00 234.50,459.59 L 90.44,376.41 Q 68.94,364.00 68.94,339.17 L 68.94,172.83 Q 68.94,148.00 90.44,135.59 Z" fill="url(#hex-teal-glow)"/>
+
+    <!-- Subtle, sleek inner glass bevel specular rim (thin & refined like original PNG) -->
+    <path d="M 238.25,64.75 Q 256.00,54.50 273.75,64.75 L 412.75,145.00 Q 430.50,155.25 430.50,175.75 L 430.50,336.25 Q 430.50,356.75 412.75,367.00 L 273.75,447.25 Q 256.00,457.50 238.25,447.25 L 99.25,367.00 Q 81.50,356.75 81.50,336.25 L 81.50,175.75 Q 81.50,155.25 99.25,145.00 Z" fill="none" stroke="url(#hex-glass-top)" stroke-width="3.0" filter="url(#rim-soft)"/>
+    <path d="M 238.25,64.75 Q 256.00,54.50 273.75,64.75 L 412.75,145.00 Q 430.50,155.25 430.50,175.75 L 430.50,336.25 Q 430.50,356.75 412.75,367.00 L 273.75,447.25 Q 256.00,457.50 238.25,447.25 L 99.25,367.00 Q 81.50,356.75 81.50,336.25 L 81.50,175.75 Q 81.50,155.25 99.25,145.00 Z" fill="none" stroke="url(#hex-glass-sides)" stroke-width="2.6" filter="url(#rim-soft)"/>
+    <path d="M 238.25,64.75 Q 256.00,54.50 273.75,64.75 L 412.75,145.00 Q 430.50,155.25 430.50,175.75 L 430.50,336.25 Q 430.50,356.75 412.75,367.00 L 273.75,447.25 Q 256.00,457.50 238.25,447.25 L 99.25,367.00 Q 81.50,356.75 81.50,336.25 L 81.50,175.75 Q 81.50,155.25 99.25,145.00 Z" fill="none" stroke="url(#hex-glass-top)" stroke-width="1.0" opacity="0.72"/>
+  </g>
+
+  <!-- Crisp outer border -->
+  <path d="M 234.50,52.41 Q 256.00,40.00 277.50,52.41 L 421.56,135.59 Q 443.06,148.00 443.06,172.83 L 443.06,339.17 Q 443.06,364.00 421.56,376.41 L 277.50,459.59 Q 256.00,472.00 234.50,459.59 L 90.44,376.41 Q 68.94,364.00 68.94,339.17 L 68.94,172.83 Q 68.94,148.00 90.44,135.59 Z" fill="none" stroke="url(#hex-outer-stroke)" stroke-width="1.3"/>
+
+  <!-- ================= LAYER 2: GROUNDED DROP SHADOW FOR LETTER "A" ================= -->
+  <path d="M 256.00,112.64 L 384.06,352.55 L 324.56,352.55 L 305.69,317.20 L 206.31,317.20 L 187.44,352.55 L 127.94,352.55 Z M 256.00,224.11 L 230.51,271.87 L 281.49,271.87 Z" fill-rule="evenodd" fill="#041926" filter="url(#a-shadow)"/>
+
+  <!-- ================= LAYER 3: EXACT-STYLE SCULPTED 3D LETTER "A" ================= -->
+  <g stroke-linejoin="round">
+    <!-- Golden-amber inner & underside bevel facets -->
+    <polygon points="256.00,167.84 188.68,293.96 230.51,271.87 256.00,224.11" fill="url(#a-left-inner-up)"/>
+    <polygon points="256.00,167.84 256.00,224.11 281.49,271.87 323.32,293.96" fill="url(#a-right-inner-up)"/>
+    <polygon points="188.68,293.96 170.23,328.53 187.44,352.55 206.31,317.20" fill="url(#a-left-inner-low)"/>
+    <polygon points="323.32,293.96 305.69,317.20 324.56,352.55 341.77,328.53" fill="url(#a-right-inner-low)"/>
+    <polygon points="188.68,293.96 206.31,317.20 305.69,317.20 323.32,293.96" fill="url(#a-cb-bottom)"/>
+    <polygon points="127.94,352.55 170.23,328.53 187.44,352.55" fill="url(#a-foot-left)"/>
+    <polygon points="324.56,352.55 341.77,328.53 384.06,352.55" fill="url(#a-foot-right)"/>
+
+    <!-- Warm ivory front & top bevel facets -->
+    <polygon points="188.68,293.96 323.32,293.96 281.49,271.87 230.51,271.87" fill="url(#a-cb-top)"/>
+    <polygon points="256.00,112.64 384.06,352.55 341.77,328.53 256.00,167.84" fill="url(#a-right-outer)"/>
+    <polygon points="256.00,112.64 256.00,167.84 170.23,328.53 127.94,352.55" fill="url(#a-left-outer)"/>
+
+    <!-- Subtle natural crease between inner upper gold walls -->
+    <line x1="256.00" y1="167.84" x2="256.00" y2="224.11"
+          stroke="#A66114" stroke-opacity="0.32" stroke-width="0.9"/>
+  </g>
+</svg>

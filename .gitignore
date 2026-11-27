@@ -79,3 +79,9 @@ tools/*/out/
 
 # tools/i18n_extract.py 的中间产物
 .tmp-i18n/
+
+# 2026-11-26 两张 2048 原始候选（5.7 MB，只在重出图时用；目录与 README 入库，PNG 不入库）
+program_info/archive/source-2026-11-26/*.png
+
+# ctest 在仓库根误跑时留下的临时目录
+/Testing/

@@ -23,30 +23,40 @@ AppStream 元数据、Windows 资源、man page、安装器脚本）。这里决
 
 ## 图标
 
-应用图标是 **Atlas 自绘**的（2026-11-25 起，地图瓦片 + 等距立方体 + 罗盘），不再沿用上游素材。
-原稿只有一份：`org.atlas.Atlas.svg`；其余都是派生物。
+![图标在 16–256 px 与深色背景下的效果](../docs/atlas/images/atlas-icon-sizes.png)
+
+应用图标现在是**位图母图**：`org.atlas.Atlas.png`（1024 RGBA，六边形瓦片 + 等距立方体 + 罗盘指针）。
+它由 2048 的渲染稿去背、裁到内容、四周留 6% 后降采样而来；qrc 直接引用这份 PNG。
+两版矢量稿都归档了，**不参与构建**：`archive/icon-2026-11-25/`（地图瓦片 + 立方体 + 罗盘，初版）与
+`archive/icon-2026-11-26-letter-a/`（六边形 + 3D 字母 A，当晚短暂用过）。
+当前母图的原始素材（两张 2048 候选）在 `archive/source-2026-11-26/`。
 
 | 文件 | 谁在用 |
 | --- | --- |
-| `org.atlas.Atlas.svg` | 编进 Qt 资源（`atlas.qrc.in`）当窗口 / 任务栏图标；桌面文件的 `Icon=` |
-| `atlas.ico` | `atlas.rc.in` 嵌进 `atlas.exe`（16/24/32/48/64/128/256，小于 256 用 BMP、256 用 PNG） |
-| `atlas.icns` | macOS 包（16–1024，来自加了 10% 留白的 `org.atlas.Atlas.bigsur.svg`） |
-| `org.atlas.Atlas_256.png` | 商店 / 文档用的 256 px 位图 |
-| `org.atlas.Atlas.logo*.svg` | README 顶部的 logo（与应用图标同图，深浅主题都能看） |
-| `../launcher/resources/multimc/scalable/launcher.svg` | 主题里的启动器图标（同一份 SVG 的副本） |
+| `org.atlas.Atlas.png` | **原稿**（1024 RGBA，带 6% 留白与阴影）；生成 ico/icns 的大尺寸档与 `_256.png` |
+| `org.atlas.Atlas.icon.png` | 由母图裁掉阴影、按实心边界铺满的 256 版；**编进 Qt 资源**（`atlas.qrc.in`），当窗口 / 关于页 / 快捷方式图标 |
+| `atlas.ico` | `atlas.rc.in` 嵌进 `atlas.exe`（16/24/32/48/64/128/256，小于 256 用 BMP、256 用 PNG）；**16–48 用铺满母图**，64+ 用原母图 |
+| `atlas.icns` | macOS 包（16–1024，画布 80% 留白） |
+| `org.atlas.Atlas_256.png` | README 顶部与文档用的 256 px 位图 |
+| `../launcher/resources/multimc/scalable/launcher.svg` | 主题占位图标，**仍是 11-25 那版**（见下方待办） |
 
 改图之后**必须重新生成**二进制：
 
 ```bash
-python genicons.py      # 需要 Chromium 内核浏览器 + Pillow；不出图就退非零
+python genicons.py      # 当前只需 Pillow；若放了 org.atlas.Atlas.svg 才需要 Chromium
 ```
 
-> `genicons.sh` 是上游那份（inkscape + icotool + oxipng），本机没有这些工具，所以有了
-> `genicons.py`：用无头浏览器渲染一张 1024 的母图再降采样，避免 Chromium 在小窗口下裁切。
-> 生成结果提交进仓库，**构建本身不需要任何渲染工具**。
+> `genicons.py` **矢量优先**：有 `org.atlas.Atlas.svg` 就无头渲染 1024 → 裁边补 6% → 回写 PNG 母图；
+> 没有 SVG 就直接用现成的 `org.atlas.Atlas.png`。之后逐尺寸 LANCZOS 降采样，组装 ICO
+> （<256 用 BMP、256 用 PNG）与 ICNS（7 槽 PNG）。生成结果提交进仓库，**构建本身不需要任何渲染工具**。
+> 当前仓库没有 SVG，走的是 PNG 分支；去背 / 裁边是一次性处理，换图时按同样口径准备 1024 RGBA。
+> **小尺寸的取舍**：16–48 px 用 `tight()` 裁掉阴影与留白（瓦片占约 95%），否则在白底任务栏里
+> 只剩中间一小块；代价是这几档没有柔和阴影，这是有意的。
 > 许可与署名见仓库根 `THIRD-PARTY-NOTICES.md` 的「品牌与图标」节。
 
 ## 待办
 
+- `../launcher/resources/multimc/scalable/launcher.svg`（实例卡片占位图）**仍是 11-25 那版**：
+  它在 qrc 里是 SVG，换成位图要改资源键名与调用点，单独一轮做（[04 P2 #37](../docs/atlas/04-进度与待办.md)）。
 - `instance_icons.svg`（实例占位图）与 `org.atlas.Atlas.Social.svg`（社交预览图）仍是上游素材，
   署名保留在 `THIRD-PARTY-NOTICES.md`；换成自绘素材时一并替换。

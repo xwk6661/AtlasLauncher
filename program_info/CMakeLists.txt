@@ -42,7 +42,9 @@ set(Launcher_ENVName "ATLAS" PARENT_SCOPE)
 set(Launcher_Domain "${Launcher_Domain}" PARENT_SCOPE)
 set(Launcher_Git "${Launcher_Git}" PARENT_SCOPE)
 
-set(Launcher_SVGFileName "${Launcher_AppID}.svg")
+# 变量名沿用上游的 "SVGFileName"，但 2026-11-26 起指向位图母图（.png）：
+# 改名会让 BuildConfig.h 变更、触发全量重编，等下次大改再一起改（见 docs/atlas/00 §7）。
+set(Launcher_SVGFileName "${Launcher_AppID}.icon.png")
 set(Launcher_Copyright "© 2026 Atlas Contributors\\n© 2022-2026 Prism Launcher Contributors\\n© 2021-2022 PolyMC Contributors\\n© 2012-2021 MultiMC Contributors")
 set(Launcher_Copyright_Mac "© 2026 Atlas Contributors, © 2022-2026 Prism Launcher Contributors, © 2021-2022 PolyMC Contributors and © 2012-2021 MultiMC Contributors" PARENT_SCOPE)
 set(Launcher_Copyright "${Launcher_Copyright}" PARENT_SCOPE)

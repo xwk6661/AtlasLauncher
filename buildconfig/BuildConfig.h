@@ -53,7 +53,8 @@ class Config {
     QString LAUNCHER_CONFIGFILE;
     QString LAUNCHER_GIT;
     QString LAUNCHER_APPID;
-    QString LAUNCHER_SVGFILENAME;
+    /// 2026-11-26 起指向位图图标（.png）；名字沿用旧称，改名会触发全量重编
+    QString LAUNCHER_ICONFILE;
     QString LAUNCHER_ENVNAME;
 
     /// The major version number.

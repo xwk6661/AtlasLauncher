@@ -1635,7 +1635,7 @@ JavaInstallList* Application::javalist()
 
 QIcon Application::logo()
 {
-    return QIcon(":/" + BuildConfig.LAUNCHER_SVGFILENAME);
+    return QIcon(":/" + BuildConfig.LAUNCHER_ICONFILE);
 }
 
 bool Application::openJsonEditor(const QString& filename)
