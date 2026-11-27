@@ -82,6 +82,9 @@ instances\<实例名>\map.json 与 agent.log。
 GPL-3.0-only。完整文本见 LICENSE.txt；上游致谢见 COPYING.md；
 第三方组件、数据来源与图标许可见 THIRD-PARTY-NOTICES.md。
 
+完整许可文本在 LICENSES/ 目录（Qt 的 LGPL-3.0、图标主题的 Apache-2.0 / OFL-1.1、
+各依赖自带的 copyright 都在里面），断网也能查。
+
 图标与品牌素材不在 GPL 范围内，按 CC BY-SA 4.0 授权，全文见 LICENSE-branding.txt。
 
 Atlas 不是 Mojang、Microsoft、Prism Launcher、PolyMC、MultiMC 或 ATLauncher

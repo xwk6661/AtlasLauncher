@@ -3,9 +3,12 @@
 Atlas 的代码建立在 Prism Launcher、PolyMC 与 MultiMC 之上。本文件汇总这些项目随代码带来的
 版权与许可声明，**GPL-3.0 要求分发时保留**，因此随安装包一并发布。
 
-- Atlas 自己的代码：GPL-3.0-only（全文见 [`LICENSE`](LICENSE)）
-- 品牌与图标：CC BY-SA 4.0（见 [`program_info/LICENSE`](program_info/LICENSE)，与 GPL 无关）
+- Atlas 自己的代码：GPL-3.0-only（仓库里是 `LICENSE`，安装包里是 `LICENSE.txt`）
+- 品牌与应用图标：CC BY-SA 4.0（仓库里是 `program_info/LICENSE`，安装包里是 `LICENSE-branding.txt`；与 GPL 无关）
+- 界面图标主题：**四套许可各不相同**（LGPL-3.0 / Apache-2.0 / OFL-1.1 / GPL-3.0），见
+  [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md#品牌与图标)
 - 第三方组件与数据来源：[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md)
+- **完整许可文本**（LGPL / Apache / OFL / BSD / 各依赖 copyright）：[`LICENSES/README.md`](LICENSES/README.md)
 
 以下为上游原文，未作改动。
 

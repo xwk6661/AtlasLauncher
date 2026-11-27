@@ -1,0 +1,32 @@
+界面图标主题（launcher/resources/）的署名与许可
+================================================
+
+这些图标随 Prism Launcher 一起分发，Atlas 沿用未改（multimc/scalable/launcher.svg 除外，
+那一份已换成 Atlas 图标）。四套主题的许可不同，逐套列明：
+
+1) Breeze（breeze_light/、breeze_dark/）
+   Copyright (C) 2014 Uri Herrera <uri_herrera@nitrux.in> and others
+   License: GNU Lesser General Public License v3 or later
+   全文见 ../LGPL-3.0-only.txt
+
+2) Material（flat/、flat_white/）
+   基于 Google Material Icons（Copyright 2014 Google Inc.，Apache-2.0）
+   以及 Material Design Icons（Copyright (c) 2014 Austin Andrews，
+   https://materialdesignicons.com/，SIL Open Font License 1.1）
+   全文见 ../Apache-2.0.txt 与 ../OFL-1.1.txt
+
+3) Legacy（multimc/）
+   Copyright 2013-2021 MultiMC Contributors
+   License: Apache License 2.0
+   全文见 ../Apache-2.0.txt
+
+4) Simple（pe_blue/、pe_colored/、pe_dark/、pe_light/）
+   Icons by pexner（见各目录 index.theme 的 Comment 字段）
+   仓库中没有单独的许可文件；随 Prism Launcher 仓库按 GPL-3.0-only 分发。
+   全文见 ../GPL-3.0-only.txt
+
+OSX / iOS 两套图标**不在本仓库内**（它们是 PrismLauncher/Themes 的社区包，
+SPDX: GPL-3.0-only AND Apache-2.0）；如果将来引入，需要把这两套的
+index.theme.license 一并带进来。
+
+以上图标在 Atlas 里只做界面用途，不再单独分发或售卖这些图标集。

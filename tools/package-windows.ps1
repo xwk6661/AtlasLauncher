@@ -170,6 +170,19 @@ foreach ($item in $legal) {
     Copy-Item $src (Join-Path $out $item.To) -Force
 }
 
+# Full licence texts. LGPL (Qt), Apache-2.0 / OFL (icon themes) and the per-package
+# copyright files all have to travel with the binary; a link to a website is not enough.
+$licenses = Join-Path $repo 'LICENSES'
+if (-not (Test-Path $licenses)) {
+    throw 'LICENSES/ is missing from the repository - refusing to package without the full licence texts.'
+}
+foreach ($required in @('README.md', 'LGPL-3.0-only.txt', 'Apache-2.0.txt', 'OFL-1.1.txt', 'packages\qt.txt')) {
+    if (-not (Test-Path (Join-Path $licenses $required))) {
+        throw "LICENSES/$required is missing - refusing to package an incomplete licence bundle."
+    }
+}
+Copy-Item $licenses (Join-Path $out 'LICENSES') -Recurse -Force
+
 $readme = Join-Path $repo 'tools\release-assets\README-Atlas.txt'
 if (-not (Test-Path $readme)) {
     throw 'tools\release-assets\README-Atlas.txt is missing - the package would ship with no instructions.'

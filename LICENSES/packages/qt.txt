@@ -1,0 +1,17 @@
+Qt 6.8.x — https://www.qt.io/
+
+Copyright (C) 2022 The Qt Company Ltd and other contributors.
+Contact: https://www.qt.io/licensing
+
+Atlas links Qt dynamically: the Qt DLLs (Qt6Core.dll, Qt6Gui.dll, Qt6Widgets.dll,
+Qt6Network.dll, Qt6NetworkAuth.dll, Qt6OpenGL.dll, Qt6Svg.dll, Qt6Xml.dll,
+Qt6Concurrent.dll and the platform plugins) are shipped unmodified next to
+atlas.exe and can be replaced by the user with a compatible build.
+
+Qt is used under the GNU Lesser General Public License, version 3
+(see ../LGPL-3.0-only.txt). Qt is also available under a commercial license
+and under GPL-3.0; Atlas does not use those options.
+
+Qt itself bundles third-party components (PCRE2, zlib, FreeType, HarfBuzz,
+libpng, etc.). Their notices ship with the Qt installation and are listed in
+Qt's SBOM (qt/6.8.x/msvc2022_64/sbom) and at https://www.qt.io/licensing.
